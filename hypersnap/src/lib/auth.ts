@@ -1,18 +1,21 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
-import { PAIRING_SCOPES, PAIRING_TTL_SECONDS, validatePairingRequest, verifyPairingApproval, validateRevocationRequest, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationRequest, type RevocationApproval } from './pairing';
+import { ApiError, getFollowStatus, getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
+import { PAIRING_SCOPES, PAIRING_TTL_SECONDS, validatePairingRequest, validatePairingScopes, verifyPairingApproval, validateRevocationRequest, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationRequest, type RevocationApproval } from './pairing';
 import { buildSignedMessage, CastType, farcasterTimestamp, MessageType, ReactionType, SignatureScheme, type MessageDataInput } from './protocol/messageBuilder';
 import { abiEncodeSignedKeyRequestMetadata, bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
 import { decryptSignerVault, deleteSavedVault, encryptSignerVault, readSavedVault, writeSavedVault, type VaultMetadata } from './vault';
+import { profileChanges, type ProfileField, type ProfilePatch, type ProfileUpdateResult } from './social';
+import { createMediaUploadGrant, type MediaUploadInput, type MediaUploadGrant } from './media';
 
 export const SIGNER_TTL_SECONDS = PAIRING_TTL_SECONDS;
-const SIGNER_SCOPE_NAMES = ['MESSAGE_TYPE_CAST_ADD', 'MESSAGE_TYPE_REACTION_ADD', 'MESSAGE_TYPE_REACTION_REMOVE'];
+const SIGNER_SCOPE_NAMES: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
 const CONFIRMATION_TIMEOUT_MS = 45_000;
 
 export interface CastTarget { fid: number; hash: string }
 export interface WriteReceipt { hash: string }
+export interface CastOptions { embeds?: Array<{ url: string }>; mentions?: number[]; mentionsPositions?: number[] }
 export interface ConnectOptions { signal?: AbortSignal; onProgress?: (stage: string) => void }
-export interface PairingOptions extends ConnectOptions { origin: string }
+export interface PairingOptions extends ConnectOptions { origin: string; requestedScopes?: readonly number[] }
 export interface PendingPairing {
   readonly request: PairingRequest;
   readonly user: User;
@@ -36,8 +39,13 @@ export interface WalletSession {
   readonly fid: number;
   readonly custodyAddress: string;
   readonly publicKey: string;
-  cast(text: string, parent?: CastTarget): Promise<WriteReceipt>;
+  readonly scopes: readonly number[];
+  cast(text: string, parent?: CastTarget, options?: CastOptions): Promise<WriteReceipt>;
   react(target: CastTarget, type: 'like' | 'recast', remove?: boolean): Promise<WriteReceipt>;
+  follow(targetFid: number, remove?: boolean): Promise<WriteReceipt>;
+  updateProfile(patch: ProfilePatch): Promise<ProfileUpdateResult>;
+  refreshProfile(): Promise<User>;
+  authorizeMediaUpload(input: MediaUploadInput): Promise<MediaUploadGrant>;
   /** Explicit opt-in: only the app signer is encrypted. */
   saveToDevice(password: string): Promise<void>;
   /** Offline custody approval works even when the node omits app nonces. */
@@ -81,10 +89,10 @@ function clientOrigin(origin: string): string {
 function signerIn(registry: SignersResponse, key: string): Signer | undefined {
   return registry.signers.find(signer => signer.key.replace(/^0x/i, '').toLowerCase() === key);
 }
-function usableSigner(signer: Signer | undefined, fid: number): boolean {
+function usableSigner(signer: Signer | undefined, fid: number, scopes: readonly number[] = PAIRING_SCOPES): boolean {
   return !!signer && signer.source === 'SIGNER_SOURCE_OFFCHAIN' && signer.requestFid === fid &&
     Number.isSafeInteger(signer.expiresAt) && Number(signer.expiresAt) > Math.floor(Date.now() / 1000) + 30 &&
-    SIGNER_SCOPE_NAMES.every(scope => signer.scopes?.includes(scope));
+    scopes.every(scope => SIGNER_SCOPE_NAMES[scope] && signer.scopes?.includes(SIGNER_SCOPE_NAMES[scope]));
 }
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   assertActive(signal);
@@ -94,14 +102,14 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
-async function confirmSigner(fid: number, publicKey: string, present: boolean, options: ConnectOptions): Promise<void> {
+async function confirmSigner(fid: number, publicKey: string, present: boolean, options: ConnectOptions, scopes: readonly number[] = PAIRING_SCOPES): Promise<void> {
   const deadline = Date.now() + CONFIRMATION_TIMEOUT_MS;
   do {
     assertActive(options.signal);
     const registry = await getSigners(fid, options.signal);
     const found = signerIn(registry, publicKey);
     // The node includes expired records: revocation requires actual absence.
-    if (present ? usableSigner(found, fid) : !found) return;
+    if (present ? usableSigner(found, fid, scopes) : !found) return;
     await delay(1500, options.signal);
   } while (Date.now() < deadline);
   throw new Error(present
@@ -112,6 +120,7 @@ async function confirmSigner(fid: number, publicKey: string, present: boolean, o
 /** Browser authentication never accepts a recovery phrase or custody private key. */
 export async function preparePairing(lookup: { fid?: number; username?: string; custodyAddress?: string }, options: PairingOptions): Promise<PendingPairing> {
   assertActive(options.signal);
+  const requestedScopes = validatePairingScopes(options.requestedScopes ? [...options.requestedScopes] : [...PAIRING_SCOPES]);
   options.onProgress?.('Finding your Hypersnap identity…');
   const user = await getUser(lookup, options.signal);
   const custody = custodyAddress(user);
@@ -126,7 +135,7 @@ export async function preparePairing(lookup: { fid?: number; username?: string; 
       kind: 'arca.hypersnap.signer.request', version: 1, origin: clientOrigin(options.origin),
       requestId: bytesToHex(crypto.getRandomValues(new Uint8Array(32))), createdAt,
       fid: user.fid, custodyAddress: custody, publicKey: bytesToHex(ed25519.getPublicKey(privateKey)),
-      scopes: [...PAIRING_SCOPES], ttl: PAIRING_TTL_SECONDS,
+      scopes: requestedScopes, ttl: PAIRING_TTL_SECONDS,
       nonce: nonceAfter(registry.currentUserNonce), deadline: createdAt - 1609459200 + 900,
     });
     Object.freeze(request.scopes);
@@ -157,7 +166,7 @@ export async function preparePairing(lookup: { fid?: number; username?: string; 
             const metadata = abiEncodeSignedKeyRequestMetadata({ requestFid: request.fid, requestSigner: request.custodyAddress, signature: hexToBytes(approval.requestSignature), deadline: request.deadline });
             const { envelope } = await buildSignedMessage({
               type: MessageType.KEY_ADD, fid: request.fid,
-              body: { keyAddBody: { key: publicKeyBytes, custodySignature: hexToBytes(approval.custodySignature), deadline: request.deadline, nonce: request.nonce, metadata, scopes: [...PAIRING_SCOPES], ttl: PAIRING_TTL_SECONDS } },
+              body: { keyAddBody: { key: publicKeyBytes, custodySignature: hexToBytes(approval.custodySignature), deadline: request.deadline, nonce: request.nonce, metadata, scopes: [...request.scopes], ttl: PAIRING_TTL_SECONDS } },
             }, { scheme: SignatureScheme.ED25519, publicKey: publicKeyBytes, sign: async digest => ed25519.sign(digest, privateKey!) });
             assertActive(completionOptions.signal);
             if (disposed) throw new Error('This authorization request has ended.');
@@ -166,14 +175,14 @@ export async function preparePairing(lookup: { fid?: number; username?: string; 
             await submitMessage(envelope, completionOptions.signal);
           }
           completionOptions.onProgress?.('Checking signer confirmation…');
-          await confirmSigner(request.fid, request.publicKey, true, completionOptions);
+          await confirmSigner(request.fid, request.publicKey, true, completionOptions, request.scopes);
           const currentUser = await getUser({ fid: request.fid }, completionOptions.signal);
           assertActive(completionOptions.signal);
           if (disposed || !privateKey) throw new Error('This authorization request has ended.');
           if (currentUser.fid !== request.fid || custodyAddress(currentUser) !== request.custodyAddress) throw new Error('Account custody changed. Authorize a new device signer.');
           session = createSession(currentUser, privateKey, {
             origin: request.origin, fid: request.fid, custodyAddress: request.custodyAddress,
-            publicKey: request.publicKey, requestFid: request.fid, scopes: [1, 3, 4], ttl: 604800,
+            publicKey: request.publicKey, requestFid: request.fid, scopes: [...request.scopes], ttl: 604800,
           });
           privateKey = undefined; // Session now owns the key.
           return session;
@@ -207,7 +216,7 @@ export async function unlockSavedSession(password: string, options: ConnectOptio
     const [user, registry] = await Promise.all([getUser({ fid: metadata.fid }, options.signal), getSigners(metadata.fid, options.signal)]);
     assertActive(options.signal);
     if (user.fid !== metadata.fid || custodyAddress(user) !== metadata.custodyAddress) throw new Error('Account custody changed. Forget this vault and authorize a new device signer.');
-    if (!usableSigner(signerIn(registry, metadata.publicKey), metadata.fid)) throw new Error('This device signer is expired or revoked. Forget this vault and authorize the device again.');
+    if (!usableSigner(signerIn(registry, metadata.publicKey), metadata.fid, metadata.scopes)) throw new Error('This device signer is expired or revoked. Forget this vault and authorize the device again.');
     const session = createSession(user, privateKey, metadata, true);
     transferred = true;
     return session;
@@ -220,6 +229,11 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
   let revoking = false;
   let revokeSubmitted = false;
   let saving: Promise<void> | undefined;
+  let profileSaving = false;
+  const uncertainProfileFields = new Map<ProfileField, string>();
+  const followingBusy = new Set<number>();
+  const uncertainFollows = new Map<number, boolean>();
+  let lastWriteTimestamp = 0;
   const assertSession = () => { if (disposed || revoking || revokeSubmitted) throw new Error('Your session has ended or is being revoked. Unlock or authorize your device again.'); };
   const sign = async (digest: Uint8Array) => { if (disposed) throw new Error('Your session has ended.'); return ed25519.sign(digest, privateKey); };
   const dispose = () => { disposed = true; privateKey.fill(0); };
@@ -235,28 +249,101 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
     }
     dispose();
   };
-  const send = async (data: MessageDataInput): Promise<WriteReceipt> => {
+  const assertAuthorized = async (type: MessageType) => {
     assertSession();
+    if (!metadata.scopes.includes(type)) throw new Error('Enable social features with your custody wallet before following accounts or editing your profile.');
     const [currentUser, registry] = await Promise.all([getUser({ fid: metadata.fid }), getSigners(metadata.fid)]);
     assertSession();
-    if (currentUser.fid !== metadata.fid || custodyAddress(currentUser) !== metadata.custodyAddress || !usableSigner(signerIn(registry, metadata.publicKey), metadata.fid)) throw new Error('This device signer is no longer authorized. Reconnect before posting.');
-    const { envelope, hash } = await buildSignedMessage(data, { scheme: SignatureScheme.ED25519, publicKey, sign });
+    if (currentUser.fid !== metadata.fid || custodyAddress(currentUser) !== metadata.custodyAddress || !usableSigner(signerIn(registry, metadata.publicKey), metadata.fid, metadata.scopes)) throw new Error('This device signer is no longer authorized. Reconnect before posting.');
+  };
+  const send = async (data: MessageDataInput): Promise<WriteReceipt> => {
+    await assertAuthorized(data.type);
+    // Consecutive follow/unfollow and profile updates need a later timestamp
+    // even when the user acts twice in a second (the protocol uses LWW sets).
+    lastWriteTimestamp = Math.max(farcasterTimestamp(), lastWriteTimestamp + 1);
+    const { envelope, hash } = await buildSignedMessage({ ...data, timestamp: lastWriteTimestamp }, { scheme: SignatureScheme.ED25519, publicKey, sign });
     assertSession();
     await submitMessage(envelope);
     return { hash: bytesToHex(hash) };
   };
   return {
-    user, fid: metadata.fid, custodyAddress: metadata.custodyAddress, publicKey: metadata.publicKey,
-    async cast(text, parent) {
-      const bytes = new TextEncoder().encode(text).length;
-      if (!text.trim()) throw new Error('Write something before casting.');
+    user, fid: metadata.fid, custodyAddress: metadata.custodyAddress, publicKey: metadata.publicKey, scopes: Object.freeze([...metadata.scopes]),
+    async cast(text, parent, options = {}) {
+      const textBytes = new TextEncoder().encode(text);
+      const bytes = textBytes.length;
+      const { embeds = [], mentions = [], mentionsPositions = [] } = options;
+      if (!text.trim() && !embeds.length && !mentions.length) throw new Error('Write something before casting.');
       if (bytes > 1024) throw new Error('Casts can contain up to 1,024 UTF-8 bytes.');
+      if (!Array.isArray(embeds) || embeds.length > 2 || embeds.some(embed => {
+        if (!embed || typeof embed.url !== 'string' || new TextEncoder().encode(embed.url).length > 256) return true;
+        try { const url = new URL(embed.url); return url.protocol !== 'https:' || !!url.username || !!url.password; } catch { return true; }
+      })) throw new Error('Use at most two HTTPS media embeds, each up to 256 UTF-8 bytes.');
+      if (!Array.isArray(mentions) || !Array.isArray(mentionsPositions) || mentions.length > 10 || mentions.length !== mentionsPositions.length) throw new Error('Use at most ten mentions with matching positions.');
+      mentions.forEach(assertFid);
+      if (mentionsPositions.some((position, index) => !Number.isSafeInteger(position) || position < 0 || position > bytes
+        || (index > 0 && position < mentionsPositions[index - 1]) || (position < bytes && (textBytes[position] & 0xc0) === 0x80))) throw new Error('Mention positions must be sorted UTF-8 boundaries in the cast text.');
       if (parent) assertFid(parent.fid);
-      return send({ type: MessageType.CAST_ADD, fid: metadata.fid, body: { castAddBody: { text, type: bytes > 320 ? CastType.LONG_CAST : CastType.CAST, ...(parent ? { parent: { castId: { fid: parent.fid, hash: hashBytes(parent.hash) } } } : {}) } } });
+      return send({ type: MessageType.CAST_ADD, fid: metadata.fid, body: { castAddBody: { text, embeds, mentions, mentionsPositions, type: bytes > 320 ? CastType.LONG_CAST : CastType.CAST, ...(parent ? { parent: { castId: { fid: parent.fid, hash: hashBytes(parent.hash) } } } : {}) } } });
     },
     async react(target, type, remove = false) {
       assertFid(target.fid);
       return send({ type: remove ? MessageType.REACTION_REMOVE : MessageType.REACTION_ADD, fid: metadata.fid, body: { reactionBody: { type: type === 'like' ? ReactionType.LIKE : ReactionType.RECAST, target: { castId: { fid: target.fid, hash: hashBytes(target.hash) } } } } });
+    },
+    async follow(targetFid, remove = false) {
+      assertSession();
+      assertFid(targetFid);
+      if (targetFid === metadata.fid) throw new Error('You cannot follow your own account.');
+      if (followingBusy.has(targetFid)) throw new Error('This follow change is already being submitted.');
+      followingBusy.add(targetFid);
+      try {
+        if (uncertainFollows.has(targetFid)) {
+          const confirmed = await getFollowStatus(metadata.fid, targetFid);
+          if (confirmed !== uncertainFollows.get(targetFid)) throw new Error('An earlier follow change has unknown status. Wait until its requested relationship is visible before another change.');
+          uncertainFollows.delete(targetFid);
+        }
+        return await send({ type: remove ? MessageType.LINK_REMOVE : MessageType.LINK_ADD, fid: metadata.fid, body: { linkBody: { type: 'follow', targetFid } } });
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'submission_unknown') uncertainFollows.set(targetFid, !remove);
+        throw error;
+      } finally { followingBusy.delete(targetFid); }
+    },
+    async updateProfile(patch) {
+      assertSession();
+      const changes = profileChanges(patch); // Validate the whole edit before any write.
+      if (profileSaving) throw new Error('Profile changes are already being submitted.');
+      if (changes.some(change => uncertainProfileFields.has(change.field))) throw new Error('A previous profile change has unknown status. Refresh and verify it before editing that field again.');
+      const result: ProfileUpdateResult = { saved: [] };
+      profileSaving = true;
+      try {
+        for (let index = 0; index < changes.length; index += 1) {
+          const change = changes[index];
+          try {
+            await send({ type: MessageType.USER_DATA_ADD, fid: metadata.fid, body: { userDataBody: { type: change.type, value: change.value } } });
+            result.saved.push(change.field);
+          } catch (error) {
+            const unknown = error instanceof ApiError && error.code === 'submission_unknown';
+            if (unknown) uncertainProfileFields.set(change.field, change.value);
+            result.failed = [{ field: change.field, message: error instanceof Error ? error.message : 'This profile change could not be submitted.', unknown }, ...changes.slice(index + 1).map(next => ({ field: next.field, message: 'Not submitted because the previous change did not complete.', unknown: false }))];
+            break;
+          }
+        }
+        return result;
+      } finally { profileSaving = false; }
+    },
+    async refreshProfile() {
+      assertSession();
+      const refreshed = await getUser({ fid: metadata.fid });
+      assertSession();
+      if (refreshed.fid !== metadata.fid || custodyAddress(refreshed) !== metadata.custodyAddress) throw new Error('Account custody changed. Reconnect with the current custody wallet.');
+      const values: Record<ProfileField, string> = { displayName: refreshed.display_name || '', bio: refreshed.profile?.bio?.text || '', pfpUrl: refreshed.pfp_url || '' };
+      for (const [field, attempted] of uncertainProfileFields) if (values[field] === attempted) uncertainProfileFields.delete(field);
+      return refreshed;
+    },
+    async authorizeMediaUpload(input) {
+      await assertAuthorized(MessageType.CAST_ADD);
+      const grant = await createMediaUploadGrant(input, { fid: metadata.fid, publicKey: metadata.publicKey }, sign);
+      assertSession();
+      return grant;
     },
     async saveToDevice(password) {
       assertSession();

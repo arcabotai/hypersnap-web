@@ -39,6 +39,9 @@ export function approveSignerRequest(request: unknown, phrase: string, nowMs = D
   let normalized = '';
   try {
     const valid = validateSignerRequest(request, nowMs);
+    // The signed v0.2.0 desktop beta reviews only its original permissions.
+    // Expanded browser approvals must use the user's wallet, never this UI.
+    if (valid.kind === 'arca.hypersnap.signer.request' && valid.scopes.join(',') !== '1,3,4') throw new Error('This offline signer only approves casts and reactions. Use your wallet for social permissions.');
     if (typeof phrase !== 'string' || phrase.length > PHRASE_MAX_LENGTH) throw new Error('Enter a valid 24-word English recovery phrase.');
     normalized = phrase.normalize('NFKD').trim().toLowerCase().split(/\s+/u).join(' ');
     phrase = '';

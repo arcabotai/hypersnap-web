@@ -1,0 +1,27 @@
+.cast-permalink { color: inherit; }
+.cast-mention { color: var(--color-link); font-weight: 550; }
+.cast .author { text-decoration: none; }
+.conversation-children { margin-left: .85rem; border-left: .125rem solid var(--surface-4); }
+.conversation-children .cast { padding-left: .7rem; }
+.conversation-replies > .thread-empty { padding-inline: 1rem; }
+.composer-media { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: .5rem; }
+.composer-attachment { position: relative; width: min(12rem, 45%); }
+.composer-attachment img { display: block; width: 100%; max-height: 12rem; object-fit: cover; border-radius: .6rem; }
+.composer-attachment .button { position: absolute; top: .3rem; right: .3rem; padding: .3rem; min-height: 1.6rem; background: var(--surface-0); }
+.composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .65rem; }
+.composer-tools .button, .composer-mentions .button { font-size: .62rem; min-height: 2rem; padding: .4rem .6rem; }
+.composer-tools > span, .composer-media-note { font-size: .57rem; color: var(--color-text-muted); line-height: 1.7; }
+.composer-media-note { margin: .5rem 0; }
+.composer-mentions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-block: .6rem; }
+.composer-mentions .input { flex: 1; min-width: 8rem; font-size: .66rem; padding: .55rem .65rem; }
+.composer-selected-mentions { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; margin-bottom: .5rem; }
+.composer-selected-mentions .button { font-size: .6rem; padding: .3rem .45rem; min-height: 1.7rem; }
+.composer-selected-mentions small { font-size: .56rem; line-height: 1.6; color: var(--color-text-muted); }
+.composer__body > .error { font-size: .65rem; line-height: 1.7; }
+.profile-public-link { display: block; font-size: .64rem; overflow-wrap: anywhere; margin-block: .8rem; }
+.profile__counts .button { font-size: .68rem; gap: .3rem; padding: .4rem .5rem; }
+.profile-follow { margin-block: .8rem; }
+.profile-follow .error, .profile-upgrade { font-size: .65rem; line-height: 1.8; }
+.profile-upgrade { color: var(--color-text-subtle); margin-top: .9rem; }
+.profile-banner { display: block; width: 100%; max-height: 12rem; object-fit: cover; border-radius: .7rem; margin: .7rem 0 1rem; }
+@media (max-width: 420px) { .conversation-children { margin-left: .45rem; }.conversation-children .cast { padding-left: .45rem; }.composer-mentions .input { flex-basis: 100%; } }

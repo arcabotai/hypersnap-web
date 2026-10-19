@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { IconX } from '@tabler/icons-react';
 
 // Standalone web primitives for the public entry, following Quorum's semantic tokens.
@@ -10,13 +10,14 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
 });
 export function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose(): void; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
     return () => dialog.close();
   }, []);
-  return <dialog ref={ref} className={`modal ${wide ? 'modal--wide' : ''}`} onCancel={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }} aria-labelledby="dialog-title">
-    <div className="modal__head"><h2 id="dialog-title">{title}</h2><Button variant="ghost" aria-label="Close dialog" onClick={onClose}><IconX size={20} /></Button></div>
+  return <dialog ref={ref} className={`modal ${wide ? 'modal--wide' : ''}`} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }} aria-labelledby={titleId}>
+    <div className="modal__head"><h2 id={titleId}>{title}</h2><Button variant="ghost" aria-label="Close dialog" onClick={onClose}><IconX size={20} /></Button></div>
     {children}
   </dialog>;
 }

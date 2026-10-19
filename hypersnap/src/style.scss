@@ -1,5 +1,7 @@
 @use './tokens.scss';
 @use './pairing.scss';
+@use './share.scss';
+@use './client.scss';
 @font-face { font-family: Inter; src: url('/InterVariable.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: Sen; src: url('/Sen-VariableFont_wght.ttf') format('truetype'); font-weight: 400 800; font-display: swap; }
 :root { font-family: Inter, sans-serif; color: var(--color-text-strong); background: var(--surface-00); font-synthesis: none; --border: var(--surface-2); --soft-accent: rgb(var(--accent-rgb) / .1); --green: #72cfac; --pink: #eb82a5; --lavender: #b8abdb; }

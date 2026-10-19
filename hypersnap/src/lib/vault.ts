@@ -1,5 +1,6 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
+import { validatePairingScopes } from './pairing';
 
 // Platform-agnostic crypto/schema are candidates for a future shared signer
 // package; IndexedDB intentionally stays in this browser adapter.
@@ -15,7 +16,7 @@ export interface VaultMetadata {
   custodyAddress: string;
   publicKey: string;
   requestFid: number;
-  scopes: [1, 3, 4];
+  scopes: number[];
   ttl: 604800;
 }
 
@@ -42,15 +43,17 @@ function validateMetadata(value: unknown): VaultMetadata {
     !Number.isSafeInteger(value.fid) || Number(value.fid) < 1 || value.requestFid !== value.fid ||
     typeof value.custodyAddress !== 'string' || !/^0x[0-9a-f]{40}$/.test(value.custodyAddress) ||
     typeof value.publicKey !== 'string' || !/^[0-9a-f]{64}$/.test(value.publicKey) ||
-    !Array.isArray(value.scopes) || value.scopes.join(',') !== '1,3,4' || value.ttl !== 604800) {
+    !Array.isArray(value.scopes) || value.ttl !== 604800) {
     throw new Error('The saved device vault is invalid. You can forget it and authorize a new device.');
   }
   let origin: URL;
   try { origin = new URL(value.origin); } catch { throw new Error('The saved device vault has an invalid origin.'); }
   if (origin.origin !== value.origin || origin.protocol !== 'https:') throw new Error('The saved device vault has an invalid origin.');
+  let scopes: number[];
+  try { scopes = validatePairingScopes(value.scopes); } catch { throw new Error('The saved device vault has invalid permissions.'); }
   return {
     origin: value.origin, fid: value.fid as number, custodyAddress: value.custodyAddress,
-    publicKey: value.publicKey, requestFid: value.fid as number, scopes: [1, 3, 4], ttl: 604800,
+    publicKey: value.publicKey, requestFid: value.fid as number, scopes, ttl: 604800,
   };
 }
 

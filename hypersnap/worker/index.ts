@@ -1,7 +1,9 @@
 /** Fixed-origin, bounded gateway. Custody secrets stay in the user's wallet;
  * this worker accepts public queries or signed wire bytes.
  */
-export interface Env {
+import { handleMediaRequest, type MediaEnv } from './media';
+export { MediaUploadQuota } from './media';
+export interface Env extends MediaEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
@@ -51,15 +53,19 @@ const username: Rule = value => /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
 const channel: Rule = value => /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 const cursor: Rule = value => /^[a-zA-Z0-9_+/=:-]{1,2048}$/.test(value);
 const pagination: QueryRules = { limit: integer(100), cursor };
+const followPagination: QueryRules = { limit: integer(100), cursor: value => /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn };
 
 interface Endpoint { required?: string[]; query: QueryRules }
 const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v1/info': { query: {} },
   '/v1/signersByFid': { required: ['fid'], query: { fid, pageSize: integer(1000), pageToken: cursor, 'requesterFids[0]': fid } },
   '/v1/onChainIdRegistryEventByAddress': { required: ['address'], query: { address } },
+  '/v1/linkById': { required: ['fid', 'link_type', 'target_fid'], query: { fid, link_type: value => value === 'follow', target_fid: fid } },
   '/v2/farcaster/user': { required: ['fid'], query: { fid } },
   '/v2/farcaster/user/by-username': { required: ['username'], query: { username } },
   '/v2/farcaster/user/custody-address': { required: ['custody_address'], query: { custody_address: address } },
+  '/v2/farcaster/user/followers': { required: ['fid'], query: { ...followPagination, fid } },
+  '/v2/farcaster/user/following': { required: ['fid'], query: { ...followPagination, fid } },
   '/v2/farcaster/feed/trending': { query: pagination },
   '/v2/farcaster/feed/following': { required: ['fid'], query: { ...pagination, fid } },
   '/v2/farcaster/feed/user/casts': { required: ['fid'], query: { ...pagination, fid } },
@@ -150,6 +156,17 @@ async function proxy(request: Request, url: URL): Promise<Response> {
       cache: 'no-store',
     });
     if (!upstream.ok) {
+      // Hypersnap's v1 HTTP adapter reports every gRPC error as HTTP 400.
+      // Only this exact NotFound result means an absent follow; network,
+      // validation, and storage failures must never appear as "not following".
+      if (path === '/v1/linkById' && upstream.status === 400 && upstream.headers.get('Content-Type')?.includes('application/json')) {
+        const bytes = await readLimited(upstream.body, 4096);
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (value && typeof value === 'object' && 'error' in value && value.error === 'Failed to get link'
+          && 'error_detail' in value && typeof value.error_detail === 'string' && value.error_detail.startsWith('status: NotFound,')) {
+          return failure(404, 'follow_not_found', 'This follow relationship does not exist.');
+        }
+      }
       await upstream.body?.cancel();
       const status = [400, 401, 403, 404, 409, 422, 429].includes(upstream.status) ? upstream.status : 502;
       const messages: Record<number, string> = {
@@ -184,6 +201,7 @@ async function proxy(request: Request, url: URL): Promise<Response> {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === '/media' || url.pathname.startsWith('/media/')) return handleMediaRequest(request, env);
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return proxy(request, url);
   if (request.method !== 'GET' && request.method !== 'HEAD') return failure(405, 'method_not_allowed', 'This method is unavailable.');
   return secure(await env.ASSETS.fetch(request));

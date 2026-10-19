@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashTypedData } from 'viem';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet, type WalletProvider } from './wallet';
-import { verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
+import { FULL_SOCIAL_SCOPES, verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest, signEip712Digest } from './protocol/signedKeyRequest';
 
 const custodyKey = hexToBytes('01'.repeat(32)); // synthetic fixture, never a live identity
@@ -39,6 +39,14 @@ beforeEach(() => { vi.restoreAllMocks(); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('custody wallet approval without seed import', () => {
+  it('signs exactly the explicitly selected social scope set without wallet transactions', async () => {
+    const req = { ...fixture(), scopes: [...FULL_SOCIAL_SCOPES] }; const w = wallet();
+    const approval = await approvePairingWithWallet(req, w.provider);
+    expect(() => verifyPairingApproval(req, approval)).not.toThrow();
+    expect((w.payloads[0].message as { scopes: number[] }).scopes).toEqual(FULL_SOCIAL_SCOPES);
+    expect(w.payloads).toHaveLength(2);
+    expect(w.request.mock.calls.every(([args]) => args.method !== 'eth_sendTransaction')).toBe(true);
+  });
   it('requests two exact typed-data signatures whose independent viem digests match Hypersnap protocol digests', async () => {
     const req = fixture(); const w = wallet();
     const approval = await approvePairingWithWallet(req, w.provider);

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hashTypedData } from 'viem';
 import { approvePairingWithWallet, approveRevocationWithWallet, type WalletProvider } from './wallet';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, signEip712Digest } from './protocol/signedKeyRequest';
-import { verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
+import { FULL_SOCIAL_SCOPES, verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
 import { withWalletConnect, WALLETCONNECT_SETUP_TIMEOUT_MS, WalletConnectMemoryStorage, type WalletConnectClient, type WalletConnectClientFactory, type WalletConnectClientOptions, type WalletConnectSession } from './walletConnect';
 
 const privateKey = hexToBytes('01'.repeat(32)); // synthetic fixture, no real account
@@ -45,6 +45,14 @@ function harness() {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('temporary signature-only WalletConnect sessions', () => {
+  it('permits the exact reviewed social approval and erases the temporary connection afterwards', async () => {
+    const h = harness(); const req = { ...request(), scopes: [...FULL_SOCIAL_SCOPES] };
+    const approval = await withWalletConnect({ projectId: PROJECT, custodyAddress: custody, request: req, onUri: () => {} }, provider => approvePairingWithWallet(req, provider), h.factory);
+    expect(() => verifyPairingApproval(req, approval)).not.toThrow();
+    expect(JSON.parse(h.sdkRequest.mock.calls[0][0].request.params[1] as string).message.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    expect(h.sdkRequest).toHaveBeenCalledTimes(2);
+    expect(h.clear).toHaveBeenCalledOnce();
+  });
   it('authorizes the exact posting key with real synthetic signatures and disconnects/erases everything after approval', async () => {
     const h = harness(); const req = request(); const uris: Array<string | null> = []; const sign = vi.fn();
     const approval = await withWalletConnect({ projectId: PROJECT, custodyAddress: custody, request: req, onUri: uri => uris.push(uri), onSignRequest: sign }, provider => approvePairingWithWallet(req, provider), h.factory);

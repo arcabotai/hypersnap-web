@@ -3,7 +3,7 @@ import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconCheck, IconCode, Ic
 import { Button, Input, Modal } from './ui';
 import WalletConnectLogo from './WalletConnectLogo';
 import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation, type WalletSession } from '../lib/auth';
-import { hashPairingRequest, hashRevocationRequest, validatePairingApproval, verifyPairingApproval, validateRevocationApproval, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationApproval, type RevocationRequest } from '../lib/pairing';
+import { PAIRING_SCOPES, hashPairingRequest, hashRevocationRequest, validatePairingScopes, validatePairingApproval, verifyPairingApproval, validateRevocationApproval, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationApproval, type RevocationRequest } from '../lib/pairing';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
 
 const sourceUrl = 'https://github.com/arcabotai/hypersnap-web';
@@ -67,15 +67,17 @@ function AccountFacts({ request }: { request: PairingRequest }) {
     <div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div>
     <div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div>
     <div><dt>Request checksum</dt><dd className="pairing-mono">{hashPairingRequest(request)}</dd></div>
-    <div><dt>Permission</dt><dd>Publish casts and add or remove reactions</dd></div>
+    <div><dt>Permission</dt><dd>{request.scopes.includes(11) ? 'Publish casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : 'Publish casts and add or remove reactions'}</dd></div>
     <div><dt>Inactivity expiry</dt><dd>7 days, renewed by signing activity</dd></div>
     <div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div>
     <div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div>
   </dl>;
 }
 
-export default function ConnectAccount({ onClose, onConnect }: { onClose(): void; onConnect(session: WalletSession): void }) {
-  const [identifier, setIdentifier] = useState('');
+export default function ConnectAccount({ onClose, onConnect, requestedScopes, initialFid }: { onClose(): void; onConnect(session: WalletSession): void; requestedScopes?: readonly number[]; initialFid?: number }) {
+  const [scopes] = useState(() => validatePairingScopes(requestedScopes ? [...requestedScopes] : [...PAIRING_SCOPES]));
+  const socialApproval = scopes.includes(11);
+  const [identifier, setIdentifier] = useState(initialFid ? String(initialFid) : '');
   const [request, setRequest] = useState<PairingRequest | null>(null);
   const [approval, setApproval] = useState<PairingApproval | null>(null);
   const [approvalName, setApprovalName] = useState('');
@@ -100,7 +102,7 @@ export default function ConnectAccount({ onClose, onConnect }: { onClose(): void
   useEffect(() => {
     let active = true;
     const initialGeneration = generation.current;
-    hasSavedSession().then(value => { if (active) { setSaved(value); if (generation.current === initialGeneration) setUnlock(value); } }).catch(() => { if (active) setError('Device storage could not be opened. You can connect for this tab.'); });
+    hasSavedSession().then(value => { if (active) { setSaved(value); if (!socialApproval && generation.current === initialGeneration) setUnlock(value); } }).catch(() => { if (active) setError('Device storage could not be opened. You can connect for this tab.'); });
     return () => { active = false; generation.current += 1; controller.current?.abort(); pending.current?.dispose(); provisionalSession.current?.dispose(); };
   }, []);
   useEffect(() => {
@@ -128,11 +130,11 @@ export default function ConnectAccount({ onClose, onConnect }: { onClose(): void
     event.preventDefault();
     if (busy) return;
     const term = identifier.trim().replace(/^@/, '');
-    const lookup = /^0x[\da-f]{40}$/i.test(term) ? { custodyAddress: term } : /^\d+$/.test(term) ? { fid: Number(term) } : { username: term };
+    const lookup = initialFid ? { fid: initialFid } : /^0x[\da-f]{40}$/i.test(term) ? { custodyAddress: term } : /^\d+$/.test(term) ? { fid: Number(term) } : { username: term };
     const run = ++generation.current;
     controller.current = new AbortController(); setBusy(true); setError(''); setStage('Looking up your public account…');
     try {
-      const value = await preparePairing(lookup, { origin: location.origin, signal: controller.current.signal, onProgress: text => { if (run === generation.current) setStage(text); } });
+      const value = await preparePairing(lookup, { origin: location.origin, requestedScopes: scopes, signal: controller.current.signal, onProgress: text => { if (run === generation.current) setStage(text); } });
       if (run !== generation.current) { value.dispose(); return; }
       pending.current = value; setRequest(value.request); setNow(Date.now());
     } catch (cause) { if (run === generation.current) setError(errorMessage(cause)); }
@@ -193,8 +195,9 @@ export default function ConnectAccount({ onClose, onConnect }: { onClose(): void
     finally { if (run === generation.current) setBusy(false); }
   }
 
-  return <Modal title={unlock ? 'Welcome back.' : 'Your identity. Safer sign-in.'} onClose={close}>
+  return <Modal title={socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Your identity. Safer sign-in.'} onClose={close}>
     <div className="pairing-hero"><span className="pairing-symbol"><IconShieldLock size={27} /></span><div><strong>Your recovery phrase stays out of this website.</strong><p>Approve a separate device key in your own wallet app.</p></div></div>
+    {socialApproval && <p className="pairing-copy">Approve a new device key with permission to follow and unfollow accounts and edit your profile, alongside casts and reactions. Previous keys retain their original network permissions; switching does not revoke them. The app switches only after Hypersnap confirms the new approval.</p>}
     {unlock ? <form onSubmit={unlockDevice}>
       <p className="pairing-copy">Your posting key is encrypted on this device. Unlock it to reconnect; your custody wallet is not needed.</p>
       <label className="field-label" htmlFor="device-password">Device vault password</label>
@@ -208,16 +211,16 @@ export default function ConnectAccount({ onClose, onConnect }: { onClose(): void
       {!request ? <form onSubmit={prepare}>
         <p className="pairing-copy">Connect your existing wallet app from this browser, or use a compatible wallet extension. Find your public account to create this browser’s separate posting key.</p>
         <label className="field-label" htmlFor="account-identifier">Username, FID, or custody wallet address</label>
-        <Input id="account-identifier" placeholder="@username, 1234, or 0x…" value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} required />
+        <Input id="account-identifier" placeholder="@username, 1234, or 0x…" value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} readOnly={initialFid !== undefined} required />
         <p className="fine-print">Use your account’s custody wallet, which may differ from a verified wallet. Do not enter your recovery words.</p>
         {error && <p className="error" role="alert">{error}</p>}
         <Button type="submit" className="full-width" disabled={busy || !identifier.trim()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Find my account <IconArrowUpRight size={17} /></>}</Button>
-        {saved && <Button className="full-width pairing-back" variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(true); }}><IconLock size={16} />Unlock saved device instead</Button>}
+        {saved && !socialApproval && <Button className="full-width pairing-back" variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(true); }}><IconLock size={16} />Unlock saved device instead</Button>}
       </form> : <>
         <AccountFacts request={request} />
         {!attempted && <WalletApproval request={request} disabled={busy || expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validatePairingApproval(value)); setApprovalName(name); }} />}
         {approval && <div className="wallet-approved" role="status"><IconCheck size={18} /><span>Posting key approved{approvalName ? ` · ${approvalName}` : ''}. Submit below to register it on Hypersnap.</span></div>}
-        {!attempted && <details className="pairing-advanced"><summary>Advanced: approve offline with Arca Signer</summary>
+        {!attempted && !socialApproval && <details className="pairing-advanced"><summary>Advanced: approve offline with Arca Signer</summary>
           <section className="pairing-offline"><h3><IconDeviceDesktop size={18} />Optional offline approval</h3><p>If you prefer a separate offline signer, download this public request and open it in Arca Signer. Compare the FID, custody address, complete device fingerprint, and request checksum. Enter your 24 words only in the downloaded signer, then import its public approval file below.</p>
             <div className="pairing-downloads"><Button variant="secondary" onClick={downloadRequest} disabled={busy || expired}><IconArrowDown size={16} />Download request</Button><a href={signerUrl} className="pairing-download-link"><IconArrowDown size={16} />Arca Signer for macOS</a></div>
             <p className="pairing-release">Optional v0.2.0 · macOS Apple Silicon only · <a href={`${sourceUrl}/releases/tag/${releaseTag}`} target="_blank" rel="noopener noreferrer">Release & verification</a></p>
@@ -330,7 +333,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
     finally { if (run === generation.current) { setAttempted(pending.current?.submitted ?? false); setBusy(false); setStage(''); } }
   }
   return <Modal title="This device’s access" onClose={close}>
-    <div className="pairing-hero"><span className="pairing-symbol"><IconKey size={27} /></span><div><strong>@{session.user.username || session.fid}</strong><p>FID {session.fid} · casting and reactions</p></div></div>
+    <div className="pairing-hero"><span className="pairing-symbol"><IconKey size={27} /></span><div><strong>@{session.user.username || session.fid}</strong><p>FID {session.fid} · {session.scopes.includes(11) ? 'casts, reactions, follows, and profile edits' : 'casting and reactions'}</p></div></div>
     <dl className="pairing-facts"><div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(session.publicKey)}</dd></div><div><dt>Storage</dt><dd>{saved ? 'Encrypted key saved in this browser' : 'Key held only in this tab'}</dd></div><div><dt>Inactivity expiry</dt><dd>7 days, renewed by signing activity</dd></div></dl>
     {!request && <>
       <div className="device-action"><div><strong>Lock this tab</strong><p>Clear its active signing key. A saved vault can be unlocked again. Network authorization remains active.</p></div><Button variant="secondary" onClick={() => onLock()} disabled={busy}><IconLock size={16} />Lock</Button></div>
@@ -340,7 +343,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
     {request && <section className="revocation-panel">
       <h3><IconShieldLock size={18} />{attempted ? 'Confirm this device’s removal' : 'Approve this device’s removal'}</h3>
       {!attempted && <p className="pairing-copy">Check the <strong>Revoke device</strong> action, FID, custody wallet, and complete key fingerprint before approving removal in your wallet app.</p>}
-      <dl className="pairing-facts"><div><dt>Action</dt><dd>Revoke this device’s casting and reaction permissions</dd></div><div><dt>FID</dt><dd>{request.fid}</dd></div><div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div><div><dt>Key to revoke</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div><div><dt>Request checksum</dt><dd className="pairing-mono">{hashRevocationRequest(request)}</dd></div><div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div><div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div></dl>
+      <dl className="pairing-facts"><div><dt>Action</dt><dd>Revoke all permissions granted to this device key</dd></div><div><dt>FID</dt><dd>{request.fid}</dd></div><div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div><div><dt>Key to revoke</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div><div><dt>Request checksum</dt><dd className="pairing-mono">{hashRevocationRequest(request)}</dd></div><div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div><div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div></dl>
       {!attempted && <WalletApproval request={request} disabled={busy || expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validateRevocationApproval(value)); setApprovalName(name); }} />}
       {approval && !attempted && <div className="wallet-approved" role="status"><IconCheck size={18} /><span>Removal approved{approvalName ? ` · ${approvalName}` : ''}. Submit below to revoke this device on Hypersnap.</span></div>}
       {!attempted && <details className="pairing-advanced"><summary>Advanced: approve revocation offline</summary>

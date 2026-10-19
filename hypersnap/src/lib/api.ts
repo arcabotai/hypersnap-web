@@ -49,6 +49,8 @@ export interface FeedResponse {
   next: { cursor?: string | null };
 }
 
+export interface FollowsResponse { users: User[]; next: { cursor?: string | null } }
+
 export interface ConversationNode {
   cast: Cast;
   replies: ConversationNode[];
@@ -226,6 +228,32 @@ export async function getUser(lookup: { fid?: number; username?: string; custody
   const response = await requestJson<{ user: User }>(path, params, signal);
   if (!isObject(response.user) || !Number.isSafeInteger(response.user.fid)) throw new ApiError('The node returned an invalid profile.', 502, 'invalid_response');
   return response.user;
+}
+
+/** Public social graph data; a wallet connection is not API authentication. */
+export async function getFollows(options: { fid: number; kind: 'followers' | 'following'; cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<FollowsResponse> {
+  if (options.kind !== 'followers' && options.kind !== 'following') throw new Error('Invalid follow list.');
+  const validCursor = (value: unknown): value is string => typeof value === 'string' && /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn;
+  if (options.cursor && !validCursor(options.cursor)) throw new Error('Invalid follow pagination cursor.');
+  const params = pageParams(options.cursor, options.limit);
+  params.set('fid', fidValue(options.fid));
+  const response = await requestJson<FollowsResponse>(`/v2/farcaster/user/${options.kind}`, params, options.signal);
+  if (!Array.isArray(response.users) || response.users.some(user => !isObject(user) || !Number.isSafeInteger(user.fid) || user.fid < 1)) throw new ApiError('The node returned an invalid follow list.', 502, 'invalid_response');
+  const next = response.next?.cursor;
+  if (next !== undefined && next !== null && !validCursor(next)) throw new ApiError('The node returned an invalid follow cursor.', 502, 'invalid_response');
+  return { users: response.users, next: { cursor: next === options.cursor ? null : next } };
+}
+
+export async function getFollowStatus(viewerFid: number, targetFid: number, signal?: AbortSignal): Promise<boolean> {
+  const params = new URLSearchParams({ fid: fidValue(viewerFid), link_type: 'follow', target_fid: fidValue(targetFid) });
+  try {
+    const result = await requestJson<{ data?: { type?: string; fid?: number; linkBody?: { type?: string; targetFid?: number } } }>('/v1/linkById', params, signal);
+    if (result.data?.type !== 'MESSAGE_TYPE_LINK_ADD' || result.data.fid !== viewerFid || result.data.linkBody?.type !== 'follow' || result.data.linkBody.targetFid !== targetFid) throw new ApiError('The node returned an invalid follow relationship.', 502, 'invalid_response');
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404 && error.code === 'follow_not_found') return false;
+    throw error;
+  }
 }
 
 export async function getCast(hash: string, signal?: AbortSignal): Promise<Cast> {

@@ -1,0 +1,34 @@
+.social-intro { margin: 0 0 1.25rem; color: var(--color-text-subtle); font-size: .8rem; line-height: 1.65; }
+.social-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1rem; }
+.social-status { display: flex; align-items: flex-start; gap: .5rem; color: var(--color-text-subtle); font-size: .76rem; line-height: 1.6; min-height: 1.25rem; overflow-wrap: anywhere; }
+.social-status svg { flex-shrink: 0; margin-top: .1rem; }
+.social-empty { display: grid; justify-items: center; padding: 2rem 1rem; color: var(--color-text-subtle); text-align: center; font-size: .85rem; }
+.social-field { margin: 1.2rem 0; }
+.social-field > label { display: block; margin-bottom: .5rem; font-size: .8rem; font-weight: 600; }
+.social-field > .input { width: 100%; min-width: 0; }
+.social-field > textarea { display: block; resize: vertical; width: 100%; min-height: 6.5rem; border: .0625rem solid var(--border); border-radius: .65rem; padding: .75rem; background: var(--surface-0); color: inherit; font: inherit; font-size: .85rem; line-height: 1.65; }
+.social-field > textarea:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .125rem; }
+.social-field > p { margin: .4rem 0 0; font-size: .68rem; line-height: 1.5; overflow-wrap: anywhere; }
+.social-field [aria-invalid="true"] { border-color: var(--color-text-danger); }
+.social-uncertain { padding: .9rem; background: var(--soft-accent); border: .0625rem solid var(--surface-4); border-radius: .7rem; font-size: .75rem; line-height: 1.7; }
+.social-uncertain p { color: var(--color-text-subtle); margin: .4rem 0 .8rem; }
+.edit-profile__image-row { display: flex; align-items: center; gap: 1rem; padding-bottom: 1rem; border-bottom: .0625rem solid var(--border); }
+.edit-profile__image-row strong { font-size: .82rem; }
+.edit-profile__image-row p { margin: .35rem 0 .65rem; font-size: .7rem; line-height: 1.6; color: var(--color-text-subtle); }
+.edit-profile__image-row .button { margin-right: .35rem; margin-bottom: .3rem; }
+.edit-profile__preview { display: grid; flex-shrink: 0; place-items: center; width: 5rem; height: 5rem; border-radius: 50%; border: .0625rem solid var(--surface-4); background: var(--surface-2); color: var(--color-text-subtle); overflow: hidden; }
+.edit-profile__preview img { width: 100%; height: 100%; object-fit: cover; }
+.edit-profile > .error { font-size: .75rem; line-height: 1.7; overflow-wrap: anywhere; }
+.follow-list__people { margin: 0; padding: 0; list-style: none; }
+.follow-list__people > li + li { border-top: .0625rem solid var(--border); }
+.follow-list__people a { display: flex; align-items: center; gap: .75rem; padding: .85rem 0; color: inherit; text-decoration: none; }
+.follow-list__people a:hover { color: var(--accent-300); }
+.follow-list__people a:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .15rem; border-radius: .4rem; }
+.follow-list__people img, .follow-list__fallback { display: grid; flex-shrink: 0; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 50%; object-fit: cover; background: var(--surface-2); color: var(--color-text-subtle); }
+.follow-list__identity { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: .15rem; font-size: .75rem; overflow-wrap: anywhere; }
+.follow-list__identity > strong { color: var(--color-text-strong); font-size: .82rem; }
+.follow-list__identity > span { color: var(--color-text-subtle); }
+.follow-list__bio { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .7rem; line-height: 1.5; margin-top: .2rem; }
+.follow-list__error { padding: .65rem 0; font-size: .75rem; line-height: 1.65; }
+.visually-hidden { position: absolute; width: .0625rem; height: .0625rem; margin: -.0625rem; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 36rem) { .edit-profile__image-row { align-items: flex-start; gap: .75rem; } .edit-profile__preview { width: 4rem; height: 4rem; } .social-actions .button { min-height: 2.75rem; } }

@@ -4,6 +4,14 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest } from './protocol/signedKeyRequest';
 
 export const PAIRING_SCOPES = [1, 3, 4] as const;
+/** Requested only through an explicit "Enable social features" approval. */
+export const FULL_SOCIAL_SCOPES = [1, 3, 4, 5, 6, 11] as const;
+export function validatePairingScopes(value: unknown): number[] {
+  if (!Array.isArray(value) || ![PAIRING_SCOPES, FULL_SOCIAL_SCOPES].some(allowed => allowed.length === value.length && allowed.every((scope, index) => value[index] === scope))) {
+    throw new Error('Arca Signer only approves the displayed casting permissions or the explicit social permissions.');
+  }
+  return [...value];
+}
 export const PAIRING_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const PAIRING_REQUEST_MAX_BYTES = 16_384;
 export const PAIRING_WINDOW_SECONDS = 15 * 60;
@@ -96,9 +104,9 @@ export function validatePairingRequest(value: unknown, nowMs = Date.now()): Pair
   if (!integer(value.fid, 1) || !integer(value.nonce, 1, 0xffffffff) || !integer(value.createdAt, FARCASTER_EPOCH_SECONDS) || !integer(value.deadline, 1)) throw new Error('The authorization contains invalid account or timing fields.');
   if (value.createdAt > now + 60 || value.deadline !== value.createdAt - FARCASTER_EPOCH_SECONDS + PAIRING_WINDOW_SECONDS) throw new Error('The authorization has invalid timing. Check your device clock and create a new request.');
   if (value.deadline <= now - FARCASTER_EPOCH_SECONDS) throw new Error('This authorization request has expired. Create a new request in Quorum.');
-  const scopes = value.scopes;
-  if (value.ttl !== PAIRING_TTL_SECONDS || !Array.isArray(scopes) || scopes.length !== PAIRING_SCOPES.length || !PAIRING_SCOPES.every((scope, index) => scopes[index] === scope)) throw new Error('Arca Signer only approves casts and reactions with a seven-day inactivity window.');
-  return { kind: value.kind, version: 1, origin: value.origin, requestId: value.requestId, createdAt: value.createdAt, fid: value.fid, custodyAddress: value.custodyAddress.toLowerCase(), publicKey: value.publicKey, scopes: [...PAIRING_SCOPES], ttl: PAIRING_TTL_SECONDS, nonce: value.nonce, deadline: value.deadline };
+  const scopes = validatePairingScopes(value.scopes);
+  if (value.ttl !== PAIRING_TTL_SECONDS) throw new Error('Arca Signer only approves a seven-day inactivity window.');
+  return { kind: value.kind, version: 1, origin: value.origin, requestId: value.requestId, createdAt: value.createdAt, fid: value.fid, custodyAddress: value.custodyAddress.toLowerCase(), publicKey: value.publicKey, scopes, ttl: PAIRING_TTL_SECONDS, nonce: value.nonce, deadline: value.deadline };
 }
 
 export function validatePairingApproval(value: unknown): PairingApproval {

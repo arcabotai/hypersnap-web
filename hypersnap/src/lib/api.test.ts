@@ -1,10 +1,45 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getConversation, getFeed, getSigners, getUser, submitMessage, type Cast } from './api';
+import { getConversation, getFeed, getFollows, getFollowStatus, getSigners, getUser, submitMessage, type Cast } from './api';
 
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('browser API client', () => {
+  it('loads paginated public follower lists without inventing viewer context', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ users: [{ fid: 3 }], next: { cursor: '10' } }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await getFollows({ fid: 1234, kind: 'followers', cursor: '5', limit: 10 })).toEqual({ users: [{ fid: 3 }], next: { cursor: '10' } });
+    expect(fetch.mock.calls[0][0]).toBe('/api/v2/farcaster/user/followers?limit=10&cursor=5&fid=1234');
+    expect(fetch.mock.calls[0][1].credentials).toBe('omit');
+    await expect(getFollows({ fid: 0, kind: 'following' })).rejects.toThrow('ID');
+    await expect(getFollows({ fid: 3, kind: 'following', cursor: 'abc' })).rejects.toThrow('cursor');
+    await expect(getFollows({ fid: 3, kind: 'following', cursor: '18446744073709551616' })).rejects.toThrow('cursor');
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('checks actual follow messages and treats only the specific absence code as false', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ data: { type: 'MESSAGE_TYPE_LINK_ADD', fid: 1234, linkBody: { type: 'follow', targetFid: 3 } } }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await getFollowStatus(1234, 3)).toBe(true);
+    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ code: 'follow_not_found', message: 'Absent' }), { status: 404 }));
+    expect(await getFollowStatus(1234, 3)).toBe(false);
+    for (const value of [{ code: 'upstream_error', message: 'Not found' }, { code: 'follow_not_found', message: 'Wrong status' }]) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify(value), { status: value.code === 'upstream_error' ? 404 : 400 }));
+      await expect(getFollowStatus(1234, 3)).rejects.toThrow();
+    }
+    fetch.mockResolvedValueOnce(response({ data: { type: 'MESSAGE_TYPE_LINK_ADD', fid: 1234, linkBody: { type: 'follow', targetFid: 4 } } }));
+    await expect(getFollowStatus(1234, 3)).rejects.toThrow('invalid follow relationship');
+  });
+
+  it('rejects malformed follow pages and stops repeated cursors', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ users: [], next: { cursor: '10' } }));
+    vi.stubGlobal('fetch', fetch);
+    expect((await getFollows({ fid: 3, kind: 'following', cursor: '10' })).next.cursor).toBeNull();
+    fetch.mockResolvedValueOnce(response({ users: [{ fid: -1 }], next: {} }));
+    await expect(getFollows({ fid: 3, kind: 'following' })).rejects.toThrow('invalid follow list');
+    fetch.mockResolvedValueOnce(response({ users: [], next: { cursor: 'https://example.com' } }));
+    await expect(getFollows({ fid: 3, kind: 'following' })).rejects.toThrow('invalid follow cursor');
+  });
   it('uses same-origin feeds with bounded pagination and no credentials', async () => {
     const fetch = vi.fn().mockResolvedValue(response({ casts: [], next: { cursor: '2' } }));
     vi.stubGlobal('fetch', fetch);

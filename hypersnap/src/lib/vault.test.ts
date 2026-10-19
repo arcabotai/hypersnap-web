@@ -10,6 +10,15 @@ const key = new Uint8Array(32).fill(19); // synthetic app key, unrelated to cust
 const metadata: VaultMetadata = { origin: ORIGIN, fid: 1234, custodyAddress: `0x${'ab'.repeat(20)}`, publicKey: bytesToHex(ed25519.getPublicKey(key)), requestFid: 1234, scopes: [1, 3, 4], ttl: 604800 };
 
 describe('versioned encrypted device posting-key vault', () => {
+  it('authenticates explicit social permissions without changing legacy vault compatibility', async () => {
+    const expanded = { ...metadata, scopes: [1, 3, 4, 5, 6, 11] };
+    const vault = await encryptSignerVault(key, expanded, PASSWORD);
+    const recovered = await decryptSignerVault(vault, PASSWORD, ORIGIN);
+    expect(recovered.metadata.scopes).toEqual(expanded.scopes);
+    recovered.privateKey.fill(0);
+    await expect(decryptSignerVault({ ...vault, metadata }, PASSWORD, ORIGIN)).rejects.toThrow('Could not unlock');
+    await expect(decryptSignerVault({ ...vault, metadata: { ...expanded, scopes: [1, 3, 4, 5, 6, 11, 16] } }, PASSWORD, ORIGIN)).rejects.toThrow('invalid permissions');
+  });
   it('encrypts only 32 app-key bytes with independent secure salt/IV and decrypts with authenticated metadata', async () => {
     const first = await encryptSignerVault(key, metadata, PASSWORD);
     const second = await encryptSignerVault(key, metadata, PASSWORD);

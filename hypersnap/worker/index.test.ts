@@ -13,6 +13,34 @@ afterEach(() => {
 });
 
 describe('the fixed Hypersnap gateway', () => {
+  it('forwards only bounded public follow reads to the existing Hypersnap node', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ users: [], next: {} }));
+    vi.stubGlobal('fetch', fetch);
+    for (const kind of ['followers', 'following']) expect((await handleRequest(new Request(`${BASE}/api/v2/farcaster/user/${kind}?fid=1234&limit=20`), env)).status).toBe(200);
+    expect(fetch.mock.calls.map(call => call[0])).toEqual(['https://haatz.quilibrium.com/v2/farcaster/user/followers?fid=1234&limit=20', 'https://haatz.quilibrium.com/v2/farcaster/user/following?fid=1234&limit=20']);
+    for (const query of ['fid=1234&target_fid=3&link_type=block', 'fid=1234&link_type=follow', 'fid=0&target_fid=3&link_type=follow']) {
+      expect((await handleRequest(new Request(`${BASE}/api/v1/linkById?${query}`), env)).status).toBe(400);
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const cursor of ['abc', '18446744073709551616']) expect((await handleRequest(new Request(`${BASE}/api/v2/farcaster/user/following?fid=1234&cursor=${cursor}`), env)).status).toBe(400);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('normalizes only the verified v1 follow NotFound response without echoing upstream details', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'Failed to get link', error_detail: 'status: NotFound, message: "cast not found", details: []' }, 400)));
+    const response = await handleRequest(new Request(`${BASE}/api/v1/linkById?fid=1234&target_fid=3&link_type=follow`), env);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ code: 'follow_not_found', message: 'This follow relationship does not exist.' });
+  });
+
+  it('does not present validation or storage failures as an absent follow', async () => {
+    for (const error of [{ error: 'Failed to get link', error_detail: 'status: Internal, message: db failure' }, { error: 'Other failure', error_detail: 'status: NotFound, message: wrong endpoint' }]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(error, 400)));
+      const response = await handleRequest(new Request(`${BASE}/api/v1/linkById?fid=1234&target_fid=3&link_type=follow`), env);
+      expect(response.status).toBe(400);
+      expect((await response.json() as { code: string }).code).toBe('upstream_error');
+    }
+  });
   it('forwards only an allowlisted read to the fixed node and drops credentials', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse({ casts: [], next: {} }));
     vi.stubGlobal('fetch', fetch);

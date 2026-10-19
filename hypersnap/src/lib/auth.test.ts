@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { getSigners, getUser, submitMessage, type SignersResponse, type User } from './api';
+import { ApiError, getFollowStatus, getSigners, getUser, submitMessage, type SignersResponse, type User } from './api';
 import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation } from './auth';
-import { hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
+import { FULL_SOCIAL_SCOPES, hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
 import { blake3_20 } from './protocol/messageBuilder';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest, signEip712Digest } from './protocol/signedKeyRequest';
 import { deleteSavedVault, readSavedVault, writeSavedVault } from './vault';
+import { mediaGrantPayload } from './media';
 
-vi.mock('./api', () => ({ getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
+vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getFollowStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
 vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
 
 const ORIGIN = 'https://quorum.arca.computer';
@@ -23,7 +24,7 @@ function approvalFor(pending: PendingPairing): PairingApproval {
   return {
     kind: 'arca.hypersnap.signer.approval', version: 1, requestId: request.requestId,
     requestHash: hashPairingRequest(request), custodyAddress: CUSTODY,
-    custodySignature: bytesToHex(signEip712Digest(keyAddDigest({ fid: request.fid, key, keyType: 1, scopes: [1, 3, 4], ttl: 604800, nonce: request.nonce, deadline: request.deadline }), CUSTODY_KEY)),
+    custodySignature: bytesToHex(signEip712Digest(keyAddDigest({ fid: request.fid, key, keyType: 1, scopes: request.scopes, ttl: 604800, nonce: request.nonce, deadline: request.deadline }), CUSTODY_KEY)),
     requestSignature: bytesToHex(signEip712Digest(signedKeyRequestDigest({ requestFid: request.fid, key, deadline: request.deadline }), CUSTODY_KEY)),
   };
 }
@@ -49,8 +50,8 @@ function fields(bytes: Uint8Array): Map<number, Uint8Array | number> {
   return result;
 }
 
-async function connect() {
-  const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN });
+async function connect(requestedScopes?: readonly number[]) {
+  const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN, requestedScopes });
   const approval = approvalFor(pending);
   const session = await pending.complete(approval);
   return { pending, approval, session };
@@ -68,10 +69,105 @@ describe('offline approved per-device authentication', () => {
       const data = fields(fields(envelope).get(1) as Uint8Array);
       if (data.get(1) === 16) {
         const key = fields(data.get(19) as Uint8Array).get(1) as Uint8Array;
-        registry = { ...registry, currentUserNonce: 5, gaslessSignerCount: 1, signers: [{ key: bytesToHex(key), source: 'SIGNER_SOURCE_OFFCHAIN', scopes, requestFid: user.fid, expiresAt: Math.floor(Date.now() / 1000) + 604800 }] };
+        const encodedScopes = fields(data.get(19) as Uint8Array).get(9) as Uint8Array;
+        const names: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
+        registry = { ...registry, currentUserNonce: 5, gaslessSignerCount: 1, signers: [{ key: bytesToHex(key), source: 'SIGNER_SOURCE_OFFCHAIN', scopes: Array.from(encodedScopes, scope => names[scope]), requestFid: user.fid, expiresAt: Math.floor(Date.now() / 1000) + 604800 }] };
       } else if (data.get(1) === 17) registry = { ...registry, signers: [], gaslessSignerCount: 0 };
       return {};
     });
+  });
+
+  it('enables social writes only after a separately approved expanded-scope KEY_ADD', async () => {
+    const { session, pending } = await connect(FULL_SOCIAL_SCOPES);
+    expect(pending.request.scopes).toEqual([1, 3, 4, 5, 6, 11]);
+    expect(session.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    expect(Object.isFrozen(session.scopes)).toBe(true);
+    expect(Array.from(fields(fields(fields(vi.mocked(submitMessage).mock.calls[0][0]).get(1) as Uint8Array).get(19) as Uint8Array).get(9) as Uint8Array)).toEqual(FULL_SOCIAL_SCOPES);
+    await session.follow(3);
+    await session.follow(3, true);
+    const add = fields(fields(vi.mocked(submitMessage).mock.calls[1][0]).get(1) as Uint8Array);
+    const remove = fields(fields(vi.mocked(submitMessage).mock.calls[2][0]).get(1) as Uint8Array);
+    expect(add.get(1)).toBe(5); expect(remove.get(1)).toBe(6);
+    expect(new TextDecoder().decode(fields(add.get(14) as Uint8Array).get(1) as Uint8Array)).toBe('follow');
+    expect(fields(add.get(14) as Uint8Array).get(3)).toBe(3);
+    expect(Number(remove.get(3))).toBeGreaterThan(Number(add.get(3)));
+    const result = await session.updateProfile({ displayName: 'Alice', bio: 'Hello', pfpUrl: 'https://example.com/avatar.png' });
+    expect(result).toEqual({ saved: ['displayName', 'bio', 'pfpUrl'] });
+    const profileMessages = vi.mocked(submitMessage).mock.calls.slice(3).map(([bytes]) => fields(fields(bytes).get(1) as Uint8Array));
+    expect(profileMessages.map(data => data.get(1))).toEqual([11, 11, 11]);
+    expect(profileMessages.map(data => fields(data.get(12) as Uint8Array).get(1))).toEqual([2, 3, 1]);
+    session.dispose();
+  });
+
+  it('does not grant social permissions to existing casting-only keys or unknown scope sets', async () => {
+    const { session } = await connect();
+    await expect(session.follow(3)).rejects.toThrow('Enable social features');
+    expect((await session.updateProfile({ bio: 'Hello' })).failed?.[0].message).toContain('Enable social features');
+    expect(submitMessage).toHaveBeenCalledOnce();
+    await expect(preparePairing({ fid: 1234 }, { origin: ORIGIN, requestedScopes: [1, 3, 4, 5] })).rejects.toThrow('only approves');
+    await expect(preparePairing({ fid: 1234 }, { origin: ORIGIN, requestedScopes: [1, 3, 4, 5, 6, 11, 16] })).rejects.toThrow('only approves');
+    session.dispose();
+  });
+
+  it('retains expanded permissions in an opt-in vault and checks them again when unlocking', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    await session.saveToDevice('synthetic-device-password');
+    expect(vi.mocked(writeSavedVault).mock.calls[0][0].metadata.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    const unlocked = await unlockSavedSession('synthetic-device-password', { origin: ORIGIN });
+    expect(unlocked.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    registry.signers[0].scopes = scopes;
+    await expect(unlocked.follow(3)).rejects.toThrow('no longer authorized');
+    await expect(unlockSavedSession('synthetic-device-password', { origin: ORIGIN })).rejects.toThrow('expired or revoked');
+    session.dispose(); unlocked.dispose();
+  });
+
+  it('stops partial profile writes and quarantines unknown fields across repeated attempts until visibly confirmed', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.mocked(submitMessage).mockResolvedValueOnce({}).mockRejectedValueOnce(new ApiError('Submission status is unknown', 502, 'submission_unknown'));
+    expect(await session.updateProfile({ displayName: 'Alice', bio: 'New bio', pfpUrl: 'https://example.com/avatar.png' })).toEqual({ saved: ['displayName'], failed: [{ field: 'bio', message: 'Submission status is unknown', unknown: true }, { field: 'pfpUrl', message: 'Not submitted because the previous change did not complete.', unknown: false }] });
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    await expect(session.updateProfile({ bio: 'New bio' })).rejects.toThrow('unknown status');
+    await session.refreshProfile();
+    await expect(session.updateProfile({ bio: 'Different bio' })).rejects.toThrow('unknown status');
+    vi.mocked(getUser).mockResolvedValue({ ...user, profile: { bio: { text: 'New bio' } } });
+    await session.refreshProfile();
+    expect(await session.updateProfile({ bio: 'Another bio' })).toEqual({ saved: ['bio'] });
+    session.dispose();
+  });
+
+  it('validates the complete profile edit before writing even the first field', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    await expect(session.updateProfile({ displayName: 'Fine', bio: '😀'.repeat(65) })).rejects.toThrow('256 UTF-8');
+    expect(submitMessage).toHaveBeenCalledOnce();
+    session.dispose();
+  });
+
+  it('does not replay uncertain follow writes and waits for the requested relationship before another change', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Unknown', 502, 'submission_unknown'));
+    await expect(session.follow(3)).rejects.toThrow('Unknown');
+    vi.mocked(getFollowStatus).mockResolvedValue(false);
+    await expect(session.follow(3)).rejects.toThrow('unknown status');
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    vi.mocked(getFollowStatus).mockResolvedValue(true);
+    await session.follow(3, true);
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    session.dispose();
+  });
+
+  it('encodes real mentions at UTF-8 positions with media and rejects misaligned or unsafe input before submitting', async () => {
+    const { session } = await connect();
+    await session.cast('😀 hi ', undefined, { mentions: [3], mentionsPositions: [8], embeds: [{ url: 'https://example.com/image.png' }] });
+    const data = fields(fields(vi.mocked(submitMessage).mock.calls[1][0]).get(1) as Uint8Array);
+    const body = fields(data.get(5) as Uint8Array);
+    expect(Array.from(body.get(2) as Uint8Array)).toEqual([3]);
+    expect(Array.from(body.get(5) as Uint8Array)).toEqual([8]);
+    expect(new TextDecoder().decode(fields(body.get(6) as Uint8Array).get(1) as Uint8Array)).toBe('https://example.com/image.png');
+    for (const options of [{ mentions: [3], mentionsPositions: [1] }, { mentions: [3], mentionsPositions: [] }, { mentions: [0], mentionsPositions: [0] }, { mentions: [3], mentionsPositions: [99] }, { embeds: [{ url: 'javascript:alert(1)' }] }, { embeds: Array(3).fill({ url: 'https://example.com/image.png' }) }]) {
+      await expect(session.cast('😀 hi ', undefined, options)).rejects.toThrow();
+    }
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
   });
 
   it('creates independent random keys and immutable public requests without writes or persistence', async () => {
@@ -87,6 +183,20 @@ describe('offline approved per-device authentication', () => {
     expect(writeSavedVault).not.toHaveBeenCalled();
     expect(Object.keys(first)).toEqual(['request', 'user', 'submitted', 'complete', 'dispose']);
     first.dispose(); second.dispose();
+  });
+
+  it('authorizes only a bounded domain-separated media grant with an active casting key and never exposes its signer', async () => {
+    const { session } = await connect();
+    const grant = await session.authorizeMediaUpload({ origin: ORIGIN, sha256: 'ab'.repeat(32), size: 123, contentType: 'image/png' });
+    expect(ed25519.verify(hexToBytes(grant.signature), mediaGrantPayload(grant), hexToBytes(session.publicKey))).toBe(true);
+    expect(grant.fid).toBe(user.fid);
+    expect(grant.expiresAt - grant.issuedAt).toBe(120);
+    expect(submitMessage).toHaveBeenCalledOnce();
+    await expect(session.authorizeMediaUpload({ origin: 'https://evil.example', sha256: 'ab'.repeat(32), size: 123, contentType: 'image/png' })).rejects.toThrow('Choose a JPEG');
+    registry.signers = [];
+    await expect(session.authorizeMediaUpload({ origin: ORIGIN, sha256: 'ab'.repeat(32), size: 123, contentType: 'image/png' })).rejects.toThrow('no longer authorized');
+    session.dispose();
+    await expect(session.authorizeMediaUpload({ origin: ORIGIN, sha256: 'ab'.repeat(32), size: 123, contentType: 'image/png' })).rejects.toThrow('session has ended');
   });
 
   it('verifies real synthetic custody signatures and submits scoped KEY_ADD, then waits for confirmed inclusion', async () => {

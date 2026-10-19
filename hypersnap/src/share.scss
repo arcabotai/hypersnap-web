@@ -1,0 +1,29 @@
+.share-cast {
+  min-width: 0;
+
+  &__intro, &__status {
+    color: var(--color-text-subtle);
+    font-size: .8rem;
+    line-height: 1.7;
+  }
+
+  .field-label {
+    margin-top: 1rem;
+  }
+
+  .input {
+    font-size: .75rem;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem;
+    margin-top: 1rem;
+  }
+
+  &__status {
+    margin: 1rem 0 0;
+    overflow-wrap: anywhere;
+  }
+}
