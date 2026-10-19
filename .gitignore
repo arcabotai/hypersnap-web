@@ -4,6 +4,9 @@
 # dependencies
 .vite/
 /node_modules
+**/node_modules/
+**/dist/
+**/.wrangler/
 /.pnp
 .pnp.js
 .vite

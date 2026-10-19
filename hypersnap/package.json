@@ -1,0 +1,34 @@
+{
+  "name": "quorum-hypersnap-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "verify": "yarn test && yarn build"
+  },
+  "dependencies": {
+    "@scure/bip32": "1.7.0",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "1.8.0",
+    "@scure/bip39": "1.6.0",
+    "@tabler/icons-react": "^3.40.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "viem": "^2.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "sass": "^1.98.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.0"
+  },
+  "packageManager": "yarn@1.22.22"
+}

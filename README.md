@@ -1,3 +1,32 @@
+# Quorum for Hypersnap · by Arca
+
+A public browser client for Hypersnap, forked from [Quorum Desktop](https://github.com/QuilibriumNetwork/quorum-desktop). The standalone entry lives in [`hypersnap/`](./hypersnap/); the original Quorum messenger source and build are retained below.
+
+Target deployment: **https://quorum.arca.computer** · [Fork source](https://github.com/arcabotai/hypersnap-web)
+
+```sh
+cd hypersnap
+yarn install --frozen-lockfile
+yarn dev
+# Verify the standalone client, including the Worker:
+yarn verify
+# Build and deploy to the configured Cloudflare account/domain:
+yarn build
+wrangler deploy
+```
+
+The public client supports trending/following/user/channel feeds, profile lookup, conversations, casts, replies, likes, recasts, and browser-local bookmarks. Feeds are read from the public Hypersnap node at `haatz.quilibrium.com` through a fixed-origin Cloudflare Worker. No Supabase, hosted auth, API key, or backend wallet is required.
+
+Recovery phrases are derived in the browser using open-source BIP39/BIP32 libraries. The custody wallet authorizes a deterministic, scoped Ed25519 app signer through Hypersnap's gasless KEY_ADD protocol. The phrase is cleared from the field before network access, mutable custody buffers are wiped, and the app signer stays in memory until sign-out or tab closure. JavaScript cannot guarantee erasure of immutable strings. Signing scopes are limited to casts and reactions, with a 90-day registration TTL. Signing out clears this tab's key; it does not revoke the registered public key. The same custody phrase derives the same domain-separated app signer on the next connection.
+
+Use an **existing Farcaster custody-wallet recovery phrase**, not a merely verified wallet. The app does not create FIDs, recover unavailable accounts, or move funds. Casting on a Hypersnap channel depends on upstream channel indexing; the public node can return empty channel feeds. Submit acknowledgements are distinct from confirmed inclusion. No casts or signer registrations were submitted during automated verification; write paths are tested with protocol golden vectors and mocked node responses.
+
+See [`hypersnap/README.md`](./hypersnap/README.md) for architecture, verification, and operational limits. This is an independent fork, not an official Quilibrium release. Original AGPL-3.0 license and attribution are preserved; adapted shared protocol code is attributed in [`hypersnap/THIRD_PARTY_NOTICES.md`](./hypersnap/THIRD_PARTY_NOTICES.md).
+
+---
+
+## Original Quorum messenger documentation
+
 # Quorum Desktop
 
 The world's first fully private and decentralized group messenger.

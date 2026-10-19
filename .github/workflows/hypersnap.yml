@@ -1,0 +1,23 @@
+name: Hypersnap client
+on:
+  push:
+    paths: ['hypersnap/**', '.github/workflows/hypersnap.yml']
+  pull_request:
+    paths: ['hypersnap/**', '.github/workflows/hypersnap.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hypersnap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: hypersnap/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - run: yarn verify
