@@ -12,6 +12,8 @@ The website never asks for your recovery phrase. Use a compatible wallet app to 
 
 Direct browser connections use standard EIP-1193 requests and EIP-6963 discovery. Wallet providers and their supplied names are not authenticated by discovery; choose software you trust. A malicious extension can impersonate another wallet. The optional WalletConnect route connects a separate wallet app through Reown's external relay; it needs a configured public project ID. Neither route uses a Farcaster sign-in service.
 
+The mobile app buttons include MetaMask, Trust Wallet, and Rainbow. Rainbow uses its [official universal WalletConnect link](https://github.com/rainbow-me/rainbowkit/blob/main/packages/rainbowkit/src/wallets/walletConnectors/rainbowWallet/rainbowWallet.ts) for pairing and `rainbow://wc` to reopen pending signature requests. On desktop, Rainbow can scan the same WalletConnect QR code; its compatible extension is discovered through the browser wallet option. Physical wallet/browser combinations still require device testing.
+
 ### WalletConnect privacy and connection lifetime
 
 WalletConnect encrypts messages between the browser and wallet. Recovery phrases and custody private keys stay in the wallet. Encryption does not hide routing metadata: the relay can observe connection IPs, project/client identifiers, random topics, message sizes, timing, and protocol tags. Verify can receive the site's origin and message identifiers for domain attestation. Reown's [privacy policy](https://reown.com/privacy-policy) also describes data collected across its broader services; do not treat encrypted transport as anonymity.

@@ -7,14 +7,18 @@ import { approvePairingWithWallet, approveRevocationWithWallet } from '../lib/wa
 import { withWalletConnect, WALLETCONNECT_SETUP_TIMEOUT_MS, WALLETCONNECT_PAIRING_TIMEOUT_MS, WALLETCONNECT_SIGN_TIMEOUT_MS } from '../lib/walletConnect';
 import type { PairingApproval, PairingRequest, RevocationApproval, RevocationRequest } from '../lib/pairing';
 
-type WalletName = 'MetaMask' | 'Trust Wallet';
 type Phase = 'starting' | 'pairing' | 'signing' | 'error';
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '';
 // Fixed, reviewed wallet routes. Never follow redirects supplied by a session.
 const walletLinks = {
   MetaMask: { pair: 'https://link.metamask.io/wc?uri=', reopen: 'metamask://home' },
   'Trust Wallet': { pair: 'https://link.trustwallet.com/wc?uri=', reopen: 'trust://' },
+  // Rainbow's universal pairing link and pending WalletConnect request route.
+  // https://github.com/rainbow-me/rainbowkit/blob/main/packages/rainbowkit/src/wallets/walletConnectors/rainbowWallet/rainbowWallet.ts
+  Rainbow: { pair: 'https://rnbwapp.com/wc?uri=', reopen: 'rainbow://wc' },
 } as const;
+type WalletName = keyof typeof walletLinks;
+const walletNames = Object.keys(walletLinks) as WalletName[];
 
 export default function WalletConnectPanel({ request, onApproved, onBusy, onError, onClose }: {
   request: PairingRequest | RevocationRequest;
@@ -98,7 +102,7 @@ export default function WalletConnectPanel({ request, onApproved, onBusy, onErro
       <div className="walletconnect-qr">{qr ? <img src={qr} alt="WalletConnect pairing QR code. Scan with your wallet app." width={280} height={280} /> : <span role="status">{qrError ? 'QR code could not be displayed. Use an app button below or retry.' : 'Generating QR code on this device…'}</span>}</div>
     </>}
     {(phase === 'pairing' || signing) && <div className="walletconnect-apps">
-      {((selectedWallet && signing) ? [selectedWallet] : ['MetaMask', 'Trust Wallet'] as WalletName[]).map(wallet => <a key={wallet} className="button button--secondary" href={walletHref(wallet)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={() => setSelectedWallet(wallet)}><IconWallet size={16} />{signing ? `Open ${wallet} to approve` : `Open ${wallet}`}<IconArrowUpRight size={15} /></a>)}
+      {((selectedWallet && signing) ? [selectedWallet] : walletNames).map(wallet => <a key={wallet} className="button button--secondary" href={walletHref(wallet)} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={() => setSelectedWallet(wallet)}><IconWallet size={16} />{signing ? `Open ${wallet} to approve` : `Open ${wallet}`}<IconArrowUpRight size={15} /></a>)}
     </div>}
     {signing && <p className="walletconnect-return">Signature {signRequest || 1}{request.kind === 'arca.hypersnap.signer.request' ? ' of 2' : ' of 1'}. Approve the current request in your wallet, then return here. For each new signature prompt, tap <strong>Open wallet to approve</strong> again if your phone does not switch automatically.</p>}
     {phase !== 'error' && <p className="pairing-release">Setup times out after {WALLETCONNECT_SETUP_TIMEOUT_MS / 1000} seconds, pairing after {WALLETCONNECT_PAIRING_TIMEOUT_MS / 60000} minutes, and each signature request after {WALLETCONNECT_SIGN_TIMEOUT_MS / 60000} minutes. Canceling disconnects this wallet session. Reject any request still visible in your wallet; this website cannot close the wallet app.</p>}
