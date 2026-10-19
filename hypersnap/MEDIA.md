@@ -90,3 +90,48 @@ image read `200`, duplicate-content upload `200`. The installed local runtime
 supports compatibility dates through `2026-10-02`, so that smoke used that date;
 the existing deployed Worker configuration remains `2026-10-19`. Wrangler's
 deployment dry run also accepted the R2 and Durable Object bindings.
+
+### Repeatable isolated browser/node harness
+
+`scripts/e2e-media-runtime.mjs` now provides a reusable runtime backed by actual
+local R2 and SQLite Durable Objects. Its outbound service forwards the unchanged
+production gateway's fixed Hypersnap destination to a supplied **loopback**
+Hypersnap node. It never synthesizes a registry response. `runMediaChecks` first
+requires the synthetic fixture's offchain device key to be present in that
+node's registry, then checks accepted upload, replay rejection, byte-exact image
+read, invalid image, expired grant and unregistered signer.
+
+`scripts/e2e-media-server.mjs` exposes that runtime on a loopback-only HTTP port
+for the browser's Vite proxy. Supply `--node`, `--origin` and `--port`; optional
+`--identity-file` runs the authenticated checks before listening. The fixture
+file must have kind `arca.hypersnap.e2e.identity`, version `1`, its local FID and
+the synthetic `devicePrivateKeyHex`. A real user wallet, recovery phrase, public
+node URL or production R2 bucket is never accepted by this harness.
+
+The exported `viteTestOriginPlugin` rewrites the two production website origins
+to the configured loopback origin **only in the separate test build**. It also
+permits that exact origin's `/media/<sha256>` URLs through the avatar preview,
+profile-picture validator, cast embed validator and App image renderer, and
+rewrites the hosted-image recognition regex. Other HTTP origins and paths remain
+rejected. These test-only URL substitutions do not change EIP-712 domains,
+message schemas, registered signer checks, production assets or production
+HTTPS-only URL policy. They are necessary because loopback HTTP is a browser
+secure context, while those production UI guards intentionally require HTTPS.
+
+The test image uses the repository's real `public/unknown-dark.png`, so image
+decoding can be observed as well as byte transport. A runtime bootstrap check
+has verified unsigned upload `401`, absent image `404`, frontend assets `200`
+with CSP, and no registry call for the unsigned request. Authenticated E2E
+coverage requires a running local Hypersnap node and its registered fixture;
+bootstrap results alone do not establish that coverage.
+
+The actual-node run subsequently passed against Hypersnap `0.13.5` in Mainnet
+mode on `127.0.0.1:13381`, using the synthetic FID `1234` only after its offchain
+device key was registered and confirmed across a cold restart. With the
+canonical production HTTPS origin and **no origin/URL-guard transformations**,
+`scripts/e2e-media-checks.mjs` reported: registry `200`, upload `200`, replay
+`409`, image `200` with exact bytes, invalid image `415`, expired grant `401`,
+and unregistered key `403`. Registry responses came from that actual Hypersnap
+node; R2 and SQLite Durable Objects ran in the local Cloudflare runtime. This
+validates the backend flow independently of the separate loopback browser UI
+build. No production account or R2 bucket received an upload.

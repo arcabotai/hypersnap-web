@@ -192,6 +192,7 @@ export default function App() {
   const [profile, setProfile] = useState<User | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const profileRead = useRef<AbortController | null>(null);
   const [casts, setCasts] = useState<Cast[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -292,7 +293,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (view !== 'profile') { setProfile(null); setProfileError(''); return; }
-    const controller = new AbortController(); setProfileError('');
+    const controller = new AbortController(); profileRead.current = controller; setProfileError('');
     if (!profileIdentifier && !session) { setProfile(null); setProfileLoading(false); return; }
     const identifier = profileIdentifier ?? String(session!.fid);
     const cached = profileCache.current.get(identifier) ?? (session && identifier === String(session.fid) ? session.user : null);
@@ -302,7 +303,9 @@ export default function App() {
       .catch(error => { if (!controller.signal.aborted) setProfileError(message(error)); })
       .finally(() => { if (!controller.signal.aborted) setProfileLoading(false); });
     return () => controller.abort();
-  }, [view, profileIdentifier, session, refresh]);
+    // Updating the session's display fields must not trigger a second profile
+    // read or reset the feed. Reads follow identity changes or explicit refresh.
+  }, [view, profileIdentifier, session?.fid, session?.publicKey, refresh]);
   useEffect(() => { document.title = route.kind === 'cast' ? 'Conversation · Quorum' : `${activeTitle} · Quorum`; }, [route.kind, activeTitle]);
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('quorum.theme', dark ? 'dark' : 'light'); }, [dark]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 6500); return () => clearTimeout(timer); }, [toast]);
@@ -324,7 +327,7 @@ export default function App() {
       .catch(error => { if (!controller.signal.aborted) setError(message(error)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [view, channel, session, profile?.fid, refresh]);
+  }, [view, channel, session?.fid, session?.publicKey, profile?.fid, refresh]);
   useEffect(() => {
     if (route.kind !== 'cast') { setThread(null); setConversation(null); setThreadError(''); return; }
     const controller = new AbortController(); setConversation(null); setThreadError('');
@@ -410,6 +413,9 @@ export default function App() {
     {route.kind === 'cast' && <Modal title="Conversation" onClose={closeThread} wide>{thread && card(thread)}{threadError ? <div className="empty"><p className="error">{threadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : conversation && thread ? <><Composer key={`${session?.publicKey ?? 'guest'}:${thread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={thread} notify={notify} />{conversation.replies.length ? <ConversationReplies nodes={conversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</Modal>}
     {followList && profile && <FollowListDialog key={`${profile.fid}:${followList}`} user={profile} kind={followList} loadPage={getFollows} onProfile={openProfile} onClose={() => setFollowList(null)} />}
     {editProfile && session && profile?.fid === session.fid && <EditProfileDialog key={profile.fid} user={profile} onSave={patch => session.updateProfile(patch)} onUpload={(file, signal) => uploadMedia(file, input => session.authorizeMediaUpload(input), signal)} onReload={() => session.refreshProfile()} onSaved={patch => {
+      // An older profile read can finish after the session confirms this edit.
+      // Cancel it before publishing the confirmed values to the profile cache.
+      profileRead.current?.abort(); setProfileLoading(false); setProfileError('');
       const updated: User = { ...profile, ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}), ...(patch.pfpUrl !== undefined ? { pfp_url: patch.pfpUrl } : {}), profile: { ...profile.profile, bio: { text: patch.bio ?? profile.profile?.bio?.text ?? '' } } };
       profileCache.current.set(String(updated.fid), updated); if (updated.username) profileCache.current.set(updated.username, updated);
       setProfile(updated); setSession(current => current?.publicKey === session.publicKey ? { ...current, user: updated } : current);

@@ -60,6 +60,8 @@ export interface Signer {
   key: string;
   fid?: number;
   source?: string;
+  /** KEY_ADD timestamp expressed as Unix epoch seconds by the node. */
+  addedAt?: number;
   expiresAt?: number;
   scopes?: string[];
   requestFid?: number;
@@ -251,7 +253,15 @@ export async function getFollowStatus(viewerFid: number, targetFid: number, sign
     if (result.data?.type !== 'MESSAGE_TYPE_LINK_ADD' || result.data.fid !== viewerFid || result.data.linkBody?.type !== 'follow' || result.data.linkBody.targetFid !== targetFid) throw new ApiError('The node returned an invalid follow relationship.', 502, 'invalid_response');
     return true;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404 && error.code === 'follow_not_found') return false;
+    if (error instanceof ApiError && error.status === 404 && error.code === 'follow_not_found') {
+      // Imported accounts can keep follows in LINK_COMPACT_STATE rather than
+      // individual LINK_ADD messages. Hypersnap's effective social index also
+      // applies later removals. Its cursor is an exclusive target-FID bound,
+      // so one seek checks this relationship without downloading the graph.
+      const page = await getFollows({ fid: viewerFid, kind: 'following', cursor: String(targetFid - 1), limit: 1, signal });
+      if (page.users.length > 1 || page.users.some(user => user.fid < targetFid)) throw new ApiError('The node returned an invalid follow relationship.', 502, 'invalid_response');
+      return page.users[0]?.fid === targetFid;
+    }
     throw error;
   }
 }

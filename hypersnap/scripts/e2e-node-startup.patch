@@ -1,0 +1,24 @@
+diff --git a/src/node/snapchain_node.rs b/src/node/snapchain_node.rs
+--- a/src/node/snapchain_node.rs
++++ b/src/node/snapchain_node.rs
+@@ -178,18 +178,8 @@ impl SnapchainNode {
+         let block_shard = SnapchainShard::new(0);
+ 
+         // We might want to use different keys for the block shard so signatures are different and cannot be accidentally used in the wrong shard
+-        let trie = MerkleTrie::new().unwrap();
+-        let block_db =
+-            RocksDB::open_shard_db_with_cache(rocksdb_dir.as_str(), 0, block_cache.clone());
+-        let engine = BlockEngine::new(
+-            trie,
+-            statsd_client.clone(),
+-            block_db,
+-            config.max_messages_per_block,
+-            Some(messages_request_tx.clone()),
+-            network,
+-        );
+-        let block_stores = engine.stores();
++        // Isolated E2E startup correction: reuse the block engine opened above
++        // instead of attempting to lock the same RocksDB shard a second time.
+         let hyper_block_engine = if let Some(ref hyper_dir) = hyper_db_dir {
+             let hyper_trie = MerkleTrie::new().unwrap();
+             let hyper_block_db =

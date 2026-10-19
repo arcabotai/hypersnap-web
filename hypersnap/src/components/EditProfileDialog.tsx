@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { IconCheck, IconPhoto, IconRefresh, IconUpload } from '@tabler/icons-react';
 import type { User } from '../lib/api';
 import { profileChanges, type ProfileField, type ProfilePatch, type ProfileUpdateResult } from '../lib/social';
+import { profileDraft, type ProfileValues } from '../lib/profileDraft';
 import { Button, Input, Modal } from './ui';
 import '../social.scss';
 
@@ -12,7 +13,7 @@ export type ProfileSaveResult = ProfileUpdateResult;
 const FIELDS: ProfileField[] = ['displayName', 'bio', 'pfpUrl'];
 const LABELS: Record<ProfileField, string> = { displayName: 'Display name', bio: 'Bio', pfpUrl: 'Profile image' };
 const LIMITS: Record<ProfileField, number> = { displayName: 32, bio: 256, pfpUrl: 256 };
-type Values = Record<ProfileField, string>;
+type Values = ProfileValues;
 const byteLength = (value: string) => new TextEncoder().encode(value).length;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message.slice(0, 240) : 'This action could not be completed.';
 const profileValues = (user: User): Values => ({ displayName: user.display_name ?? '', bio: user.profile?.bio?.text ?? '', pfpUrl: user.pfp_url ?? '' });
@@ -48,10 +49,9 @@ export default function EditProfileDialog({ user, onSave, onUpload, onReload, on
   const uploadController = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const writing = useRef(false);
-  const changedFields = FIELDS.filter(field => values[field] !== baseline[field]);
-  const valid = FIELDS.every(field => byteLength(values[field]) <= LIMITS[field]) && (!values.pfpUrl || safeImage(values.pfpUrl));
   const uncertainFields = FIELDS.filter(field => unknown[field] !== undefined);
-  const canSave = changedFields.some(field => unknown[field] === undefined) && valid && !busy;
+  const draft = profileDraft(baseline, values, uncertainFields);
+  const canSave = Object.keys(draft.changes).length > 0 && Object.keys(draft.errors).length === 0 && !busy;
 
   useEffect(() => () => { generation.current += 1; uploadController.current?.abort(); }, []);
 
@@ -97,8 +97,7 @@ export default function EditProfileDialog({ user, onSave, onUpload, onReload, on
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!canSave || writing.current) return;
-    const changes: ProfilePatch = {};
-    for (const field of changedFields) if (unknown[field] === undefined) changes[field] = values[field];
+    const changes = draft.changes;
     try { profileChanges(changes); }
     catch (cause) { setError(errorMessage(cause)); return; }
     const run = ++generation.current;
@@ -167,7 +166,7 @@ export default function EditProfileDialog({ user, onSave, onUpload, onReload, on
   }
 
   return <Modal title="Edit profile" onClose={close}>
-    <form className="edit-profile" onSubmit={event => void save(event)}>
+    <form className="edit-profile" noValidate onSubmit={event => void save(event)}>
       <p className="social-intro">Update how you appear on Hypersnap. Your username and account identity stay the same.</p>
       <div className="edit-profile__image-row">
         <div className="edit-profile__preview">{safeImage(values.pfpUrl) && brokenImage !== values.pfpUrl ? <img src={values.pfpUrl} alt="Profile image preview" referrerPolicy="no-referrer" onError={() => setBrokenImage(values.pfpUrl)} /> : <IconPhoto size={28} />}</div>
@@ -178,8 +177,8 @@ export default function EditProfileDialog({ user, onSave, onUpload, onReload, on
       </div>
       {FIELDS.map(field => <div className="social-field" key={field}>
         <label htmlFor={`${prefix}-${field}`}>{field === 'pfpUrl' ? 'Profile image URL' : LABELS[field]}</label>
-        {field === 'bio' ? <textarea id={`${prefix}-${field}`} value={values[field]} rows={4} disabled={!!busy || unknown[field] !== undefined} onChange={event => update(field, event.target.value)} aria-describedby={`${prefix}-${field}-help`} aria-invalid={byteLength(values[field]) > LIMITS[field] || failedFields.includes(field)} /> : <Input id={`${prefix}-${field}`} value={values[field]} type={field === 'pfpUrl' ? 'url' : 'text'} disabled={!!busy || unknown[field] !== undefined} onChange={event => update(field, event.target.value)} autoComplete="off" aria-describedby={`${prefix}-${field}-help`} aria-invalid={byteLength(values[field]) > LIMITS[field] || failedFields.includes(field) || (field === 'pfpUrl' && !!values[field] && !safeImage(values[field]))} />}
-        <p id={`${prefix}-${field}-help`} className={byteLength(values[field]) > LIMITS[field] ? 'error' : 'muted'}>{byteLength(values[field])}/{LIMITS[field]} bytes{field === 'pfpUrl' ? ' · use a public HTTPS image URL or leave blank' : ''}{unknown[field] !== undefined ? ' · waiting for confirmation' : ''}</p>
+        {field === 'bio' ? <textarea id={`${prefix}-${field}`} value={values[field]} rows={4} disabled={!!busy || unknown[field] !== undefined} onChange={event => update(field, event.target.value)} aria-describedby={`${prefix}-${field}-help`} aria-invalid={!!draft.errors[field] || failedFields.includes(field)} /> : <Input id={`${prefix}-${field}`} value={values[field]} type={field === 'pfpUrl' ? 'url' : 'text'} disabled={!!busy || unknown[field] !== undefined} onChange={event => update(field, event.target.value)} autoComplete="off" aria-describedby={`${prefix}-${field}-help`} aria-invalid={!!draft.errors[field] || failedFields.includes(field)} />}
+        <p id={`${prefix}-${field}-help`} className={draft.errors[field] ? 'error' : 'muted'}>{byteLength(values[field])}/{LIMITS[field]} bytes{draft.errors[field] ? ` · ${draft.errors[field]}` : field === 'pfpUrl' ? ' · new images need a public HTTPS URL; leave blank to remove' : ''}{unknown[field] !== undefined ? ' · waiting for confirmation' : ''}</p>
       </div>)}
       {!!uncertainFields.length && <div className="social-uncertain"><strong>Some saves are not confirmed</strong><p>Successful changes are kept. Unconfirmed fields will not be sent again automatically. A profile check can confirm a change once it appears on the node.</p></div>}
       {error && <p className="error" role="alert">{error}</p>}

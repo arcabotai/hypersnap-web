@@ -33,6 +33,26 @@ describe('the fixed Hypersnap gateway', () => {
     expect(await response.json()).toEqual({ code: 'follow_not_found', message: 'This follow relationship does not exist.' });
   });
 
+  it('recognizes Hypersnap device-key rate limiting wrapped in HTTP 400', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'Failed to submit message', error_detail: 'status: InvalidArgument, message: "bad_request.rate_limited/rate limit exceeded for FID 1234", details: [], metadata: MetadataMap { headers: {"x-err-code": "bad_request.rate_limited"} }' }, 400)));
+    const response = await handleRequest(new Request(`${BASE}/api/v1/submitMessage`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: new Uint8Array([8, 1]) }), env);
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ code: 'rate_limited', message: 'Hypersnap is limiting new approvals or messages. Wait at least one minute before trying again.' });
+  });
+
+  it('does not confuse unrelated signed-message rejection with the verified rate-limit error', async () => {
+    for (const value of [
+      { error: 'Different endpoint', error_detail: 'status: InvalidArgument, message: "bad_request.rate_limited/rate limit exceeded for FID 1234",' },
+      { error: 'Failed to submit message', error_detail: 'status: InvalidArgument, message: "bad_request.validation_failure/invalid signature",' },
+      { error: 'Failed to submit message', error_detail: 'untrusted echoed rate_limited text' },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(value, 400)));
+      const response = await handleRequest(new Request(`${BASE}/api/v1/submitMessage`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: new Uint8Array([8, 1]) }), env);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ code: 'upstream_error', message: 'The node rejected this signed message. Check your signer and try again.' });
+    }
+  });
+
   it('does not present validation or storage failures as an absent follow', async () => {
     for (const error of [{ error: 'Failed to get link', error_detail: 'status: Internal, message: db failure' }, { error: 'Other failure', error_detail: 'status: NotFound, message: wrong endpoint' }]) {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(error, 400)));

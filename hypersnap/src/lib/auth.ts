@@ -10,6 +10,7 @@ import { createMediaUploadGrant, type MediaUploadInput, type MediaUploadGrant } 
 export const SIGNER_TTL_SECONDS = PAIRING_TTL_SECONDS;
 const SIGNER_SCOPE_NAMES: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
 const CONFIRMATION_TIMEOUT_MS = 45_000;
+const KEY_ADD_COOLDOWN_SECONDS = 60;
 
 export interface CastTarget { fid: number; hash: string }
 export interface WriteReceipt { hash: string }
@@ -128,6 +129,16 @@ export async function preparePairing(lookup: { fid?: number; username?: string; 
   const registry = await getSigners(user.fid, options.signal);
   assertActive(options.signal);
   if (registry.gaslessSignerLimit !== undefined && registry.gaslessSignerCount !== undefined && registry.gaslessSignerCount >= registry.gaslessSignerLimit) throw new Error('This identity has reached its app signer limit. Revoke an unused signer before connecting.');
+  // Hypersnap admits only one KEY_ADD per minute per FID. Inspect the complete
+  // fresh registry before generating a key or asking the custody wallet to sign.
+  // On-chain additions do not consume this quota, and older nodes may omit the
+  // public timestamp. The node remains authoritative in those fallback cases.
+  const now = Math.floor(Date.now() / 1000);
+  const latestAdd = registry.signers.reduce((latest, signer) => signer.source === 'SIGNER_SOURCE_OFFCHAIN'
+    && Number.isSafeInteger(signer.addedAt) && Number(signer.addedAt) > 0 && Number(signer.addedAt) <= now
+    ? Math.max(latest, Number(signer.addedAt)) : latest, 0);
+  const waitSeconds = latestAdd + KEY_ADD_COOLDOWN_SECONDS - now;
+  if (waitSeconds > 0) throw new ApiError(`Hypersnap allows one device-key approval per minute. Wait ${waitSeconds} ${waitSeconds === 1 ? 'second' : 'seconds'}, then find your account again. Existing device access is unchanged.`, 429, 'key_approval_cooldown');
   let privateKey: Uint8Array | undefined = crypto.getRandomValues(new Uint8Array(32));
   try {
     const createdAt = Math.floor(Date.now() / 1000);
@@ -172,7 +183,18 @@ export async function preparePairing(lookup: { fid?: number; username?: string; 
             if (disposed) throw new Error('This authorization request has ended.');
             completionOptions.onProgress?.('Submitting your approved device signer…');
             submitted = true; // An uncertain outcome must never retry the write.
-            await submitMessage(envelope, completionOptions.signal);
+            try {
+              await submitMessage(envelope, completionOptions.signal);
+            } catch (error) {
+              // A verified admission-rate rejection proves this attempt was not
+              // accepted. An explicit retry keeps the approval but rechecks the
+              // current custody and nonce above; unknown outcomes stay read-only.
+              if (error instanceof ApiError && error.status === 429 && error.code === 'rate_limited') {
+                submitted = false;
+                throw new ApiError('Hypersnap allows one new device key per account per minute. Wait at least one minute, then submit this approved key again.', 429, 'rate_limited');
+              }
+              throw error;
+            }
           }
           completionOptions.onProgress?.('Checking signer confirmation…');
           await confirmSigner(request.fid, request.publicKey, true, completionOptions, request.scopes);
@@ -266,6 +288,31 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
     await submitMessage(envelope);
     return { hash: bytesToHex(hash) };
   };
+  const confirmProfileField = async (field: ProfileField, attempted: string): Promise<void> => {
+    // submitMessage acknowledges the mempool. Only a fresh read of the matching
+    // custody account can establish that its visible profile contains the edit.
+    // This timer also bounds an in-flight read, not just the gaps between polls.
+    const controller = new AbortController();
+    const deadline = Date.now() + CONFIRMATION_TIMEOUT_MS;
+    const timer = setTimeout(() => controller.abort(), CONFIRMATION_TIMEOUT_MS);
+    try {
+      do {
+        assertSession();
+        const observed = await getUser({ fid: metadata.fid }, controller.signal);
+        assertSession();
+        if (controller.signal.aborted || Date.now() >= deadline) throw new Error('Profile confirmation timed out.');
+        if (observed.fid !== metadata.fid || custodyAddress(observed) !== metadata.custodyAddress) throw new Error('Account custody changed during profile confirmation.');
+        const visible = field === 'displayName' ? observed.display_name ?? '' : field === 'bio' ? observed.profile?.bio?.text ?? '' : observed.pfp_url ?? '';
+        if (visible === attempted) return;
+        await delay(1500, controller.signal);
+      } while (Date.now() < deadline);
+      throw new Error('The profile update is not visible yet.');
+    } catch {
+      // Once submitted, even a read error or local lock cannot prove a failure.
+      // The caller quarantines this field and never submits it automatically.
+      throw new ApiError('Profile save status is unknown. Check the public profile before editing this field again.', 504, 'submission_unknown');
+    } finally { clearTimeout(timer); }
+  };
   return {
     user, fid: metadata.fid, custodyAddress: metadata.custodyAddress, publicKey: metadata.publicKey, scopes: Object.freeze([...metadata.scopes]),
     async cast(text, parent, options = {}) {
@@ -319,6 +366,7 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
           const change = changes[index];
           try {
             await send({ type: MessageType.USER_DATA_ADD, fid: metadata.fid, body: { userDataBody: { type: change.type, value: change.value } } });
+            await confirmProfileField(change.field, change.value);
             result.saved.push(change.field);
           } catch (error) {
             const unknown = error instanceof ApiError && error.code === 'submission_unknown';

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { ApiError, getFollowStatus, getSigners, getUser, submitMessage, type SignersResponse, type User } from './api';
 import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation } from './auth';
@@ -17,6 +17,7 @@ const CUSTODY = addressFromCustodyPrivateKey(CUSTODY_KEY);
 const user = { fid: 1234, username: 'test', display_name: 'Test', custody_address: CUSTODY } as User;
 const scopes = ['MESSAGE_TYPE_CAST_ADD', 'MESSAGE_TYPE_REACTION_ADD', 'MESSAGE_TYPE_REACTION_REMOVE'];
 let registry: SignersResponse;
+let currentProfile: User;
 
 function approvalFor(pending: PendingPairing): PairingApproval {
   const request = pending.request;
@@ -50,6 +51,16 @@ function fields(bytes: Uint8Array): Map<number, Uint8Array | number> {
   return result;
 }
 
+function mergeProfileMessage(envelope: Uint8Array): void {
+  const data = fields(fields(envelope).get(1) as Uint8Array);
+  if (data.get(1) !== 11) return;
+  const body = fields(data.get(12) as Uint8Array);
+  const value = new TextDecoder().decode(body.get(2) as Uint8Array ?? new Uint8Array());
+  if (body.get(1) === 2) currentProfile = { ...currentProfile, display_name: value };
+  else if (body.get(1) === 1) currentProfile = { ...currentProfile, pfp_url: value };
+  else if (body.get(1) === 3) currentProfile = { ...currentProfile, profile: { ...currentProfile.profile, bio: { text: value } } };
+}
+
 async function connect(requestedScopes?: readonly number[]) {
   const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN, requestedScopes });
   const approval = approvalFor(pending);
@@ -58,10 +69,12 @@ async function connect(requestedScopes?: readonly number[]) {
 }
 
 describe('offline approved per-device authentication', () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.resetAllMocks();
     registry = { signers: [], currentUserNonce: 4, gaslessSignerCount: 0, gaslessSignerLimit: 1000, requesterFidNonces: { '1234': 8 } };
-    vi.mocked(getUser).mockResolvedValue(user);
+    currentProfile = structuredClone(user);
+    vi.mocked(getUser).mockImplementation(async () => structuredClone(currentProfile));
     vi.mocked(getSigners).mockImplementation(async () => structuredClone(registry));
     vi.mocked(readSavedVault).mockResolvedValue(undefined);
     vi.mocked(writeSavedVault).mockImplementation(async vault => { vi.mocked(readSavedVault).mockResolvedValue(vault); });
@@ -73,6 +86,7 @@ describe('offline approved per-device authentication', () => {
         const names: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
         registry = { ...registry, currentUserNonce: 5, gaslessSignerCount: 1, signers: [{ key: bytesToHex(key), source: 'SIGNER_SOURCE_OFFCHAIN', scopes: Array.from(encodedScopes, scope => names[scope]), requestFid: user.fid, expiresAt: Math.floor(Date.now() / 1000) + 604800 }] };
       } else if (data.get(1) === 17) registry = { ...registry, signers: [], gaslessSignerCount: 0 };
+      else mergeProfileMessage(envelope);
       return {};
     });
   });
@@ -99,6 +113,62 @@ describe('offline approved per-device authentication', () => {
     session.dispose();
   });
 
+  it('blocks a recent offchain KEY_ADD before creating another request while preserving the current session', async () => {
+    const { session } = await connect();
+    vi.useFakeTimers();
+    registry.signers[0].addedAt = Math.floor(Date.now() / 1000) - 20;
+    const random = vi.spyOn(crypto, 'getRandomValues');
+    try {
+      await expect(preparePairing({ fid: session.fid }, { origin: ORIGIN, requestedScopes: FULL_SOCIAL_SCOPES })).rejects.toMatchObject({
+        code: 'key_approval_cooldown', status: 429, message: 'Hypersnap allows one device-key approval per minute. Wait 40 seconds, then find your account again. Existing device access is unchanged.',
+      });
+      expect(random).not.toHaveBeenCalled();
+      expect(submitMessage).toHaveBeenCalledOnce();
+      await session.cast('The current device remains usable.');
+      expect(submitMessage).toHaveBeenCalledTimes(2);
+    } finally { random.mockRestore(); session.dispose(); }
+  });
+
+  it('uses the latest offchain addition across requesting apps and ignores onchain additions', async () => {
+    vi.useFakeTimers();
+    const now = Math.floor(Date.now() / 1000);
+    registry.signers = [
+      { key: 'old-offchain', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: now - 52 },
+      { key: 'other-app', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: now - 15, requestFid: 999 },
+      { key: 'onchain', source: 'SIGNER_SOURCE_ONCHAIN', addedAt: now },
+    ];
+    await expect(preparePairing({ fid: user.fid }, { origin: ORIGIN })).rejects.toThrow('Wait 45 seconds');
+    expect(submitMessage).not.toHaveBeenCalled();
+    registry.signers = [{ key: 'onchain', source: 'SIGNER_SOURCE_ONCHAIN', addedAt: now }];
+    const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN });
+    expect(pending.request.scopes).toEqual([1, 3, 4]);
+    pending.dispose();
+  });
+
+  it.each([60, 61])('allows a fresh request once an offchain addition is %i seconds old', async age => {
+    vi.useFakeTimers();
+    registry.signers = [{ key: 'old-offchain', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: Math.floor(Date.now() / 1000) - age }];
+    const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN, requestedScopes: FULL_SOCIAL_SCOPES });
+    expect(pending.request.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    expect(submitMessage).not.toHaveBeenCalled();
+    pending.dispose();
+  });
+
+  it('keeps older-node timestamp omissions and invalid or future timestamp metadata as node-checked fallbacks', async () => {
+    vi.useFakeTimers();
+    const now = Math.floor(Date.now() / 1000);
+    registry.signers = [
+      { key: 'no-timestamp', source: 'SIGNER_SOURCE_OFFCHAIN' },
+      { key: 'bad-timestamp', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: Number.NaN },
+      { key: 'negative', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: -1 },
+      { key: 'future', source: 'SIGNER_SOURCE_OFFCHAIN', addedAt: now + 3600 },
+    ];
+    const pending = await preparePairing({ fid: user.fid }, { origin: ORIGIN });
+    expect(pending.request.fid).toBe(user.fid);
+    expect(submitMessage).not.toHaveBeenCalled();
+    pending.dispose();
+  });
+
   it('does not grant social permissions to existing casting-only keys or unknown scope sets', async () => {
     const { session } = await connect();
     await expect(session.follow(3)).rejects.toThrow('Enable social features');
@@ -123,15 +193,87 @@ describe('offline approved per-device authentication', () => {
 
   it('stops partial profile writes and quarantines unknown fields across repeated attempts until visibly confirmed', async () => {
     const { session } = await connect(FULL_SOCIAL_SCOPES);
-    vi.mocked(submitMessage).mockResolvedValueOnce({}).mockRejectedValueOnce(new ApiError('Submission status is unknown', 502, 'submission_unknown'));
+    vi.mocked(submitMessage).mockImplementationOnce(async envelope => { mergeProfileMessage(envelope); return {}; }).mockRejectedValueOnce(new ApiError('Submission status is unknown', 502, 'submission_unknown'));
     expect(await session.updateProfile({ displayName: 'Alice', bio: 'New bio', pfpUrl: 'https://example.com/avatar.png' })).toEqual({ saved: ['displayName'], failed: [{ field: 'bio', message: 'Submission status is unknown', unknown: true }, { field: 'pfpUrl', message: 'Not submitted because the previous change did not complete.', unknown: false }] });
     expect(submitMessage).toHaveBeenCalledTimes(3);
     await expect(session.updateProfile({ bio: 'New bio' })).rejects.toThrow('unknown status');
     await session.refreshProfile();
     await expect(session.updateProfile({ bio: 'Different bio' })).rejects.toThrow('unknown status');
-    vi.mocked(getUser).mockResolvedValue({ ...user, profile: { bio: { text: 'New bio' } } });
+    currentProfile = { ...currentProfile, profile: { bio: { text: 'New bio' } } };
     await session.refreshProfile();
     expect(await session.updateProfile({ bio: 'Another bio' })).toEqual({ saved: ['bio'] });
+    session.dispose();
+  });
+
+  it('waits for each profile field to become visible before reporting saved or sending the next field', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.useFakeTimers();
+    vi.mocked(submitMessage).mockResolvedValueOnce({}); // Mempool ack; no committed name yet.
+    let finished = false;
+    const saving = session.updateProfile({ displayName: 'Alice', bio: 'Hello' }).then(result => { finished = true; return result; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(submitMessage).toHaveBeenCalledTimes(2); // KEY_ADD and the name only.
+    expect(finished).toBe(false);
+    currentProfile = { ...currentProfile, display_name: 'Alice' };
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(await saving).toEqual({ saved: ['displayName', 'bio'] });
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    expect(currentProfile.profile.bio.text).toBe('Hello');
+    session.dispose();
+  });
+
+  it('quarantines an acknowledged profile edit when indexing never confirms it and never replays its write', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.useFakeTimers();
+    vi.mocked(submitMessage).mockResolvedValueOnce({});
+    const beforeReads = vi.mocked(getUser).mock.calls.length;
+    const saving = session.updateProfile({ bio: 'Not visible', pfpUrl: 'https://example.com/new.png' });
+    await vi.advanceTimersByTimeAsync(45_000);
+    const result = await saving;
+    expect(result.saved).toEqual([]);
+    expect(result.failed).toEqual([
+      { field: 'bio', message: 'Profile save status is unknown. Check the public profile before editing this field again.', unknown: true },
+      { field: 'pfpUrl', message: 'Not submitted because the previous change did not complete.', unknown: false },
+    ]);
+    expect(vi.mocked(getUser).mock.calls.length - beforeReads).toBeGreaterThan(2);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    await expect(session.updateProfile({ bio: 'Not visible' })).rejects.toThrow('unknown status');
+    await session.refreshProfile();
+    await expect(session.updateProfile({ bio: 'Different' })).rejects.toThrow('unknown status');
+    currentProfile = { ...currentProfile, profile: { bio: { text: 'Not visible' } } };
+    await session.refreshProfile();
+    expect(await session.updateProfile({ bio: 'Confirmed next edit' })).toEqual({ saved: ['bio'] });
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    session.dispose();
+  });
+
+  it('bounds a stalled profile confirmation read and treats custody changes or read failures as unknown writes', async () => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.useFakeTimers();
+    vi.mocked(submitMessage).mockResolvedValueOnce({});
+    vi.mocked(getUser).mockImplementationOnce(async () => structuredClone(currentProfile)).mockImplementationOnce(async (_lookup, signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true });
+    }));
+    const saving = session.updateProfile({ bio: 'Pending' });
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect((await saving).failed?.[0].unknown).toBe(true);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+
+  it.each(['custody', 'read-error', 'lock'])('does not claim a profile save after confirmation encounters %s', async failure => {
+    const { session } = await connect(FULL_SOCIAL_SCOPES);
+    vi.mocked(submitMessage).mockImplementationOnce(async () => {
+      if (failure === 'custody') currentProfile = { ...currentProfile, custody_address: `0x${'12'.repeat(20)}` };
+      else if (failure === 'read-error') vi.mocked(getUser).mockRejectedValueOnce(new ApiError('Unavailable', 502));
+      else session.dispose();
+      return {};
+    });
+    const result = await session.updateProfile({ displayName: 'Alice', bio: 'Never sent' });
+    expect(result.saved).toEqual([]);
+    expect(result.failed?.[0]).toMatchObject({ field: 'displayName', unknown: true });
+    expect(result.failed?.[1]).toMatchObject({ field: 'bio', unknown: false });
+    expect(submitMessage).toHaveBeenCalledTimes(2);
     session.dispose();
   });
 
@@ -234,11 +376,42 @@ describe('offline approved per-device authentication', () => {
     pending.dispose();
   });
 
+  it('retains the approved key after a verified rate rejection and retries only when explicitly requested', async () => {
+    const pending = await preparePairing({ fid: 1234 }, { origin: ORIGIN });
+    const approval = approvalFor(pending);
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Rate limit exceeded.', 429, 'rate_limited'));
+    await expect(pending.complete(approval)).rejects.toMatchObject({ status: 429, code: 'rate_limited', message: 'Hypersnap allows one new device key per account per minute. Wait at least one minute, then submit this approved key again.' });
+    expect(pending.submitted).toBe(false);
+    expect(submitMessage).toHaveBeenCalledOnce();
+    expect(getSigners).toHaveBeenCalledTimes(2);
+    expect(getUser).toHaveBeenCalledTimes(2);
+    const session = await pending.complete(approval);
+    expect(session.publicKey).toBe(pending.request.publicKey);
+    expect(pending.submitted).toBe(true);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    expect(getSigners).toHaveBeenCalledTimes(4);
+    expect(getUser).toHaveBeenCalledTimes(4);
+    session.dispose();
+  });
+
+  it('checks the current nonce before an explicit retry after a verified rate rejection', async () => {
+    const pending = await preparePairing({ fid: 1234 }, { origin: ORIGIN });
+    const approval = approvalFor(pending);
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Rate limit exceeded.', 429, 'rate_limited'));
+    await expect(pending.complete(approval)).rejects.toThrow('Wait at least one minute');
+    registry.currentUserNonce = pending.request.nonce;
+    await expect(pending.complete(approval)).rejects.toThrow('fresh request');
+    expect(pending.submitted).toBe(false);
+    expect(submitMessage).toHaveBeenCalledOnce();
+    pending.dispose();
+  });
+
   it('keeps the pending key after unknown submission and subsequent completion performs reads only', async () => {
     const pending = await preparePairing({ fid: 1234 }, { origin: ORIGIN });
     const approval = approvalFor(pending);
     vi.mocked(submitMessage).mockRejectedValueOnce(new Error('Submission status is unknown'));
     await expect(pending.complete(approval)).rejects.toThrow('unknown');
+    expect(pending.submitted).toBe(true);
     registry.signers = [{ key: pending.request.publicKey, source: 'SIGNER_SOURCE_OFFCHAIN', scopes, requestFid: 1234, expiresAt: Math.floor(Date.now() / 1000) + 604800 }];
     const session = await pending.complete(approval);
     expect(session.publicKey).toBe(pending.request.publicKey);

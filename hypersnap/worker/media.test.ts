@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { createMediaUploadGrant, MAX_MEDIA_BYTES, MEDIA_UPLOAD_HEADER, mediaGrantPayload, parseMediaUploadGrant, sha256Hex, type MediaUploadGrant } from '../src/lib/media';
 import { bytesToHex, hexToBytes } from '../src/lib/protocol/signedKeyRequest';
@@ -8,7 +9,7 @@ const BASE = 'https://quorum.arca.computer';
 // Synthetic, unregistered test identity. It never signs a live account action.
 const key = new Uint8Array(32).fill(31);
 const publicKey = bytesToHex(ed25519.getPublicKey(key));
-const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5fkAAAAASUVORK5CYII='), value => value.charCodeAt(0));
+const png = new Uint8Array(readFileSync(new URL('../public/unknown-dark.png', import.meta.url)));
 
 class MemoryQuotaStorage {
   values = new Map<string, unknown>();

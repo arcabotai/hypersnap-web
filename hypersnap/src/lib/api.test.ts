@@ -22,12 +22,37 @@ describe('browser API client', () => {
     vi.stubGlobal('fetch', fetch);
     expect(await getFollowStatus(1234, 3)).toBe(true);
     fetch.mockResolvedValueOnce(new Response(JSON.stringify({ code: 'follow_not_found', message: 'Absent' }), { status: 404 }));
+    fetch.mockResolvedValueOnce(response({ users: [], next: {} }));
     expect(await getFollowStatus(1234, 3)).toBe(false);
     for (const value of [{ code: 'upstream_error', message: 'Not found' }, { code: 'follow_not_found', message: 'Wrong status' }]) {
       fetch.mockResolvedValueOnce(new Response(JSON.stringify(value), { status: value.code === 'upstream_error' ? 404 : 400 }));
       await expect(getFollowStatus(1234, 3)).rejects.toThrow();
     }
     fetch.mockResolvedValueOnce(response({ data: { type: 'MESSAGE_TYPE_LINK_ADD', fid: 1234, linkBody: { type: 'follow', targetFid: 4 } } }));
+    await expect(getFollowStatus(1234, 3)).rejects.toThrow('invalid follow relationship');
+  });
+
+  it('finds compact-state follows with a single effective-index seek and honors removals', async () => {
+    const absent = () => new Response(JSON.stringify({ code: 'follow_not_found' }), { status: 404 });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(absent()).mockResolvedValueOnce(response({ users: [{ fid: 3 }], next: { cursor: '3' } }))
+      .mockResolvedValueOnce(absent()).mockResolvedValueOnce(response({ users: [{ fid: 8 }], next: {} }))
+      .mockResolvedValueOnce(absent()).mockResolvedValueOnce(response({ users: [], next: {} }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await getFollowStatus(1234, 3)).toBe(true);
+    expect(fetch.mock.calls[1][0]).toBe('/api/v2/farcaster/user/following?limit=1&cursor=2&fid=1234');
+    expect(await getFollowStatus(1234, 3)).toBe(false);
+    expect(await getFollowStatus(1234, 1)).toBe(false);
+    expect(fetch.mock.calls[5][0]).toContain('cursor=0');
+  });
+
+  it('keeps compact follow state unknown when the effective index fails or violates its seek', async () => {
+    const absent = () => new Response(JSON.stringify({ code: 'follow_not_found' }), { status: 404 });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(absent()).mockResolvedValueOnce(new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 }))
+      .mockResolvedValueOnce(absent()).mockResolvedValueOnce(response({ users: [{ fid: 2 }], next: {} }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(getFollowStatus(1234, 3)).rejects.toMatchObject({ status: 503 });
     await expect(getFollowStatus(1234, 3)).rejects.toThrow('invalid follow relationship');
   });
 

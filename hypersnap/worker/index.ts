@@ -156,6 +156,17 @@ async function proxy(request: Request, url: URL): Promise<Response> {
       cache: 'no-store',
     });
     if (!upstream.ok) {
+      // The v1 adapter wraps bad_request.rate_limited in HTTP 400. Recognize
+      // only the verified submit error shape; never expose the upstream text.
+      if (isWrite && upstream.status === 400 && upstream.headers.get('Content-Type')?.includes('application/json')) {
+        const bytes = await readLimited(upstream.body, 4096);
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (value && typeof value === 'object' && 'error' in value && value.error === 'Failed to submit message'
+          && 'error_detail' in value && typeof value.error_detail === 'string'
+          && /^status: InvalidArgument, message: "bad_request\.rate_limited\/rate limit exceeded for FID \d+",/.test(value.error_detail)) {
+          return failure(429, 'rate_limited', 'Hypersnap is limiting new approvals or messages. Wait at least one minute before trying again.');
+        }
+      }
       // Hypersnap's v1 HTTP adapter reports every gRPC error as HTTP 400.
       // Only this exact NotFound result means an absent follow; network,
       // validation, and storage failures must never appear as "not following".
