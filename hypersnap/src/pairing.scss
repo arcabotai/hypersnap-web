@@ -55,6 +55,12 @@
 .wallet-list { display: grid; gap: .5rem; margin: .8rem 0; }
 .wallet-list .button { justify-content: flex-start; font-size: .74rem; padding: .8rem; }
 .wallet-list .button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.wallet-browser-heading { display: grid; gap: .25rem; margin-top: 1rem; }
+.wallet-browser-heading strong, .wallet-rainbow-setup > strong { font-size: .74rem; font-weight: 550; color: var(--color-text-strong); }
+.wallet-browser-heading > span { font-size: .63rem; line-height: 1.7; color: var(--color-text-subtle); }
+.wallet-rainbow-setup { margin-block: .8rem; padding: .8rem; border: .0625rem solid var(--surface-4); border-radius: .6rem; background: var(--surface-0); }
+.wallet-rainbow-setup p { font-size: .65rem; line-height: 1.8; color: var(--color-text-subtle); margin: .4rem 0 .7rem; }
+.wallet-rainbow-setup .button { font-size: .65rem; min-height: 2rem; text-decoration: none; }
 .wallet-not-found { padding-top: .6rem; border-top: .0625rem solid rgb(var(--accent-rgb) / .2); }
 .wallet-not-found strong { font-size: .73rem; font-weight: 550; }
 .wallet-not-found > .button { font-size: .65rem; min-height: 2rem; }

@@ -171,8 +171,8 @@ describe('custody wallet approval without seed import', () => {
 
 describe('injected wallet discovery', () => {
   function target() { const target = new EventTarget(); vi.stubGlobal('window', target); return target; }
-  function announce(target: EventTarget, provider: WalletProvider, id = '12345678-1234-4234-8234-123456789abc', name = 'Test Wallet') {
-    target.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: { info: { uuid: id, name, icon: '<script>never rendered</script>' }, provider } }));
+  function announce(target: EventTarget, provider: WalletProvider, id = '12345678-1234-4234-8234-123456789abc', name = 'Test Wallet', rdns?: unknown) {
+    target.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: { info: { uuid: id, name, icon: '<script>never rendered</script>', rdns }, provider } }));
   }
   it('announces discovery, deduplicates provider/UUID conflicts, retains late injections, and cleans up', async () => {
     vi.useFakeTimers();
@@ -231,5 +231,126 @@ describe('injected wallet discovery', () => {
     cleanup(); latest = [];
     win.dispatchEvent(new Event('ethereum#initialized'));
     expect(latest).toHaveLength(0);
+  });
+
+  it('retains only bounded rdns label metadata and recognizes the official Rainbow announcement', () => {
+    const win = target(); let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    const rainbow = wallet().provider;
+    announce(win, rainbow, undefined, 'Rainbow Wallet', 'ME.RAINBOW');
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toEqual({ id: '12345678-1234-4234-8234-123456789abc', name: 'Rainbow', rdns: 'me.rainbow', provider: rainbow });
+    expect(Object.isFrozen(latest[0])).toBe(true);
+    for (const rdns of ['https://rainbow.me', 'me.rainbow\u202e', 'x'.repeat(254), { toString: () => 'me.rainbow' }]) {
+      const id = `${String(latest.length).padStart(8, '0')}-1234-4234-8234-123456789abc`;
+      announce(win, wallet().provider, id, 'Other Wallet', rdns);
+      expect(latest.at(-1)?.rdns).toBeUndefined();
+    }
+    cleanup();
+  });
+
+  it.each(['direct', 'ethereum', 'providers'] as const)('discovers legacy Rainbow through %s beside an already announced competing extension', async injection => {
+    vi.useFakeTimers();
+    const win = target(); const rainbow = Object.assign(wallet().provider, { isRainbow: true, isMetaMask: true });
+    const competing = wallet().provider;
+    Object.assign(win, { ethereum: injection === 'ethereum' ? rainbow : Object.assign(competing, { providers: injection === 'providers' ? [competing, rainbow] : undefined }), ...(injection === 'direct' ? { rainbow } : {}) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    announce(win, competing, undefined, 'Other Extension', 'com.other');
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(2);
+    const choice = latest.find(item => item.rdns === 'me.rainbow');
+    expect(choice).toMatchObject({ id: 'rainbow-legacy', name: 'Rainbow' });
+    expect(choice?.provider).toBe(rainbow);
+    expect(choice?.provider).not.toBe(competing);
+    expect((rainbow.request as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('replaces a legacy Rainbow entry with its later EIP-6963 copy without changing a captured provider', async () => {
+    vi.useFakeTimers();
+    const win = target(); const rainbow = Object.assign(wallet().provider, { isRainbow: true });
+    Object.assign(win, { rainbow, ethereum: wallet().provider });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    const captured = latest[0];
+    const announcedCopy = Object.assign(wallet().provider, { isRainbow: true, isMetaMask: false });
+    announce(win, announcedCopy, undefined, 'Rainbow', 'me.rainbow');
+    expect(latest).toHaveLength(1);
+    expect(latest[0].provider).toBe(announcedCopy);
+    expect(latest[0].id).not.toBe(captured.id);
+    expect(captured.provider).toBe(rainbow);
+    expect(captured.name).toBe('Rainbow');
+    await vi.advanceTimersByTimeAsync(500);
+    win.dispatchEvent(new Event('ethereum#initialized'));
+    expect(latest).toHaveLength(1);
+    cleanup();
+  });
+
+  it('upgrades an existing generic fallback when the same provider later identifies as Rainbow', async () => {
+    vi.useFakeTimers();
+    const win = target(); const provider = wallet().provider;
+    Object.assign(win, { ethereum: provider });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    const generic = latest[0];
+    expect(generic.id).toBe('injected-fallback');
+    Object.assign(provider, { isRainbow: true });
+    win.dispatchEvent(new Event('ethereum#initialized'));
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toEqual({ id: 'rainbow-legacy', name: 'Rainbow', rdns: 'me.rainbow', provider });
+    expect(generic).toEqual({ id: 'injected-fallback', name: 'Browser wallet', provider });
+    cleanup();
+  });
+
+  it('keeps a conflicting announcement from replacing legacy or named providers and respects the wallet cap', async () => {
+    vi.useFakeTimers();
+    const win = target(); Object.assign(win, { rainbow: Object.assign(wallet().provider, { isRainbow: true }) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    for (let i = 0; i < 16; i++) announce(win, wallet().provider, `${String(i).padStart(8, '0')}-1234-4234-8234-123456789abc`);
+    const first = latest[0];
+    announce(win, wallet().provider, first.id, 'Rainbow', 'me.rainbow');
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(16);
+    expect(latest[0]).toBe(first);
+    expect(latest.some(item => item.rdns === 'me.rainbow')).toBe(false);
+    cleanup();
+  });
+
+  it('isolates throwing legacy getters and scans only a bounded provider list', async () => {
+    vi.useFakeTimers();
+    const win = target(); const rainbow = Object.assign(wallet().provider, { isRainbow: true });
+    const providers = new Array(1_000);
+    Object.defineProperty(providers, 0, { get: () => { throw new Error('untrusted provider getter'); } });
+    providers[1] = rainbow;
+    const distant = vi.fn(() => wallet().provider);
+    Object.defineProperty(providers, 999, { get: distant });
+    Object.defineProperty(win, 'rainbow', { get: () => { throw new Error('untrusted namespace getter'); } });
+    Object.assign(win, { ethereum: Object.assign(wallet().provider, { providers }) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(1);
+    expect(latest[0].provider).toBe(rainbow);
+    expect(distant).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('ignores throwing or truthy Rainbow flags without losing the generic legacy fallback', async () => {
+    vi.useFakeTimers();
+    const win = target();
+    const generic = wallet().provider;
+    const impostor = Object.assign(wallet().provider, { isRainbow: 'true' });
+    const throwing = Object.defineProperty(wallet().provider, 'isRainbow', { get: () => { throw new Error('untrusted flag'); } });
+    Object.assign(win, { rainbow: impostor, ethereum: Object.assign(generic, { providers: [impostor, throwing] }) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toEqual({ id: 'injected-fallback', name: 'Browser wallet', provider: generic });
+    cleanup();
   });
 });
