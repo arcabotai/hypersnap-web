@@ -29,7 +29,7 @@ bootstrap_peers=""
 enable_autodiscovery=false
 [consensus]
 private_key="${privateKey}"
-block_time="250ms"
+block_time="1s"
 shard_ids=[1]
 num_shards=1
 validator_sets=[{effective_at=0,validator_public_keys=["${publicKey}"],shard_ids=[0,1]}]
@@ -52,6 +52,11 @@ enabled=true
 enabled=true
 [api.metrics]
 enabled=true
+[api.channels]
+enabled=true
+[api.search]
+enabled=true
+index_path="${path.join(folder, 'search-index')}"
 [api.conversations]
 enabled=true
 [block_receiver]

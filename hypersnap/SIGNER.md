@@ -1,6 +1,6 @@
 # Arca Signer beta
 
-The website never asks for your recovery phrase. Use a compatible wallet app to approve a limited posting key; your custody key stays in that wallet. The optional offline signer offers another way to approve the same requests. Neither approach makes an unaudited app or compromised computer safe. No independent security audit has been completed.
+The website never asks for your recovery phrase. Use a compatible wallet app to approve a limited posting key; your custody key stays in that wallet. The optional offline signer can approve the original casting key and device revocation requests. Expanded social and deletion permissions use your wallet. Neither approach makes an unaudited app or compromised computer safe. No independent security audit has been completed.
 
 ## Connect with a wallet app
 
@@ -16,9 +16,13 @@ The mobile app buttons include MetaMask, Trust Wallet, and Rainbow. Rainbow uses
 
 ### Optional social permissions
 
-Ordinary sign-in requests only `CAST_ADD`, `REACTION_ADD`, and `REACTION_REMOVE` (`[1, 3, 4]`). These allow casts, replies, explicitly selected account mentions, and cast image attachments. Public profiles, cast links, nested conversations, follower/following lists, and sharing do not require expanded signing permissions.
+Ordinary sign-in requests only `CAST_ADD`, `REACTION_ADD`, and `REACTION_REMOVE` (`[1, 3, 4]`). These allow casts, replies, explicitly selected account mentions, cast image attachments, cast-ID quote embeds, and channel posts. A channel post sets the protocol's parent URL; a reply uses a parent cast ID instead. These destinations are mutually exclusive. A quote consumes one of the client's two embed slots. Public profiles, cast links, nested conversations, follower/following lists, notifications, search, channels, and sharing do not require expanded signing permissions.
 
 Following/unfollowing and editing your display name, bio, or profile image require `LINK_ADD`, `LINK_REMOVE`, and `USER_DATA_ADD` as well. Choosing these features opens an explicit **Enable social features** flow for a new key with scopes `[1, 3, 4, 5, 6, 11]`; review the expanded permission list in the browser and wallet before approving. The currently connected key remains active until the new key is confirmed. Replacing the active local session does not revoke the previous key on Hypersnap; manage that old authorization separately. The inactivity lifetime remains seven days, renewed by activity.
+
+Deleting your own casts additionally requires `CAST_REMOVE` (`2`). Choosing **Enable deletion** opens a separate **Enable cast deletion** approval for scopes `[1, 2, 3, 4, 5, 6, 11]`, with the irreversible deletion permission displayed in the browser and bound into the wallet signature. Existing casting and social keys retain their original permissions; they cannot acquire deletion permission by unlocking an old vault. Approving a new key does not submit a cast deletion: return to the deletion dialog and explicitly confirm the cast.
+
+Before signing `CAST_REMOVE`, the client checks that the target FID matches the active account, reloads the cast from Hypersnap, verifies its author and exact hash, and rechecks custody and the device's current signer permissions. A successful mempool submission does not complete the UI action. The client waits up to 45 seconds for the cast API's verified `Cast not found` result; network failures, other HTTP 404 responses, and indexing delays leave the result uncertain. **Check deletion status** performs reads using the same session and never replays the uncertain write. A changed account or device invalidates an in-progress dialog. A definite rejection may be retried explicitly. Deletion cannot be undone in the client, other nodes may update later, and previously copied content, quotes, or screenshots can remain. Deleting a cast does not delete its uploaded images from R2.
 
 The profile editor exposes only display name, bio, and profile image. Banner writes are excluded because the node requires Pro status and does not reliably hydrate banner metadata. Each edited field is a separate signed message, so a partial save can succeed for some fields. Confirmed successes are retained. If the node response is uncertain, the client blocks replay of that field until a public-profile check observes its attempted value. **Check public profile** also works after closing and reopening the editor. Follow changes have a similar uncertainty check; no failed write is automatically resubmitted.
 
@@ -70,7 +74,7 @@ Select **Ethereum Mainnet** in the wallet before approving: some wallets require
 
 The posting key can create casts and add/remove reactions. Its seven-day inactivity window is refreshed when it is used; it does not expire seven days after sign-in. It cannot transfer funds or change custody through these permitted Hypersnap message types. Hypersnap protocol rules and node software enforce those limits.
 
-The released Arca Signer v0.2.0 beta accepts only the original `[1, 3, 4]` permission set. It cannot approve the expanded social key. Use a compatible browser or mobile wallet for follow/profile permissions; an expanded request fails closed in the offline signer. This web feature release does not replace or repackage the published native beta.
+The released Arca Signer v0.2.0 beta accepts only the original `[1, 3, 4]` permission set. It cannot approve expanded social or deletion keys. Use a compatible browser or mobile wallet for follow/profile/deletion permissions; an expanded request fails closed in the offline signer before phrase derivation. This web feature release does not replace or repackage the published native beta.
 
 ## Saved devices and revocation
 

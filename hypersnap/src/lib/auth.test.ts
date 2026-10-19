@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { ApiError, getFollowStatus, getSigners, getUser, submitMessage, type SignersResponse, type User } from './api';
+import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage, type Cast, type SignersResponse, type User } from './api';
 import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation } from './auth';
-import { FULL_SOCIAL_SCOPES, hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
+import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES, hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
 import { blake3_20 } from './protocol/messageBuilder';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest, signEip712Digest } from './protocol/signedKeyRequest';
 import { deleteSavedVault, readSavedVault, writeSavedVault } from './vault';
 import { mediaGrantPayload } from './media';
 
-vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getFollowStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
+vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getCast: vi.fn(), getFollowStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
 vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
 
 const ORIGIN = 'https://quorum.arca.computer';
@@ -18,6 +18,8 @@ const user = { fid: 1234, username: 'test', display_name: 'Test', custody_addres
 const scopes = ['MESSAGE_TYPE_CAST_ADD', 'MESSAGE_TYPE_REACTION_ADD', 'MESSAGE_TYPE_REACTION_REMOVE'];
 let registry: SignersResponse;
 let currentProfile: User;
+let currentCast: Cast | undefined;
+const target = { fid: user.fid, hash: 'ab'.repeat(20) };
 
 function approvalFor(pending: PendingPairing): PairingApproval {
   const request = pending.request;
@@ -74,7 +76,12 @@ describe('offline approved per-device authentication', () => {
     vi.resetAllMocks();
     registry = { signers: [], currentUserNonce: 4, gaslessSignerCount: 0, gaslessSignerLimit: 1000, requesterFidNonces: { '1234': 8 } };
     currentProfile = structuredClone(user);
+    currentCast = { hash: `0x${target.hash}`, author: user, text: 'Synthetic cast' } as Cast;
     vi.mocked(getUser).mockImplementation(async () => structuredClone(currentProfile));
+    vi.mocked(getCast).mockImplementation(async () => {
+      if (!currentCast) throw new ApiError('Cast not found.', 404, 'cast_not_found');
+      return structuredClone(currentCast);
+    });
     vi.mocked(getSigners).mockImplementation(async () => structuredClone(registry));
     vi.mocked(readSavedVault).mockResolvedValue(undefined);
     vi.mocked(writeSavedVault).mockImplementation(async vault => { vi.mocked(readSavedVault).mockResolvedValue(vault); });
@@ -83,12 +90,140 @@ describe('offline approved per-device authentication', () => {
       if (data.get(1) === 16) {
         const key = fields(data.get(19) as Uint8Array).get(1) as Uint8Array;
         const encodedScopes = fields(data.get(19) as Uint8Array).get(9) as Uint8Array;
-        const names: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
+        const names: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 2: 'MESSAGE_TYPE_CAST_REMOVE', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
         registry = { ...registry, currentUserNonce: 5, gaslessSignerCount: 1, signers: [{ key: bytesToHex(key), source: 'SIGNER_SOURCE_OFFCHAIN', scopes: Array.from(encodedScopes, scope => names[scope]), requestFid: user.fid, expiresAt: Math.floor(Date.now() / 1000) + 604800 }] };
       } else if (data.get(1) === 17) registry = { ...registry, signers: [], gaslessSignerCount: 0 };
+      else if (data.get(1) === 2) currentCast = undefined;
       else mergeProfileMessage(envelope);
       return {};
     });
+  });
+
+  it('publishes signed cast-ID quotes and channel parent URLs using the Hypersnap protobuf fields', async () => {
+    const { session } = await connect();
+    await session.cast('A quote', undefined, { embeds: [{ castId: { fid: 3, hash: target.hash } }, { url: 'https://example.com/photo.png' }], parentUrl: 'https://warpcast.com/~/channel/quilibrium' });
+    const encoded = fields(vi.mocked(submitMessage).mock.calls[1][0]);
+    const data = fields(encoded.get(1) as Uint8Array);
+    const body = fields(data.get(5) as Uint8Array);
+    expect(data.get(1)).toBe(1);
+    expect(new TextDecoder().decode(body.get(7) as Uint8Array)).toBe('https://warpcast.com/~/channel/quilibrium');
+    expect(body.has(3)).toBe(false);
+    expect(ed25519.verify(encoded.get(4) as Uint8Array, encoded.get(2) as Uint8Array, hexToBytes(session.publicKey))).toBe(true);
+    // Parse a quote on its own because this tiny test reader retains the last
+    // occurrence of repeated fields. Embeds use field6, CastId uses field2.
+    await session.cast('', undefined, { embeds: [{ castId: { fid: 3, hash: target.hash } }] });
+    const quote = fields(fields(fields(vi.mocked(submitMessage).mock.calls[2][0]).get(1) as Uint8Array).get(5) as Uint8Array);
+    const quotedId = fields(fields(quote.get(6) as Uint8Array).get(2) as Uint8Array);
+    expect(quotedId.get(1)).toBe(3);
+    expect(bytesToHex(quotedId.get(2) as Uint8Array)).toBe(target.hash);
+    for (const options of [
+      { embeds: [{ castId: { fid: 0, hash: target.hash } }] },
+      { embeds: [{ castId: { fid: 3, hash: 'bad' } }] },
+      { embeds: [{ url: 'https://example.com', castId: target }] },
+      { embeds: [{ castId: { ...target, injected: true } }] },
+      { parentUrl: 'javascript:alert(1)' }, { parentUrl: 'https://user:password@example.com' },
+    ]) await expect(session.cast('Invalid', undefined, options)).rejects.toThrow();
+    await expect(session.cast('Ambiguous', target, { parentUrl: 'https://example.com/channel' })).rejects.toThrow('either a reply or a channel');
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    session.dispose();
+  });
+
+  it('requires a fresh explicit deletion grant and verifies cast ownership before signing CAST_REMOVE', async () => {
+    for (const selected of [undefined, FULL_SOCIAL_SCOPES]) {
+      const { session } = await connect(selected);
+      await expect(session.deleteCast(target)).rejects.toThrow('Approve cast deletion');
+      session.dispose();
+    }
+    const { session, pending } = await connect(FULL_CLIENT_SCOPES);
+    expect(pending.request.scopes).toEqual(FULL_CLIENT_SCOPES);
+    const beforeWrites = vi.mocked(submitMessage).mock.calls.length;
+    await expect(session.deleteCast({ fid: 3, hash: target.hash })).rejects.toThrow('own account');
+    await expect(session.deleteCast({ ...target, hash: 'bad' })).rejects.toThrow('Invalid cast hash');
+    currentCast = { ...currentCast!, author: { ...user, fid: 3 } };
+    await expect(session.deleteCast(target)).rejects.toThrow('did not confirm');
+    currentCast = { ...currentCast!, author: user, hash: `0x${'cd'.repeat(20)}` };
+    await expect(session.deleteCast(target)).rejects.toThrow('did not confirm');
+    expect(submitMessage).toHaveBeenCalledTimes(beforeWrites);
+    currentCast = { ...currentCast!, hash: `0x${target.hash}` };
+    const receipt = await session.deleteCast({ ...target, hash: `0x${target.hash.toUpperCase()}` });
+    const encoded = fields(vi.mocked(submitMessage).mock.calls.at(-1)![0]);
+    const data = fields(encoded.get(1) as Uint8Array);
+    expect(data.get(1)).toBe(2); expect(data.get(2)).toBe(user.fid);
+    expect(bytesToHex(fields(data.get(6) as Uint8Array).get(1) as Uint8Array)).toBe(target.hash);
+    expect(receipt.hash).toBe(bytesToHex(encoded.get(2) as Uint8Array));
+    expect(ed25519.verify(encoded.get(4) as Uint8Array, encoded.get(2) as Uint8Array, hexToBytes(session.publicKey))).toBe(true);
+    expect(currentCast).toBeUndefined();
+    session.dispose();
+  });
+
+  it('does not report a mempool-acknowledged deletion as complete until the cast is visibly absent', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    vi.useFakeTimers();
+    vi.mocked(submitMessage).mockResolvedValueOnce({});
+    let finished = false;
+    const deleting = session.deleteCast(target).then(receipt => { finished = true; return receipt; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(finished).toBe(false);
+    await expect(session.deleteCast(target)).rejects.toThrow('already being checked');
+    currentCast = undefined;
+    await vi.advanceTimersByTimeAsync(1500);
+    expect((await deleting).hash).toMatch(/^[a-f0-9]{40}$/);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+
+  it('quarantines uncertain cast removals and only reconciles subsequent checks without replaying the write', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Submission unknown.', 502, 'submission_unknown'));
+    await expect(session.deleteCast(target)).rejects.toMatchObject({ code: 'submission_unknown' });
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    vi.mocked(getCast).mockRejectedValueOnce(new ApiError('Proxy route missing.', 404, 'upstream_error'));
+    await expect(session.deleteCast(target)).rejects.toMatchObject({ code: 'submission_unknown' });
+    currentCast = undefined;
+    expect((await session.deleteCast(target)).hash).toMatch(/^[a-f0-9]{40}$/);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+
+  it('preserves deletion quarantine after an unclassified transport error and permits a fresh attempt only after a definite rejection', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Rate limit.', 429, 'rate_limited'));
+    await expect(session.deleteCast(target)).rejects.toMatchObject({ code: 'rate_limited' });
+    vi.mocked(submitMessage).mockRejectedValueOnce(new Error('Connection closed.'));
+    await expect(session.deleteCast(target)).rejects.toMatchObject({ code: 'submission_unknown' });
+    currentCast = undefined;
+    await session.deleteCast(target);
+    expect(submitMessage).toHaveBeenCalledTimes(3); // KEY_ADD and two explicitly requested attempts.
+    session.dispose();
+  });
+
+  it('bounds deletion confirmation and preserves its original receipt for a later read-only check', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    vi.useFakeTimers();
+    vi.mocked(submitMessage).mockResolvedValueOnce({});
+    const deleting = expect(session.deleteCast(target)).rejects.toMatchObject({ code: 'submission_unknown' });
+    await vi.advanceTimersByTimeAsync(45_000);
+    await deleting;
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    currentCast = undefined;
+    await session.deleteCast(target);
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+
+  it('rechecks active deletion authorization and rejects revoked, expired or changed-custody device keys', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    registry.signers[0].scopes = registry.signers[0].scopes!.filter(scope => scope !== 'MESSAGE_TYPE_CAST_REMOVE');
+    await expect(session.deleteCast(target)).rejects.toThrow('no longer authorized');
+    registry.signers[0].scopes!.splice(1, 0, 'MESSAGE_TYPE_CAST_REMOVE');
+    registry.signers[0].expiresAt = 1;
+    await expect(session.deleteCast(target)).rejects.toThrow('no longer authorized');
+    registry.signers[0].expiresAt = Math.floor(Date.now() / 1000) + 604800;
+    currentProfile = { ...user, custody_address: `0x${'ff'.repeat(20)}` };
+    await expect(session.deleteCast(target)).rejects.toThrow('no longer authorized');
+    expect(submitMessage).toHaveBeenCalledOnce();
+    session.dispose();
+    await expect(session.deleteCast(target)).rejects.toThrow('session has ended');
   });
 
   it('enables social writes only after a separately approved expanded-scope KEY_ADD', async () => {

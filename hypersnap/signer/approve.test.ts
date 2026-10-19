@@ -60,6 +60,7 @@ describe('offline signer approval', () => {
     expect(() => approvePairingRequest(request, phrase, now + 901_000)).toThrow('expired');
     expect(() => approvePairingRequest({ ...request, scopes: [1, 3, 4, 5] }, phrase, now)).toThrow('only approves');
     expect(() => approvePairingRequest({ ...request, scopes: [1, 3, 4, 5, 6, 11] }, phrase, now)).toThrow('Use your wallet');
+    expect(() => approvePairingRequest({ ...request, scopes: [1, 2, 3, 4, 5, 6, 11] }, 'not a recovery phrase', now)).toThrow('Use your wallet');
     expect(() => approvePairingRequest({ ...request, ttl: 90 * 86400 }, phrase, now)).toThrow('only approves');
     expect(() => approvePairingRequest({ ...request, payload: 'arbitrary typed data' }, phrase, now)).toThrow('Invalid authorization file');
   });

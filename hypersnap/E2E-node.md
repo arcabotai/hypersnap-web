@@ -34,7 +34,7 @@ RUST_LOG=error sandbox-exec -f /tmp/arca-hypersnap-e2e/network.sb \
   --config-path /tmp/arca-hypersnap-e2e/nodes/1/hypersnap.toml
 ```
 
-This macOS sandbox denies all non-loopback networking. The node binds HTTP `127.0.0.1:13381`, gRPC `127.0.0.1:13383`, and local gossip only. Peer discovery, production peers, chain RPCs, fname fetching, snapshot downloads, and replication are disabled. Shards 0 and 1 use the same single synthetic validator. The actual social graph, metrics, and feed indexers are enabled; trending feeds require the metrics indexer even when the feed is empty. On other operating systems, supply equivalent network namespace/firewall isolation before running the fixture.
+This macOS sandbox denies all non-loopback networking. The node binds HTTP `127.0.0.1:13381`, gRPC `127.0.0.1:13383`, and local gossip only. Peer discovery, production peers, chain RPCs, fname fetching, snapshot downloads, and replication are disabled. Shards 0 and 1 use the same single synthetic validator. The actual social graph, metrics, feed, channel, and Tantivy cast-search indexers are enabled; trending feeds require the metrics indexer even when the feed is empty. On other operating systems, supply equivalent network namespace/firewall isolation before running the fixture.
 
 In a second terminal:
 
@@ -43,7 +43,7 @@ yarn esbuild scripts/e2e-bootstrap-node.ts --bundle --platform=node --format=esm
 node /tmp/arca-e2e-bootstrap.mjs
 ```
 
-The bootstrap talks only to the two hardcoded loopback addresses. It submits synthetic ID-registration, storage, and legacy signer events through the actual **Devnet-only** admin RPC. It then submits genuine EIP-712 custody-authorized KEY_ADD messages with Ed25519 outer signatures, waits for the actual scoped registry entries, and writes the initial profile through USER_DATA_ADD. FIDs 1234 and 1235 have the reviewed `[1,3,4,5,6,11]` device scopes. A separate synthetic on-chain fixture signer can generate compact-state test data. The initial FID-1234 picture is deliberately `ipfs://legacy-avatar`, to exercise editing other fields when an unchanged legacy picture does not match the upload URL policy.
+The bootstrap talks only to the two hardcoded loopback addresses. It submits synthetic ID-registration, storage, and legacy signer events through the actual **Devnet-only** admin RPC. It then submits genuine EIP-712 custody-authorized KEY_ADD messages with Ed25519 outer signatures, waits for the actual scoped registry entries, and writes the initial profile through USER_DATA_ADD. FIDs 1234 and 1235 have the reviewed `[1,2,3,4,5,6,11]` client device scopes. A separate synthetic on-chain fixture signer can generate compact-state test data. The initial FID-1234 picture is deliberately `ipfs://legacy-avatar`, to exercise editing other fields when an unchanged legacy picture does not match the upload URL policy.
 
 Only after actual confirmation, it creates `/tmp/arca-hypersnap-e2e/identity.json`, with the marker `arca.hypersnap.e2e.identity`. This is the input for `e2e-browser-server.mjs` and `e2e-media-server.mjs`.
 
@@ -91,3 +91,23 @@ The browser also submitted the image cast `26f47dedb0ea3c2029a516a22b93e93234aed
 The final cold restart retained all committed data but the single-validator consensus runtime stalled at height 3053. Its actual log repeatedly reports `Could not find proposed value for decided value` and `Error when checking and replaying WAL: Messaging failed because channel is closed`. Thus successful reads after restart establish persistence, not renewed consensus availability.
 
 Two fixture-only attempts stopped the owned process and archived the shard-0/shard-1 Malachite `wal/wal/consensus.wal` journals while preserving every RocksDB record. They did not recover consensus. Both archived journals and the logs remain under `/tmp/arca-hypersnap-e2e/`; no upstream consensus, validation, or storage code was changed. The optional live GUI cooldown check was consequently not completed. The native process was stopped after collecting the real gateway 429 and cold-read receipts. A new E2E run should create a fresh isolated fixture directory rather than treating this stalled test validator as a healthy service.
+
+## Expanded client feature checks
+
+Use a fresh generated directory such as `/tmp/arca-hypersnap-e2e-features`, retaining the network sandbox and bootstrap/restart sequence above. The generator now uses a one-second block interval to avoid unnecessary consensus churn and creates the search index inside that disposable directory. Pass `--fixture-dir /tmp/arca-hypersnap-e2e-features` to the bundled bootstrap to keep its identity/proofs separate from earlier fixtures.
+
+From `hypersnap/`, with the isolated Mainnet-mode node already running:
+
+```sh
+yarn esbuild scripts/e2e-feature-checks.ts --bundle --platform=node --format=esm \
+  --define:import.meta.env.DEV=false --outfile=/tmp/arca-e2e-feature-checks.mjs
+ARCA_WRANGLER_PATH=/Users/felirami/.local/bin/wrangler \
+  node /tmp/arca-e2e-feature-checks.mjs \
+  --identity-file /tmp/arca-hypersnap-e2e-features/identity.json
+```
+
+Set `ARCA_WRANGLER_PATH` to your actual Wrangler installation; it selects that installation's compatible local Miniflare runtime. The runner permits only the published synthetic device keys and loopback node. It unlocks genuinely encrypted vaults in in-memory IndexedDB, uses actual app signing and API code, the actual Worker/SQLite Durable Object/R2 implementation, and real Hypersnap storage/indexers/consensus. All canonical production origins remain unchanged in this backend test; its outbound adapter rewrites the fixed Hypersnap destination to loopback. It never connects to the public network.
+
+The checks cover profile indexing, user/cast search, quote embeds, channel roots/directory/detail/feed, uploaded-image byte integrity and photo casts, all profile tabs, four activity categories, foreign-cast deletion rejection before submission, confirmed own-cast deletion, stale search-index filtering, and unfollow cleanup. Each run creates unique disposable test casts and emits `feature-checks-proof.json` next to the identity. It does not silently resubmit uncertain writes.
+
+A fresh October 19 feature fixture completed these checks without the earlier fixture's consensus/WAL stall. Browser testing on that fixture also confirmed a default-key sign-in, protocol quote, explicit deletion-permission approval followed by a separate deletion confirmation, channel posting, and the pre-approval cooldown using actual registry timestamps. This does not establish that arbitrary repeated cold restarts of the upstream node are reliable.

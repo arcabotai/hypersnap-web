@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hashTypedData } from 'viem';
 import { approvePairingWithWallet, approveRevocationWithWallet, type WalletProvider } from './wallet';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, signEip712Digest } from './protocol/signedKeyRequest';
-import { FULL_SOCIAL_SCOPES, verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
+import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES, verifyPairingApproval, verifyRevocationApproval, type PairingRequest, type RevocationRequest } from './pairing';
 import { withWalletConnect, WALLETCONNECT_SETUP_TIMEOUT_MS, WalletConnectMemoryStorage, type WalletConnectClient, type WalletConnectClientFactory, type WalletConnectClientOptions, type WalletConnectSession } from './walletConnect';
 
 const privateKey = hexToBytes('01'.repeat(32)); // synthetic fixture, no real account
@@ -45,11 +45,11 @@ function harness() {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('temporary signature-only WalletConnect sessions', () => {
-  it('permits the exact reviewed social approval and erases the temporary connection afterwards', async () => {
-    const h = harness(); const req = { ...request(), scopes: [...FULL_SOCIAL_SCOPES] };
+  it.each([{ selected: FULL_SOCIAL_SCOPES }, { selected: FULL_CLIENT_SCOPES }])('permits the exact reviewed scope set %j and erases the temporary connection afterwards', async ({ selected }) => {
+    const h = harness(); const req = { ...request(), scopes: [...selected] };
     const approval = await withWalletConnect({ projectId: PROJECT, custodyAddress: custody, request: req, onUri: () => {} }, provider => approvePairingWithWallet(req, provider), h.factory);
     expect(() => verifyPairingApproval(req, approval)).not.toThrow();
-    expect(JSON.parse(h.sdkRequest.mock.calls[0][0].request.params[1] as string).message.scopes).toEqual(FULL_SOCIAL_SCOPES);
+    expect(JSON.parse(h.sdkRequest.mock.calls[0][0].request.params[1] as string).message.scopes).toEqual(selected);
     expect(h.sdkRequest).toHaveBeenCalledTimes(2);
     expect(h.clear).toHaveBeenCalledOnce();
   });
@@ -165,8 +165,11 @@ describe('temporary signature-only WalletConnect sessions', () => {
     await vi.waitFor(() => expect(h.sdkRequest).toHaveBeenCalledOnce());
     controller.abort(); await operation;
     expect(h.sdkRequest).toHaveBeenCalledOnce(); expect(h.clear).toHaveBeenCalledOnce();
-    const changed = harness(); changed.sdkRequest.mockImplementationOnce(() => new Promise(() => {}));
-    const changedOperation = expect(withWalletConnect({ projectId: PROJECT, custodyAddress: custody, request: request(), onUri: () => {} }, provider => approvePairingWithWallet(request(), provider), changed.factory)).rejects.toThrow('session changed');
+    // Reuse the reviewed request: regenerating it inside the callback can
+    // change its deadline across a second boundary and correctly fail before
+    // the SDK receives the signature prompt this test intends to invalidate.
+    const changed = harness(); const changedRequest = request(); changed.sdkRequest.mockImplementationOnce(() => new Promise(() => {}));
+    const changedOperation = expect(withWalletConnect({ projectId: PROJECT, custodyAddress: custody, request: changedRequest, onUri: () => {} }, provider => approvePairingWithWallet(changedRequest, provider), changed.factory)).rejects.toThrow('session changed');
     await vi.waitFor(() => expect(changed.sdkRequest).toHaveBeenCalledOnce());
     changed.listeners.get('session_update')!({ topic: TOPIC }); await changedOperation;
     expect(changed.sdkRequest).toHaveBeenCalledOnce(); expect(changed.clear).toHaveBeenCalledOnce();

@@ -51,6 +51,7 @@ const address: Rule = value => /^0x[a-fA-F0-9]{40}$/.test(value);
 const hash: Rule = value => /^(?:0x)?[a-fA-F0-9]{40}$/.test(value);
 const username: Rule = value => /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
 const channel: Rule = value => /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+const searchQuery: Rule = value => !!value.trim() && new TextEncoder().encode(value).length <= 256 && !/[\u0000-\u001f\u007f]/.test(value);
 const cursor: Rule = value => /^[a-zA-Z0-9_+/=:-]{1,2048}$/.test(value);
 const pagination: QueryRules = { limit: integer(100), cursor };
 const followPagination: QueryRules = { limit: integer(100), cursor: value => /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn };
@@ -63,6 +64,7 @@ const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v1/linkById': { required: ['fid', 'link_type', 'target_fid'], query: { fid, link_type: value => value === 'follow', target_fid: fid } },
   '/v2/farcaster/user': { required: ['fid'], query: { fid } },
   '/v2/farcaster/user/by-username': { required: ['username'], query: { username } },
+  '/v2/farcaster/user/search': { required: ['q'], query: { q: searchQuery, limit: integer(100) } },
   '/v2/farcaster/user/custody-address': { required: ['custody_address'], query: { custody_address: address } },
   '/v2/farcaster/user/followers': { required: ['fid'], query: { ...followPagination, fid } },
   '/v2/farcaster/user/following': { required: ['fid'], query: { ...followPagination, fid } },
@@ -71,7 +73,13 @@ const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v2/farcaster/feed/user/casts': { required: ['fid'], query: { ...pagination, fid } },
   '/v2/farcaster/feed/channels': { required: ['channel_ids'], query: { ...pagination, channel_ids: channel } },
   '/v2/farcaster/cast': { required: ['identifier'], query: { identifier: hash, type: value => value === 'hash', fid } },
+  '/v2/farcaster/cast/search': { required: ['q'], query: { q: searchQuery, limit: integer(100) } },
   '/v2/farcaster/cast/conversation': { required: ['identifier', 'type'], query: { identifier: hash, type: value => value === 'hash', reply_depth: integer(3, 0) } },
+  '/v2/farcaster/notifications': { required: ['fid'], query: { ...pagination, fid } },
+  '/v2/farcaster/channel': { required: ['id', 'type'], query: { id: channel, type: value => value === 'id' } },
+  '/v2/farcaster/channel/all': { query: pagination },
+  '/v2/farcaster/channel/trending': { query: { limit: integer(100) } },
+  '/v2/farcaster/channel/search': { required: ['q'], query: { q: searchQuery, limit: integer(100) } },
 };
 
 function validQuery(params: URLSearchParams, endpoint: Endpoint): boolean {
@@ -154,8 +162,27 @@ async function proxy(request: Request, url: URL): Promise<Response> {
       redirect: 'manual',
       signal: controller.signal,
       cache: 'no-store',
+      credentials: 'omit',
     });
     if (!upstream.ok) {
+      // Optional node indexes return 503 with these exact source-defined
+      // messages. Preserve that capability boundary without forwarding raw
+      // errors or making a disabled index look like an empty successful feed.
+      if (((upstream.status === 503 && (path === '/v2/farcaster/cast/search' || path.startsWith('/v2/farcaster/channel') || path === '/v2/farcaster/feed/channels' || path === '/v2/farcaster/notifications'))
+        || (upstream.status === 404 && (path === '/v2/farcaster/cast' || path === '/v2/farcaster/channel'))) && upstream.headers.get('Content-Type')?.includes('application/json')) {
+        const bytes = await readLimited(upstream.body, 4096);
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (value && typeof value === 'object' && 'message' in value) {
+          if (upstream.status === 404 && path === '/v2/farcaster/cast' && value.message === 'Cast not found') return failure(404, 'cast_not_found', 'This cast was not found on Hypersnap.');
+          if (upstream.status === 404 && path === '/v2/farcaster/channel' && value.message === 'Channel not found') return failure(404, 'channel_not_found', 'This channel was not found on Hypersnap.');
+          const unavailable = path === '/v2/farcaster/cast/search' ? ['Search indexing not available', 'Search feature disabled']
+            : path.startsWith('/v2/farcaster/channel') ? ['Channels indexing not enabled'] : path === '/v2/farcaster/feed/channels' ? ['Channel feed service not available'] : ['Hub query service not available'];
+          if (upstream.status === 503 && typeof value.message === 'string' && unavailable.includes(value.message)) {
+            return failure(503, 'feature_unavailable', path === '/v2/farcaster/cast/search' ? 'Cast search is not enabled on this Hypersnap node.'
+              : path.startsWith('/v2/farcaster/channel') ? 'The channel index is not enabled on this Hypersnap node.' : path === '/v2/farcaster/feed/channels' ? 'Channel feeds are not enabled on this Hypersnap node.' : 'Recent activity is unavailable on this Hypersnap node.');
+          }
+        }
+      }
       // The v1 adapter wraps bad_request.rate_limited in HTTP 400. Recognize
       // only the verified submit error shape; never expose the upstream text.
       if (isWrite && upstream.status === 400 && upstream.headers.get('Content-Type')?.includes('application/json')) {

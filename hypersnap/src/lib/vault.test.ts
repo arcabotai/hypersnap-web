@@ -3,6 +3,7 @@ import { IDBFactory, IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { decryptSignerVault, deleteSavedVault, encryptSignerVault, readSavedVault, writeSavedVault, VAULT_ITERATIONS, type VaultMetadata, type SignerVault } from './vault';
 import { bytesToHex } from './protocol/signedKeyRequest';
+import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './pairing';
 
 const PASSWORD = 'synthetic vault passphrase';
 const ORIGIN = 'https://quorum.arca.computer';
@@ -10,8 +11,8 @@ const key = new Uint8Array(32).fill(19); // synthetic app key, unrelated to cust
 const metadata: VaultMetadata = { origin: ORIGIN, fid: 1234, custodyAddress: `0x${'ab'.repeat(20)}`, publicKey: bytesToHex(ed25519.getPublicKey(key)), requestFid: 1234, scopes: [1, 3, 4], ttl: 604800 };
 
 describe('versioned encrypted device posting-key vault', () => {
-  it('authenticates explicit social permissions without changing legacy vault compatibility', async () => {
-    const expanded = { ...metadata, scopes: [1, 3, 4, 5, 6, 11] };
+  it.each([{ selected: FULL_SOCIAL_SCOPES }, { selected: FULL_CLIENT_SCOPES }])('authenticates explicit scope set %j without changing legacy vault compatibility', async ({ selected }) => {
+    const expanded = { ...metadata, scopes: [...selected] };
     const vault = await encryptSignerVault(key, expanded, PASSWORD);
     const recovered = await decryptSignerVault(vault, PASSWORD, ORIGIN);
     expect(recovered.metadata.scopes).toEqual(expanded.scopes);

@@ -1,5 +1,5 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { ApiError, getFollowStatus, getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
+import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
 import { PAIRING_SCOPES, PAIRING_TTL_SECONDS, validatePairingRequest, validatePairingScopes, verifyPairingApproval, validateRevocationRequest, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationRequest, type RevocationApproval } from './pairing';
 import { buildSignedMessage, CastType, farcasterTimestamp, MessageType, ReactionType, SignatureScheme, type MessageDataInput } from './protocol/messageBuilder';
 import { abiEncodeSignedKeyRequestMetadata, bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
@@ -8,13 +8,14 @@ import { profileChanges, type ProfileField, type ProfilePatch, type ProfileUpdat
 import { createMediaUploadGrant, type MediaUploadInput, type MediaUploadGrant } from './media';
 
 export const SIGNER_TTL_SECONDS = PAIRING_TTL_SECONDS;
-const SIGNER_SCOPE_NAMES: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
+const SIGNER_SCOPE_NAMES: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 2: 'MESSAGE_TYPE_CAST_REMOVE', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
 const CONFIRMATION_TIMEOUT_MS = 45_000;
 const KEY_ADD_COOLDOWN_SECONDS = 60;
 
 export interface CastTarget { fid: number; hash: string }
 export interface WriteReceipt { hash: string }
-export interface CastOptions { embeds?: Array<{ url: string }>; mentions?: number[]; mentionsPositions?: number[] }
+export type CastEmbed = { url: string } | { castId: CastTarget };
+export interface CastOptions { embeds?: CastEmbed[]; mentions?: number[]; mentionsPositions?: number[]; parentUrl?: string }
 export interface ConnectOptions { signal?: AbortSignal; onProgress?: (stage: string) => void }
 export interface PairingOptions extends ConnectOptions { origin: string; requestedScopes?: readonly number[] }
 export interface PendingPairing {
@@ -42,6 +43,8 @@ export interface WalletSession {
   readonly publicKey: string;
   readonly scopes: readonly number[];
   cast(text: string, parent?: CastTarget, options?: CastOptions): Promise<WriteReceipt>;
+  /** Removes only this account's cast; resolves after Hypersnap confirms absence. */
+  deleteCast(target: CastTarget): Promise<WriteReceipt>;
   react(target: CastTarget, type: 'like' | 'recast', remove?: boolean): Promise<WriteReceipt>;
   follow(targetFid: number, remove?: boolean): Promise<WriteReceipt>;
   updateProfile(patch: ProfilePatch): Promise<ProfileUpdateResult>;
@@ -66,6 +69,13 @@ function assertFid(fid: number): void {
 function hashBytes(hash: string): Uint8Array {
   if (!/^(?:0x)?[0-9a-fA-F]{40}$/.test(hash)) throw new Error('Invalid cast hash.');
   return hexToBytes(hash);
+}
+function assertHttpsUrl(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || new TextEncoder().encode(value).length > 256) throw new Error('Use an HTTPS URL up to 256 UTF-8 bytes.');
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) throw new Error();
+  } catch { throw new Error('Use an HTTPS URL up to 256 UTF-8 bytes.'); }
 }
 function nonceAfter(value: number | undefined): number {
   if (!Number.isInteger(value) || Number(value) < 0 || Number(value) >= 0xffffffff) throw new Error('The node did not return a usable signer nonce. Please try again later.');
@@ -255,6 +265,8 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
   const uncertainProfileFields = new Map<ProfileField, string>();
   const followingBusy = new Set<number>();
   const uncertainFollows = new Map<number, boolean>();
+  const deletingCasts = new Set<string>();
+  const pendingDeletions = new Map<string, WriteReceipt>();
   let lastWriteTimestamp = 0;
   const assertSession = () => { if (disposed || revoking || revokeSubmitted) throw new Error('Your session has ended or is being revoked. Unlock or authorize your device again.'); };
   const sign = async (digest: Uint8Array) => { if (disposed) throw new Error('Your session has ended.'); return ed25519.sign(digest, privateKey); };
@@ -273,20 +285,46 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
   };
   const assertAuthorized = async (type: MessageType) => {
     assertSession();
-    if (!metadata.scopes.includes(type)) throw new Error('Enable social features with your custody wallet before following accounts or editing your profile.');
+    if (!metadata.scopes.includes(type)) throw new Error(type === MessageType.CAST_REMOVE
+      ? 'Approve cast deletion with your custody wallet before deleting casts. Existing device permissions do not include deletion.'
+      : 'Enable social features with your custody wallet before following accounts or editing your profile.');
     const [currentUser, registry] = await Promise.all([getUser({ fid: metadata.fid }), getSigners(metadata.fid)]);
     assertSession();
     if (currentUser.fid !== metadata.fid || custodyAddress(currentUser) !== metadata.custodyAddress || !usableSigner(signerIn(registry, metadata.publicKey), metadata.fid, metadata.scopes)) throw new Error('This device signer is no longer authorized. Reconnect before posting.');
   };
-  const send = async (data: MessageDataInput): Promise<WriteReceipt> => {
+  const send = async (data: MessageDataInput, onAttempt?: (receipt: WriteReceipt) => void): Promise<WriteReceipt> => {
     await assertAuthorized(data.type);
     // Consecutive follow/unfollow and profile updates need a later timestamp
     // even when the user acts twice in a second (the protocol uses LWW sets).
     lastWriteTimestamp = Math.max(farcasterTimestamp(), lastWriteTimestamp + 1);
     const { envelope, hash } = await buildSignedMessage({ ...data, timestamp: lastWriteTimestamp }, { scheme: SignatureScheme.ED25519, publicKey, sign });
     assertSession();
+    const receipt = { hash: bytesToHex(hash) };
+    onAttempt?.(receipt);
     await submitMessage(envelope);
-    return { hash: bytesToHex(hash) };
+    return receipt;
+  };
+  const confirmCastDeletion = async (target: CastTarget): Promise<void> => {
+    const controller = new AbortController();
+    const deadline = Date.now() + CONFIRMATION_TIMEOUT_MS;
+    const timer = setTimeout(() => controller.abort(), CONFIRMATION_TIMEOUT_MS);
+    try {
+      do {
+        assertSession();
+        try {
+          const observed = await getCast(target.hash, controller.signal);
+          assertSession();
+          if (observed.author?.fid !== metadata.fid || bytesToHex(hashBytes(observed.hash)) !== target.hash) throw new Error('The node returned a different cast.');
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found' && !controller.signal.aborted && Date.now() < deadline) return;
+          throw error;
+        }
+        await delay(1500, controller.signal);
+      } while (Date.now() < deadline);
+      throw new Error('Cast deletion is not visible yet.');
+    } catch {
+      throw new ApiError('Cast deletion status is unknown. Check deletion status again; this will not submit another deletion.', 504, 'submission_unknown');
+    } finally { clearTimeout(timer); }
   };
   const confirmProfileField = async (field: ProfileField, attempted: string): Promise<void> => {
     // submitMessage acknowledges the mempool. Only a fresh read of the matching
@@ -318,19 +356,53 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
     async cast(text, parent, options = {}) {
       const textBytes = new TextEncoder().encode(text);
       const bytes = textBytes.length;
-      const { embeds = [], mentions = [], mentionsPositions = [] } = options;
+      const { embeds = [], mentions = [], mentionsPositions = [], parentUrl } = options;
       if (!text.trim() && !embeds.length && !mentions.length) throw new Error('Write something before casting.');
       if (bytes > 1024) throw new Error('Casts can contain up to 1,024 UTF-8 bytes.');
-      if (!Array.isArray(embeds) || embeds.length > 2 || embeds.some(embed => {
-        if (!embed || typeof embed.url !== 'string' || new TextEncoder().encode(embed.url).length > 256) return true;
-        try { const url = new URL(embed.url); return url.protocol !== 'https:' || !!url.username || !!url.password; } catch { return true; }
-      })) throw new Error('Use at most two HTTPS media embeds, each up to 256 UTF-8 bytes.');
+      if (!Array.isArray(embeds) || embeds.length > 2) throw new Error('Use at most two embeds, including quoted casts and HTTPS media.');
+      const protocolEmbeds = embeds.map(embed => {
+        if (!embed || typeof embed !== 'object' || Object.keys(embed).length !== 1) throw new Error('Choose an HTTPS media URL or a cast to quote.');
+        if ('url' in embed) { assertHttpsUrl(embed.url); return { url: embed.url }; }
+        if (!('castId' in embed) || !embed.castId || typeof embed.castId !== 'object' || Object.keys(embed.castId).length !== 2) throw new Error('Choose a valid cast to quote.');
+        assertFid(embed.castId.fid);
+        return { castId: { fid: embed.castId.fid, hash: hashBytes(embed.castId.hash) } };
+      });
       if (!Array.isArray(mentions) || !Array.isArray(mentionsPositions) || mentions.length > 10 || mentions.length !== mentionsPositions.length) throw new Error('Use at most ten mentions with matching positions.');
       mentions.forEach(assertFid);
       if (mentionsPositions.some((position, index) => !Number.isSafeInteger(position) || position < 0 || position > bytes
         || (index > 0 && position < mentionsPositions[index - 1]) || (position < bytes && (textBytes[position] & 0xc0) === 0x80))) throw new Error('Mention positions must be sorted UTF-8 boundaries in the cast text.');
       if (parent) assertFid(parent.fid);
-      return send({ type: MessageType.CAST_ADD, fid: metadata.fid, body: { castAddBody: { text, embeds, mentions, mentionsPositions, type: bytes > 320 ? CastType.LONG_CAST : CastType.CAST, ...(parent ? { parent: { castId: { fid: parent.fid, hash: hashBytes(parent.hash) } } } : {}) } } });
+      if (parentUrl !== undefined) { assertHttpsUrl(parentUrl); if (parent) throw new Error('Choose either a reply or a channel destination.'); }
+      return send({ type: MessageType.CAST_ADD, fid: metadata.fid, body: { castAddBody: { text, embeds: protocolEmbeds, mentions, mentionsPositions, type: bytes > 320 ? CastType.LONG_CAST : CastType.CAST, ...(parent ? { parent: { castId: { fid: parent.fid, hash: hashBytes(parent.hash) } } } : parentUrl !== undefined ? { parent: { url: parentUrl } } : {}) } } });
+    },
+    async deleteCast(target) {
+      assertSession();
+      assertFid(target.fid);
+      if (target.fid !== metadata.fid) throw new Error('You can delete only casts published by your own account.');
+      if (!metadata.scopes.includes(MessageType.CAST_REMOVE)) throw new Error('Approve cast deletion with your custody wallet before deleting casts. Existing device permissions do not include deletion.');
+      const targetHash = bytesToHex(hashBytes(target.hash));
+      if (deletingCasts.has(targetHash)) throw new Error('This cast deletion is already being checked.');
+      deletingCasts.add(targetHash);
+      try {
+        if (!pendingDeletions.has(targetHash)) {
+          const observed = await getCast(targetHash);
+          assertSession();
+          if (observed.author?.fid !== metadata.fid || bytesToHex(hashBytes(observed.hash)) !== targetHash) throw new Error('The node did not confirm that this cast belongs to your account.');
+          try {
+            await send({ type: MessageType.CAST_REMOVE, fid: metadata.fid, body: { castRemoveBody: { targetHash: hashBytes(targetHash) } } }, receipt => pendingDeletions.set(targetHash, receipt));
+          } catch (error) {
+            if (pendingDeletions.has(targetHash) && !(error instanceof ApiError && error.status < 500 && error.code !== 'submission_unknown')) {
+              throw new ApiError('Cast deletion status is unknown. Check deletion status again; this will not submit another deletion.', 504, 'submission_unknown');
+            }
+            pendingDeletions.delete(targetHash);
+            throw error;
+          }
+        }
+        await confirmCastDeletion({ fid: metadata.fid, hash: targetHash });
+        const receipt = pendingDeletions.get(targetHash)!;
+        pendingDeletions.delete(targetHash);
+        return receipt;
+      } finally { deletingCasts.delete(targetHash); }
     },
     async react(target, type, remove = false) {
       assertFid(target.fid);

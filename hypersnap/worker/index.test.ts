@@ -13,6 +13,85 @@ afterEach(() => {
 });
 
 describe('the fixed Hypersnap gateway', () => {
+  it('forwards feature reads only to Hypersnap with bounded explicit parameters', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetch);
+    const paths = [
+      '/v2/farcaster/user/search?q=alice&limit=10',
+      '/v2/farcaster/cast/search?q=hello+world&limit=20',
+      '/v2/farcaster/notifications?fid=3&limit=20&cursor=abc%3D',
+      '/v2/farcaster/channel?id=test&type=id',
+      '/v2/farcaster/channel/all?limit=20&cursor=abcd',
+      '/v2/farcaster/channel/trending?limit=20',
+      '/v2/farcaster/channel/search?q=art&limit=10',
+    ];
+    for (const path of paths) expect((await handleRequest(new Request(`${BASE}/api${path}`, { headers: { Cookie: 'secret', Authorization: 'secret' } }), env)).status).toBe(200);
+    expect(fetch.mock.calls.map(call => call[0])).toEqual(paths.map(path => `https://haatz.quilibrium.com${path}`));
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.headers.get('Authorization')).toBeNull();
+      expect(options.headers.get('Cookie')).toBeNull();
+      expect(options.credentials).toBe('omit');
+    }
+  });
+
+  it.each([
+    '/v2/farcaster/user/search?q=',
+    '/v2/farcaster/user/search?q=one&q=two',
+    '/v2/farcaster/cast/search?q=%00hello',
+    '/v2/farcaster/cast/search?q=hello&cursor=ignored',
+    '/v2/farcaster/cast/search?q=' + encodeURIComponent('🙂'.repeat(65)),
+    '/v2/farcaster/notifications?fid=0',
+    '/v2/farcaster/notifications?fid=3&limit=101',
+    '/v2/farcaster/channel?id=https://attacker.test&type=parent_url',
+    '/v2/farcaster/channel/all?limit=1000',
+    '/v2/farcaster/channel/search?q=hello&cursor=ignored',
+    '/v2/farcaster/channel/trending?cursor=ignored',
+  ])('rejects unsupported feature parameters before fetch: %s', async path => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    expect((await handleRequest(new Request(`${BASE}/api${path}`), env)).status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reports source-defined disabled indexes as unavailable rather than empty success', async () => {
+    for (const [path, upstreamMessage] of [
+      ['/v2/farcaster/cast/search?q=hello', 'Search indexing not available'],
+      ['/v2/farcaster/cast/search?q=hello', 'Search feature disabled'],
+      ['/v2/farcaster/channel/all', 'Channels indexing not enabled'],
+      ['/v2/farcaster/feed/channels?channel_ids=test', 'Channel feed service not available'],
+      ['/v2/farcaster/notifications?fid=3', 'Hub query service not available'],
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ message: upstreamMessage }, 503)));
+      const response = await handleRequest(new Request(`${BASE}/api${path}`), env);
+      expect(response.status).toBe(503);
+      expect((await response.json() as { code: string }).code).toBe('feature_unavailable');
+    }
+  });
+
+  it('keeps generic upstream outages distinct from disabled-index responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ message: 'Sensitive database failure' }, 503)));
+    const response = await handleRequest(new Request(`${BASE}/api/v2/farcaster/cast/search?q=hello`), env);
+    expect(response.status).toBe(502);
+    expect(await response.text()).not.toContain('Sensitive');
+  });
+
+  it('normalizes only the exact missing-cast response for uncertain deletion reconciliation', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(jsonResponse({ message: 'Cast not found' }, 404))
+      .mockResolvedValueOnce(jsonResponse({ message: 'Gateway route not found' }, 404));
+    vi.stubGlobal('fetch', fetch);
+    const path = `${BASE}/api/v2/farcaster/cast?identifier=${'a'.repeat(40)}&type=hash`;
+    expect(await (await handleRequest(new Request(path), env)).json()).toEqual({ code: 'cast_not_found', message: 'This cast was not found on Hypersnap.' });
+    expect((await (await handleRequest(new Request(path), env)).json() as { code: string }).code).toBe('upstream_error');
+  });
+
+  it('distinguishes absent named channels from absent casts', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(jsonResponse({ message: 'Channel not found' }, 404))
+      .mockResolvedValueOnce(jsonResponse({ message: 'Cast not found' }, 404));
+    vi.stubGlobal('fetch', fetch);
+    const path = `${BASE}/api/v2/farcaster/channel?id=unknown&type=id`;
+    expect(await (await handleRequest(new Request(path), env)).json()).toEqual({ code: 'channel_not_found', message: 'This channel was not found on Hypersnap.' });
+    expect((await (await handleRequest(new Request(path), env)).json() as { code: string }).code).toBe('upstream_error');
+  });
   it('forwards only bounded public follow reads to the existing Hypersnap node', async () => {
     const fetch = vi.fn().mockImplementation(async () => jsonResponse({ users: [], next: {} }));
     vi.stubGlobal('fetch', fetch);

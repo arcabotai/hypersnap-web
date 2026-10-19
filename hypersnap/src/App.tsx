@@ -1,17 +1,20 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconHash, IconHeart, IconHome, IconKey, IconLock, IconMessageCircle, IconMoon, IconPhoto, IconRefresh, IconRepeat, IconSearch, IconShare, IconShieldLock, IconSparkles, IconSun, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
+import { IconBell, IconQuote, IconTrash, IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconHash, IconHeart, IconHome, IconKey, IconLock, IconMessageCircle, IconMoon, IconPhoto, IconRefresh, IconRepeat, IconSearch, IconShare, IconShieldLock, IconSparkles, IconSun, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
 import { Button, Input, Modal } from './components/ui';
-import { getFeed, getUser, getInfo, getConversation, type Cast, type User, type ConversationNode } from './lib/api';
+import { getFeed, getProfileFeed, getCast, getChannels, getChannel, getUser, getInfo, getConversation, type Channel, type Cast, type User, type ConversationNode } from './lib/api';
 import type { WalletSession } from './lib/auth';
-import { castPath, parseRoute, profilePath, publicUrl, type AppRoute } from './lib/navigation';
+import { castPath, parseRoute, parseLocalPath, routePath, searchPath, profilePath, publicUrl, type AppRoute } from './lib/navigation';
 import { ShareCastDialog } from './components/ShareCast';
 import FollowButton from './components/FollowButton';
 import FollowListDialog from './components/FollowListDialog';
 import EditProfileDialog from './components/EditProfileDialog';
 import { getFollows, getFollowStatus } from './lib/api';
-import { FULL_SOCIAL_SCOPES } from './lib/pairing';
+import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './lib/pairing';
 import { uploadMedia } from './lib/media';
 import { composeCastContent, renderMentionSegments } from './lib/content';
+import { SearchView, NotificationsView, ChannelsView, ChannelHeader, ProfileTabs } from './components/FeaturePanels';
+import DeleteCastDialog from './components/DeleteCastDialog';
+import './cast-features.scss';
 
 const ConnectAccount = lazy(() => import('./components/ConnectAccount'));
 const DeviceSettings = lazy(() => import('./components/ConnectAccount').then(module => ({ default: module.DeviceSettings })));
@@ -20,21 +23,15 @@ type FeedRoute = Exclude<AppRoute, { kind: 'cast' }>;
 function backgroundLocation(): FeedRoute {
   const path: unknown = history.state?.quorumBackground;
   if (typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')) {
-    const parsed = parseRoute({ pathname: path, search: '' });
+    const parsed = parseLocalPath(path);
     if (parsed.kind !== 'cast' && parsed.kind !== 'not-found') return parsed;
   }
   return { kind: 'discover' };
-}
-function routePath(route: FeedRoute): string {
-  if (route.kind === 'channel') return `/channel/${route.channel}`;
-  if (route.kind === 'profile') return route.identifier ? `/profile/${route.identifier}` : '/profile';
-  return route.kind === 'discover' || route.kind === 'not-found' ? '/' : `/${route.kind}`;
 }
 function localClick(event: MouseEvent<HTMLAnchorElement>, action: () => void) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault(); action();
 }
-const channels = [{ id: 'quilibrium', name: 'Quilibrium', mark: 'Q' }, { id: 'farcaster', name: 'Farcaster', mark: 'F' }, { id: 'dev', name: 'Developers', mark: '</>' }, { id: 'art', name: 'Art & creativity', mark: '✳' }, { id: 'crypto', name: 'Crypto', mark: 'Ξ' }];
 const sourceUrl = 'https://github.com/arcabotai/hypersnap-web';
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 const short = (value: number = 0) => Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
@@ -67,7 +64,21 @@ function ConversationReplies({ nodes, renderCard }: { nodes: ConversationNode[];
   });
   return <div className="conversation-replies" aria-label="Conversation replies">{render(nodes, 0)}<p className="thread-empty">Open a reply to continue its conversation.</p></div>;
 }
-function CastCard({ cast, onProfile, onThread, onShare, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onThread(cast: Cast): void; onShare(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
+function QuotedCast({ target, onThread }: { target: { fid: number; hash: string }; onThread(cast: Cast): void }) {
+  const [cast, setCast] = useState<Cast | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController(); setCast(null); setUnavailable(false);
+    getCast(target.hash, controller.signal).then(value => {
+      if (!controller.signal.aborted) { if (value.author.fid === target.fid) setCast(value); else setUnavailable(true); }
+    }).catch(() => { if (!controller.signal.aborted) setUnavailable(true); });
+    return () => controller.abort();
+  }, [target.hash, target.fid]);
+  return <a className="quoted-cast" href={castPath(target.hash)} onClick={event => { if (cast) localClick(event, () => onThread(cast)); }}>
+    {cast ? <><strong>{cast.author.display_name || cast.author.username || `FID ${target.fid}`}</strong><span>{cast.text || 'Cast with attachments'}</span><small>Open quoted cast</small></> : <span>{unavailable ? 'Quoted cast unavailable or deleted' : 'Loading quoted cast…'}</span>}
+  </a>;
+}
+function CastCard({ cast, onProfile, onThread, onShare, onQuote, onDelete, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
   const initialLiked = !!cast.viewer_context?.liked;
   const initialRecasted = !!cast.viewer_context?.recasted;
   const [liked, setLiked] = useState(initialLiked);
@@ -87,17 +98,21 @@ function CastCard({ cast, onProfile, onThread, onShare, session, onSignIn, saved
       <div className="cast__meta"><a className="button button--ghost author" href={profilePath(cast.author.fid)} onClick={event => localClick(event, () => onProfile(cast.author))}>{cast.author.display_name || cast.author.username || `FID ${cast.author.fid}`}</a><span className="handle">@{cast.author.username || cast.author.fid}</span><span className="dot">·</span><a className="cast-permalink" href={castPath(cast.hash)} aria-label="Open cast" onClick={event => localClick(event, () => onThread(cast))}><time dateTime={cast.timestamp} title={new Date(cast.timestamp).toLocaleString()}>{relativeTime(cast.timestamp)}</time></a>{cast.channel && <span className="channel-tag">/{cast.channel.id}</span>}</div>
       <p className="cast__text"><CastText cast={cast} onProfile={onProfile} /></p>
       {cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2).map(embed => /\.(png|jpe?g|webp|gif)(\?|$)|imagedelivery\.net|imagedelivery\.cloud|^https:\/\/quorum\.arca\.computer\/media\/[a-f0-9]{64}$/i.test(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" className="embed"><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <a className="link-embed" key={embed.url} href={embed.url} target="_blank" rel="noopener noreferrer"><IconWorld size={18} /><span>{new URL(embed.url).hostname}<small>{embed.url.slice(0, 80)}</small></span><IconArrowUpRight size={17} /></a>)}
+      {cast.embeds?.filter((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && !!embed.cast_id && Number.isSafeInteger(embed.cast_id.fid) && embed.cast_id.fid > 0 && /^(?:0x)?[a-fA-F0-9]{40}$/.test(embed.cast_id.hash)).slice(0, 2).map(embed => <QuotedCast key={embed.cast_id.hash} target={embed.cast_id} onThread={onThread} />)}
       <div className="cast__actions">
         <Button variant="ghost" aria-label="Open replies" onClick={() => onThread(cast)}><IconMessageCircle size={18} /><span>{short(cast.replies?.count)}</span></Button>
         <Button variant="ghost" aria-label={recasted ? 'Undo recast' : 'Recast'} aria-pressed={recasted} disabled={pending} className={recasted ? 'is-recasted' : ''} onClick={() => void react('recast')}><IconRepeat size={18} /><span>{short((cast.reactions?.recasts_count ?? 0) + Number(recasted) - Number(initialRecasted))}</span></Button>
         <Button variant="ghost" aria-label={liked ? 'Unlike' : 'Like'} aria-pressed={liked} disabled={pending} className={liked ? 'is-liked' : ''} onClick={() => void react('like')}><IconHeart size={18} fill={liked ? 'currentColor' : 'none'} /><span>{short((cast.reactions?.likes_count ?? 0) + Number(liked) - Number(initialLiked))}</span></Button>
         <Button variant="ghost" aria-label={saved ? 'Remove bookmark' : 'Bookmark cast'} aria-pressed={saved} className={saved ? 'is-saved' : ''} onClick={() => onSave(cast)}><IconBookmark size={18} fill={saved ? 'currentColor' : 'none'} /></Button>
+        <Button variant="ghost" aria-label="Quote cast" onClick={() => onQuote(cast)}><IconQuote size={18} /></Button>
+        {session?.fid === cast.author.fid && <Button variant="ghost" aria-label="Delete cast" onClick={() => onDelete(cast)}><IconTrash size={18} /></Button>}
         <Button variant="ghost" aria-label="Share cast" onClick={() => onShare(cast)}><IconShare size={18} /></Button>
       </div>
     </div>
   </article>;
 }
-function Composer({ session, onSignIn, onPosted, parent, notify }: { session: WalletSession | null; onSignIn(): void; onPosted(): void; parent?: Cast; notify(text: string): void }) {
+function Composer({ session, onSignIn, onPosted, parent, parentUrl, quote, notify }: { session: WalletSession | null; onSignIn(): void; onPosted(): void; parent?: Cast; parentUrl?: string; quote?: Cast; notify(text: string): void }) {
+  const attachmentLimit = quote ? 1 : 2;
   const [text, setText] = useState('');
   const [embeds, setEmbeds] = useState<string[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<User[]>([]);
@@ -122,19 +137,19 @@ function Composer({ session, onSignIn, onPosted, parent, notify }: { session: Wa
     if (busy || uploading || validationError) return;
     setBusy(true); setDraftError('');
     try {
-      await session.cast(draft.text, parent ? { fid: parent.author.fid, hash: parent.hash } : undefined, { embeds: embeds.map(url => ({ url })), mentions: draft.mentions, mentionsPositions: draft.mentionsPositions });
+      await session.cast(draft.text, parent ? { fid: parent.author.fid, hash: parent.hash } : undefined, { embeds: [...embeds.map(url => ({ url })), ...(quote ? [{ castId: { fid: quote.author.fid, hash: quote.hash } }] : [])], ...(parentUrl ? { parentUrl } : {}), mentions: draft.mentions, mentionsPositions: draft.mentionsPositions });
       setText(''); setEmbeds([]); setMentionedUsers([]); setMentionQuery(''); setMentionCandidate(null);
-      notify(parent ? 'Reply submitted to Hypersnap. It may take a moment to appear.' : 'Cast submitted to Hypersnap. It may take a moment to appear.'); onPosted();
+      notify(quote ? 'Quote submitted to Hypersnap. It may take a moment to appear.' : parent ? 'Reply submitted to Hypersnap. It may take a moment to appear.' : 'Cast submitted to Hypersnap. It may take a moment to appear.'); onPosted();
     } catch (error) { setDraftError(message(error)); }
     finally { setBusy(false); }
   }
   async function attachImage(file: File | undefined) {
-    if (!file || !session || uploading || busy || embeds.length >= 2) return;
+    if (!file || !session || uploading || busy || embeds.length >= attachmentLimit) return;
     const controller = new AbortController(); uploadController.current?.abort(); uploadController.current = controller;
     setUploading(true); setUploadName(file.name); setDraftError('');
     try {
       const uploaded = await uploadMedia(file, input => session.authorizeMediaUpload(input), controller.signal);
-      if (!controller.signal.aborted) setEmbeds(current => [...current, uploaded.url].slice(0, 2));
+      if (!controller.signal.aborted) setEmbeds(current => [...current, uploaded.url].slice(0, attachmentLimit));
     } catch (error) { if (!controller.signal.aborted) setDraftError(message(error)); }
     finally { if (uploadController.current === controller) { setUploading(false); uploadController.current = null; } }
   }
@@ -159,15 +174,16 @@ function Composer({ session, onSignIn, onPosted, parent, notify }: { session: Wa
     requestAnimationFrame(() => { textarea.current?.focus(); textarea.current?.setSelectionRange(start + token.length, start + token.length); });
   }
   return <div className="composer"><Avatar user={session?.user} /><div className="composer__body">
-    {session ? <><textarea ref={textarea} aria-label={parent ? 'Write a reply' : 'Write a cast'} placeholder={parent ? `Reply to @${parent.author.username}…` : 'What’s on your mind?'} value={text} onChange={event => setText(event.target.value)} disabled={busy} rows={3} />
+    {session ? <><textarea ref={textarea} aria-label={quote ? 'Write a quote' : parent ? 'Write a reply' : 'Write a cast'} placeholder={quote ? 'Add your thoughts…' : parent ? `Reply to @${parent.author.username}…` : 'What’s on your mind?'} value={text} onChange={event => setText(event.target.value)} disabled={busy} rows={3} />
+      {quote && <div className="quoted-cast quoted-cast--draft"><strong>{quote.author.display_name || quote.author.username || `FID ${quote.author.fid}`}</strong><span>{quote.text || 'Cast with attachments'}</span></div>}
       <div className="composer-media">{embeds.map(url => <div className="composer-attachment" key={url}><img src={url} alt="Image attached to your draft" referrerPolicy="no-referrer" /><Button variant="ghost" aria-label="Remove attached image" disabled={busy} onClick={() => setEmbeds(current => current.filter(item => item !== url))}><IconX size={16} /></Button></div>)}</div>
-      <div className="composer-tools"><input ref={fileInput} className="pairing-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Attach an image" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void attachImage(file); }} /><Button variant="secondary" disabled={busy || uploading || embeds.length >= 2} onClick={() => fileInput.current?.click()}><IconPhoto size={16} />{uploading ? 'Uploading…' : 'Add image'}</Button>{uploading && <Button variant="ghost" onClick={() => { uploadController.current?.abort(); setUploading(false); }}>Cancel upload</Button>}<span>{embeds.length}/2 images</span></div>
+      <div className="composer-tools"><input ref={fileInput} className="pairing-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Attach an image" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void attachImage(file); }} /><Button variant="secondary" disabled={busy || uploading || embeds.length >= attachmentLimit} onClick={() => fileInput.current?.click()}><IconPhoto size={16} />{uploading ? 'Uploading…' : 'Add image'}</Button>{uploading && <Button variant="ghost" onClick={() => { uploadController.current?.abort(); setUploading(false); }}>Cancel upload</Button>}<span>{embeds.length}/{attachmentLimit} images{quote && ' · 1 quoted cast'}</span></div>
       <p className="composer-media-note">Images are public. JPEG, PNG, WebP or GIF, up to 5 MiB. Photo metadata is retained.{uploading && ` Uploading ${uploadName}…`}</p>
       <div className="composer-mentions"><Input aria-label="Mention a username or FID" placeholder="Mention a username or FID" value={mentionQuery} onChange={event => { setMentionQuery(event.target.value); setMentionCandidate(null); }} disabled={busy || mentionLoading} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void findMention(); } }} /><Button variant="secondary" disabled={busy || mentionLoading || !mentionQuery.trim()} onClick={() => void findMention()}>{mentionLoading ? 'Finding…' : 'Find mention'}</Button>{mentionCandidate && <Button variant="secondary" disabled={busy} onClick={() => addMention(mentionCandidate)}>Add @{mentionCandidate.username || mentionCandidate.fid}</Button>}</div>
       {mentionedUsers.length > 0 && <div className="composer-selected-mentions" aria-label="Selected mentions">{mentionedUsers.map(user => <Button key={user.fid} variant="ghost" disabled={busy} aria-label={`Remove mention selection for ${user.username || user.fid}`} onClick={() => { setMentionedUsers(current => current.filter(item => item.fid !== user.fid)); setDraftError(''); }}>@{user.username || user.fid}<IconX size={13} /></Button>)}<small>Removing a selection leaves its text in your draft.</small></div>}
       {(draftError || validationError) && <p className="error" role="alert">{draftError || validationError}</p>}
     </> : <Button variant="ghost" className="composer__prompt" onClick={onSignIn}>What’s on your mind?</Button>}
-    <div className="composer__footer"><span><IconWorld size={15} /> {parent ? 'Public reply' : 'An open conversation starts here'}</span><div className="composer__submit">{session && <span className={bytes > 1024 ? 'error' : 'muted'}>{bytes}/1024</span>}<Button disabled={busy || uploading || (!!session && (!text.trim() && !embeds.length || bytes > 1024 || !!validationError))} onClick={() => void publish()}>{busy ? 'Publishing…' : parent ? 'Reply' : 'Cast'} <IconArrowUpRight size={16} /></Button></div></div>
+    <div className="composer__footer"><span><IconWorld size={15} /> {parent ? 'Public reply' : 'An open conversation starts here'}</span><div className="composer__submit">{session && <span className={bytes > 1024 ? 'error' : 'muted'}>{bytes}/1024</span>}<Button disabled={busy || uploading || (!!session && (!text.trim() && !embeds.length && !quote || bytes > 1024 || !!validationError))} onClick={() => void publish()}>{busy ? 'Publishing…' : quote ? 'Quote' : parent ? 'Reply' : 'Cast'} <IconArrowUpRight size={16} /></Button></div></div>
   </div></div>;
 }
 
@@ -176,7 +192,13 @@ export default function App() {
   const [background, setBackground] = useState<FeedRoute>(() => backgroundLocation());
   const base = route.kind === 'cast' ? background : route;
   const view = base.kind;
-  const channel = base.kind === 'channel' ? base.channel : channels[0].id;
+  const channel = base.kind === 'channel' ? base.channel : '';
+  const profileTab = base.kind === 'profile' ? base.tab ?? 'casts' : 'casts';
+  const featureView = view === 'search' || view === 'notifications' || view === 'channels';
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channelInfo, setChannelInfo] = useState<Channel | null>(null);
+  const [channelError, setChannelError] = useState('');
+  const channelCache = useRef(new Map<string, Channel>());
   const profileIdentifier = base.kind === 'profile' ? base.identifier : undefined;
   const [session, setSession] = useState<WalletSession | null>(null);
   const [signIn, setSignIn] = useState(false);
@@ -200,17 +222,21 @@ export default function App() {
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState('');
-  const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState('');
   const [thread, setThread] = useState<Cast | null>(null);
   const [conversation, setConversation] = useState<ConversationNode | null>(null);
   const [threadError, setThreadError] = useState('');
   const [sharedCast, setSharedCast] = useState<Cast | null>(null);
+  const quoteGeneration = useRef(0);
+  const quoteVersion = quoteGeneration.current;
+  const [quotedCast, setQuotedCast] = useState<Cast | null>(null);
+  const [deletedCast, setDeletedCast] = useState<Cast | null>(null);
   const [info, setInfo] = useState<Record<string, unknown> | null>(null);
   const [networkError, setNetworkError] = useState(false);
   const [bookmarks, setBookmarks] = useState<Cast[]>(() => { try { return JSON.parse(localStorage.getItem('quorum.bookmarks.v1') || '[]'); } catch { return []; } });
   const [dark, setDark] = useState(() => localStorage.getItem('quorum.theme') !== 'light');
   const feedGeneration = useRef(0);
+  const feedMoreRead = useRef<AbortController | null>(null);
   const currentSession = useRef(session);
   const currentProfile = useRef(profile);
   const currentRoute = useRef(route);
@@ -223,7 +249,7 @@ export default function App() {
   currentBase.current = base;
   const notify = useCallback((text: string) => setToast(text), []);
   const navigate = useCallback((path: string, replace = false) => {
-    const next = parseRoute({ pathname: path, search: '' });
+    const next = parseLocalPath(path);
     const previous = currentRoute.current;
     const isThread = next.kind === 'cast';
     const state = isThread ? { quorumThread: previous.kind !== 'cast' || !!history.state?.quorumThread, quorumBackground: routePath(currentBase.current) } : null;
@@ -232,7 +258,7 @@ export default function App() {
       else history.pushState(state, '', path);
     }
     currentRoute.current = next;
-    setRoute(next); setSharedCast(null); setFollowList(null); setEditProfile(false);
+    setRoute(next); setSharedCast(null); quoteGeneration.current += 1; setQuotedCast(null); setDeletedCast(null); setFollowList(null); setEditProfile(false);
     if (next.kind === 'cast') setBackground(currentBase.current);
     else { setBackground(next); setThread(null); }
   }, []);
@@ -269,7 +295,7 @@ export default function App() {
     } catch (error) { if (stillCurrent()) { setFollowError(message(error)); setFollowingProfile(null); } else notify(message(error)); }
     finally { setFollowBusy(false); }
   }
-  const activeTitle = view === 'profile' ? profile?.display_name || profile?.username || 'Profile' : view === 'channel' ? channels.find(item => item.id === channel)?.name || channel : view === 'following' ? 'Following' : view === 'bookmarks' ? 'Bookmarks' : view === 'not-found' ? 'Page not found' : 'Discover';
+  const activeTitle = view === 'profile' ? profile?.display_name || profile?.username || 'Profile' : view === 'channel' ? channelInfo?.name || channel : view === 'following' ? 'Following' : view === 'bookmarks' ? 'Bookmarks' : view === 'not-found' ? 'Page not found' : view === 'notifications' ? 'Notifications' : view === 'search' ? 'Search' : view === 'channels' ? 'Channels' : 'Discover';
 
   useEffect(() => {
     setFollowingProfile(null); setFollowError('');
@@ -282,7 +308,7 @@ export default function App() {
   }, [view, profile?.fid, session?.fid, followRefresh, refresh]);
   useEffect(() => {
     const pop = () => {
-      const next = parseRoute(location); currentRoute.current = next; setRoute(next); setSharedCast(null); setFollowList(null); setEditProfile(false);
+      const next = parseRoute(location); currentRoute.current = next; setRoute(next); setSharedCast(null); quoteGeneration.current += 1; setQuotedCast(null); setDeletedCast(null); setFollowList(null); setEditProfile(false);
       if (next.kind === 'cast') setBackground(backgroundLocation());
       else { setBackground(next); setThread(null); }
     };
@@ -306,11 +332,29 @@ export default function App() {
     // Updating the session's display fields must not trigger a second profile
     // read or reset the feed. Reads follow identity changes or explicit refresh.
   }, [view, profileIdentifier, session?.fid, session?.publicKey, refresh]);
+  useEffect(() => {
+    const controller = new AbortController();
+    getChannels({ kind: 'trending', limit: 25, signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return;
+      for (const item of data.channels) channelCache.current.set(item.id, item);
+      setChannels(data.channels.slice(0, 5));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [refresh]);
+  useEffect(() => {
+    setChannelError('');
+    if (view !== 'channel') { setChannelInfo(null); return; }
+    const controller = new AbortController(); setChannelInfo(channelCache.current.get(channel) ?? null);
+    getChannel(channel, controller.signal).then(data => {
+      if (!controller.signal.aborted) { channelCache.current.set(data.id, data); setChannelInfo(data); }
+    }).catch(error => { if (!controller.signal.aborted) { setChannelInfo(null); setChannelError(message(error)); } });
+    return () => controller.abort();
+  }, [view, channel, refresh]);
   useEffect(() => { document.title = route.kind === 'cast' ? 'Conversation · Quorum' : `${activeTitle} · Quorum`; }, [route.kind, activeTitle]);
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('quorum.theme', dark ? 'dark' : 'light'); }, [dark]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 6500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => currentSession.current?.dispose(), []);
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, channel, profile?.fid]);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, channel, profile?.fid, profileTab]);
   useEffect(() => {
     const controller = new AbortController();
     getInfo(controller.signal).then(data => { setInfo(data as Record<string, unknown>); setNetworkError(false); }).catch(() => { if (!controller.signal.aborted) setNetworkError(true); });
@@ -318,16 +362,17 @@ export default function App() {
   }, [refresh]);
   useEffect(() => {
     const controller = new AbortController();
-    feedGeneration.current += 1;
+    feedGeneration.current += 1; feedMoreRead.current?.abort();
     setError(''); setCasts([]); setCursor(null); setLoadingMore(false);
-    if (view === 'bookmarks' || view === 'not-found' || (view === 'profile' && !profile) || (view === 'following' && !session)) { setLoading(false); return; }
+    if (featureView || view === 'bookmarks' || view === 'not-found' || (view === 'profile' && !profile) || (view === 'following' && !session)) { setLoading(false); return; }
     setLoading(true);
-    getFeed({ kind: view === 'profile' ? 'user' : view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: view === 'profile' ? profile?.fid : session?.fid, channel, limit: 25, signal: controller.signal })
-      .then(data => { setCasts(data.casts); setCursor(data.next?.cursor || null); })
+    const request = view === 'profile' && profile ? getProfileFeed({ fid: profile.fid, tab: profileTab, limit: 25, signal: controller.signal }) : getFeed({ kind: view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: session?.fid, channel, limit: 25, signal: controller.signal });
+    request
+      .then(data => { if (!controller.signal.aborted) { setCasts(data.casts); setCursor(data.next?.cursor || null); } })
       .catch(error => { if (!controller.signal.aborted) setError(message(error)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [view, channel, session?.fid, session?.publicKey, profile?.fid, refresh]);
+    return () => { controller.abort(); feedMoreRead.current?.abort(); };
+  }, [view, channel, session?.fid, session?.publicKey, profile?.fid, profileTab, refresh]);
   useEffect(() => {
     if (route.kind !== 'cast') { setThread(null); setConversation(null); setThreadError(''); return; }
     const controller = new AbortController(); setConversation(null); setThreadError('');
@@ -345,24 +390,30 @@ export default function App() {
     const next = bookmarks.some(item => item.hash === cast.hash) ? bookmarks.filter(item => item.hash !== cast.hash) : [cast, ...bookmarks].slice(0, 200);
     setBookmarks(next); try { localStorage.setItem('quorum.bookmarks.v1', JSON.stringify(next)); } catch { notify('Browser storage is full. Bookmarks will last for this tab.'); }
   }
-  async function search(event: FormEvent) {
-    event.preventDefault(); if (!query.trim()) return; setSearching(true);
-    const term = query.trim().replace(/^@/, '');
-    try { openProfile(await getUser(/^\d+$/.test(term) ? { fid: Number(term) } : { username: term })); setQuery(''); }
+  function search(event: FormEvent) {
+    event.preventDefault(); if (!query.trim()) return;
+    try { navigate(searchPath(query.replace(/^@/, ''), query.startsWith('@') ? 'users' : 'casts')); }
     catch (error) { notify(message(error)); }
-    finally { setSearching(false); }
   }
+  useEffect(() => { if (base.kind === 'search') setQuery(base.query); }, [base.kind === 'search' ? base.query : null]);
+  function openChannel(item: Channel) { channelCache.current.set(item.id, item); navigate(`/channel/${item.id}`); }
   async function loadMore() {
     if (!cursor || loadingMore) return; setLoadingMore(true);
     const generation = feedGeneration.current;
+    const controller = new AbortController(); feedMoreRead.current?.abort(); feedMoreRead.current = controller;
     try {
-      const data = await getFeed({ kind: view === 'profile' ? 'user' : view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: view === 'profile' ? profile?.fid : session?.fid, channel, cursor, limit: 25 });
-      if (generation !== feedGeneration.current) return;
-      setCasts(previous => [...previous, ...data.casts.filter(cast => !previous.some(item => item.hash === cast.hash))]); setCursor(data.next?.cursor || null);
-    } catch (error) { notify(message(error)); }
+      const data = await (view === 'profile' && profile ? getProfileFeed({ fid: profile.fid, tab: profileTab, cursor, limit: 25, signal: controller.signal }) : getFeed({ kind: view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: session?.fid, channel, cursor, limit: 25, signal: controller.signal }));
+      if (generation !== feedGeneration.current || controller.signal.aborted) return;
+      setCasts(previous => {
+        const merged = new Map(previous.map(cast => [cast.hash.replace(/^0x/i, '').toLowerCase(), cast]));
+        for (const cast of data.casts) merged.set(cast.hash.replace(/^0x/i, '').toLowerCase(), cast);
+        const values = [...merged.values()];
+        return view === 'channel' ? values.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp) || a.hash.localeCompare(b.hash)) : values;
+      }); setCursor(data.next?.cursor || null);
+    } catch (error) { if (generation === feedGeneration.current && !controller.signal.aborted) notify(message(error)); }
     finally { if (generation === feedGeneration.current) setLoadingMore(false); }
   }
-  const card = (cast: Cast) => <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onThread={openThread} onShare={setSharedCast} saved={bookmarks.some(item => item.hash === cast.hash)} onSave={save} notify={notify} />;
+  const card = (cast: Cast) => <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onThread={openThread} onShare={setSharedCast} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => item.hash === cast.hash)} onSave={save} notify={notify} />;
   const visibleCasts = view === 'bookmarks' ? bookmarks : casts;
   return <div className="app">
     <aside className="rail" aria-label="App rail"><a href="/" onClick={event => localClick(event, () => navigate('/'))} className="rail__logo" aria-label="Quorum home"><img src="/quorum-symbol.svg" alt="" /></a><div className="rail__divider" /><Button variant="ghost" className="rail__active" aria-label="Hypersnap" onClick={() => navigate('/')}><IconWorld size={25} /></Button><a className="rail__link" href="https://hypersnap.org" target="_blank" rel="noopener noreferrer" aria-label="About Hypersnap"><IconCompass size={24} /></a><div className="rail__bottom"><Button variant="ghost" aria-label={dark ? 'Use light theme' : 'Use dark theme'} onClick={() => setDark(!dark)}>{dark ? <IconSun size={23} /> : <IconMoon size={23} />}</Button><a className="rail__link" href={sourceUrl} aria-label="Source code" target="_blank" rel="noopener noreferrer"><IconCode size={23} /></a></div></aside>
@@ -373,15 +424,18 @@ export default function App() {
         <Button variant="ghost" className={`nav-item ${view === 'discover' ? 'active' : ''}`} onClick={() => navigate('/')}><IconCompass size={21} />Discover <IconSparkles size={15} className="nav-spark" /></Button>
         <Button variant="ghost" className={`nav-item ${view === 'following' ? 'active' : ''}`} onClick={() => navigate('/following')}><IconUsers size={21} />Following</Button>
         <Button variant="ghost" className={`nav-item ${view === 'bookmarks' ? 'active' : ''}`} onClick={() => navigate('/bookmarks')}><IconBookmark size={21} />Bookmarks {bookmarks.length > 0 && <span className="nav-count">{bookmarks.length}</span>}</Button>
+        <Button variant="ghost" className={`nav-item ${view === 'notifications' ? 'active' : ''}`} onClick={() => navigate('/notifications')}><IconBell size={21} />Notifications</Button>
+        <Button variant="ghost" className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => navigate('/search')}><IconSearch size={21} />Search</Button>
+        <Button variant="ghost" className={`nav-item ${view === 'channels' ? 'active' : ''}`} onClick={() => navigate('/channels')}><IconHash size={21} />Channels</Button>
         {session && <Button variant="ghost" className={`nav-item ${view === 'profile' && profile?.fid === session.fid ? 'active' : ''}`} onClick={() => navigate('/profile')}><Avatar user={session.user} />My profile</Button>}
       </nav>
       <div className="sidebar__section-label">EXPLORE CHANNELS <IconHash size={14} /></div>
-      <nav aria-label="Channels">{channels.map(item => <Button key={item.id} variant="ghost" className={`channel-nav ${view === 'channel' && channel === item.id ? 'active' : ''}`} onClick={() => navigate(`/channel/${item.id}`)}><span className="channel-mark">{item.mark}</span>{item.name}</Button>)}</nav>
+      <nav aria-label="Channels">{channels.map(item => <Button key={item.id} variant="ghost" className={`channel-nav ${view === 'channel' && channel === item.id ? 'active' : ''}`} onClick={() => openChannel(item)}><span className="channel-mark"><IconHash size={17} /></span>{item.name}</Button>)}</nav>
       <div className="sidebar__bottom">{session ? <div className="session-card"><Button variant="ghost" className="session-user" onClick={() => navigate('/profile')}><Avatar user={session.user} /><span><strong>{session.user.display_name || session.user.username}</strong><small>@{session.user.username}</small></span></Button><Button variant="ghost" aria-label="Manage this device’s signing access" onClick={() => setDeviceSettings(true)}><IconShieldLock size={19} /></Button></div> : <><div className="sidebar-invite"><IconWorld size={21} /><p>The social web,<br /><strong>on your terms.</strong></p></div><Button className="full-width" onClick={() => requestSignIn()}>Connect Farcaster <IconArrowUpRight size={17} /></Button></>}<p className="sidebar-foot">OPEN PROTOCOL. OPEN POSSIBILITIES.</p></div>
     </aside>
     <main className="main">
       <header className="page-header"><div><span className="eyebrow">YOUR CORNER OF THE OPEN SOCIAL WEB</span><h1>{activeTitle}<span className="title-star">✳</span></h1></div><div className="header-actions"><span className="live-pill"><span className={`status-dot ${networkError ? 'status-dot--offline' : ''}`} />{networkError ? 'Node unavailable' : info ? 'Live on Hypersnap' : 'Connecting'}</span><Button variant="ghost" aria-label="Refresh feed" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={19} className={loading ? 'spin' : ''} /></Button><Button className="mobile-connect" variant="secondary" onClick={() => session ? navigate('/profile') : requestSignIn()}>{session ? 'My profile' : 'Connect'}</Button></div></header>
-      <div className="compact-tools"><form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Find a username or FID" placeholder="Find a username or FID" value={query} onChange={event => setQuery(event.target.value)} disabled={searching} /><Button variant="ghost" type="submit" disabled={searching} aria-label="Find profile"><IconChevronRight size={18} /></Button></form><nav className="channel-chips" aria-label="Explore channels">{channels.map(item => <Button key={item.id} variant="ghost" className={view === 'channel' && channel === item.id ? 'active' : ''} onClick={() => navigate(`/channel/${item.id}`)}>/{item.id}</Button>)}</nav></div>
+      <div className="compact-tools"><form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form><nav className="channel-chips" aria-label="Explore channels">{channels.map(item => <Button key={item.id} variant="ghost" className={view === 'channel' && channel === item.id ? 'active' : ''} onClick={() => navigate(`/channel/${item.id}`)}>/{item.id}</Button>)}<Button variant="ghost" onClick={() => navigate('/channels')}>All channels</Button></nav></div>
       {view === 'discover' && <section className="welcome"><div className="welcome__copy"><span className="eyebrow"><IconSparkles size={14} /> A LITTLE MORE OPEN</span><h2>Good conversations.<br /><span>No gatekeepers.</span></h2><p>Your people, your identity, your voice.<br />A familiar social world, on a network we all own.</p><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Meet Hypersnap <IconArrowUpRight size={16} /></a></div><div className="orbit" aria-hidden="true"><div className="orbit__ring orbit__ring--one" /><div className="orbit__ring orbit__ring--two" /><div className="orbit__ring orbit__ring--three" /><div className="orbit__core"><img src="/quorum-symbol.svg" alt="" /></div><span className="orbit__point orbit__point--a" /><span className="orbit__point orbit__point--b" /><span className="orbit__point orbit__point--c" /><span className="orbit__star">✳</span></div></section>}
       {view === 'profile' && profile && <section className="profile">
         <Button variant="ghost" onClick={() => navigate('/')}><IconArrowLeft size={17} />Back to discover</Button>
@@ -395,18 +449,26 @@ export default function App() {
         {session && ![5, 6, 11].every(scope => session.scopes.includes(scope)) && <p className="profile-upgrade">Follows and profile editing require additional device permissions. Your wallet will show the permissions before you approve a new key.</p>}
         {profileError && <p className="error" role="alert">{profileError}</p>}
       </section>}
+      {view === 'profile' && profile && <ProfileTabs fid={profile.fid} tab={profileTab} onChange={tab => navigate(profilePath(profile.fid, tab))} />}
+      {view === 'channel' && (channelInfo ? <ChannelHeader channel={channelInfo} /> : <p className="channel-status" role={channelError ? 'alert' : 'status'}>{channelError || 'Loading channel…'}</p>)}
+      {view === 'channel' && channelInfo && safeUrl(channelInfo.parent_url || channelInfo.url) && <Composer key={`${session?.publicKey ?? 'guest'}:${channel}`} session={session} onSignIn={() => requestSignIn()} parentUrl={channelInfo.parent_url || channelInfo.url} onPosted={() => setRefresh(n => n + 1)} notify={notify} />}
+      {view === 'search' && base.kind === 'search' && <SearchView key={refresh} query={base.query} kind={base.searchKind} onSearch={(query, kind) => navigate(searchPath(query, kind))} onProfile={openProfile} renderCast={card} />}
+      {view === 'notifications' && <NotificationsView key={refresh} fid={session?.fid} onConnect={() => requestSignIn()} onProfile={openProfile} onCast={hash => navigate(castPath(hash))} />}
+      {view === 'channels' && <ChannelsView key={refresh} onChannel={openChannel} />}
+      {!featureView && <>
       {(view === 'discover' || view === 'following') && <Composer key={session?.publicKey ?? 'guest'} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} notify={notify} />}
-      <div className="feed-heading"><div><IconHome size={17} /><span>{view === 'discover' ? 'Around the network' : view === 'bookmarks' ? 'Saved for later' : view === 'profile' ? 'Casts' : view === 'following' ? 'From your people' : `/${channel}`}</span></div><span>{view === 'discover' ? <><IconSparkles size={13} /> Trending</> : view === 'bookmarks' ? 'Stored on this device' : 'Latest casts'}</span></div>
+      <div className="feed-heading"><div><IconHome size={17} /><span>{view === 'discover' ? 'Around the network' : view === 'bookmarks' ? 'Saved for later' : view === 'profile' ? profileTab === 'replies' ? 'Replies' : profileTab === 'media' ? 'Photos' : 'Casts' : view === 'following' ? 'From your people' : `/${channel}`}</span></div><span>{view === 'discover' ? <><IconSparkles size={13} /> Trending</> : view === 'bookmarks' ? 'Stored on this device' : 'Latest casts'}</span></div>
       {view === 'not-found' ? <div className="empty"><IconCompass size={35} /><h3>That page does not exist.</h3><p>Check the profile or cast link, or return to Discover.</p><Button onClick={() => navigate('/')}>Open Discover</Button></div> : view === 'profile' && !profile ? <div className="empty" role={profileLoading ? 'status' : undefined}><IconUsers size={35} /><h3>{profileLoading ? 'Loading profile…' : profileError ? 'Profile unavailable' : 'Your profile on Hypersnap'}</h3><p>{profileError || (profileLoading ? 'Finding this public identity on Hypersnap.' : 'Connect your account to open your profile, or search for a username or FID.')}</p>{profileError ? <Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button> : !profileLoading && <Button onClick={() => requestSignIn()}>Connect your account</Button>}</div> : loading ? <div aria-label="Loading casts" role="status" className="skeleton-list">{[0, 1, 2].map(n => <div className="skeleton-cast" key={n}><span className="skeleton-avatar" /><div><span /><span /><span /></div></div>)}<p className="muted">Finding conversations on Hypersnap…</p></div> : error ? <div className="empty"><IconWorld size={35} /><h3>The network is taking a moment.</h3><p>{error}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={16} />Try again</Button></div> : view === 'following' && !session ? <div className="empty"><IconUsers size={35} /><h3>Your people are here.</h3><p>Connect your Farcaster wallet to see casts from the people you follow.</p><Button onClick={() => requestSignIn()}>Connect Farcaster <IconArrowUpRight size={16} /></Button></div> : visibleCasts.length ? <div className="feed">{visibleCasts.map(card)}{cursor && view !== 'bookmarks' && <Button variant="secondary" className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More conversations'}<IconArrowDown size={16} /></Button>}<p className="feed-end">You’re connected to the open social web. <IconWorld size={13} /></p></div> : <div className="empty"><IconBookmark size={35} /><h3>{view === 'bookmarks' ? 'A place for the good stuff.' : 'The conversation is open.'}</h3><p>{view === 'bookmarks' ? 'Tap the bookmark on any cast to save it here.' : 'No casts returned for this feed yet. Try another channel or start a conversation.'}</p>{cursor && <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Check next page'}<IconArrowDown size={16} /></Button>}</div>}
+      </>}
     </main>
     <aside className="rightbar">
-      <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Find a Farcaster username or FID" placeholder="Find a username or FID" value={query} onChange={event => setQuery(event.target.value)} disabled={searching} /><Button variant="ghost" type="submit" disabled={searching} aria-label="Search profiles"><IconChevronRight size={18} /></Button></form>
+      <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form>
       {!session && <section className="join-card"><span className="tiny-icon"><IconWorld size={23} /></span><h2>You already belong.</h2><p>Your Farcaster identity works here.<br />Bring your profile. Find your people.<br />Make yourself heard.</p><Button className="full-width" onClick={() => requestSignIn()}>Connect your wallet <IconArrowUpRight size={17} /></Button><span className="join-card__note"><IconShieldLock size={13} /> Recovery words stay outside this site.</span></section>}
       <section className="network-card"><div className="card-label">A NETWORK, NOT A PLATFORM <IconWorld size={16} /></div><div className="node-status"><span className={`status-dot ${networkError ? 'status-dot--offline' : ''}`} /><strong>{networkError ? 'Node unavailable' : info ? 'Connected to Hypersnap' : 'Checking the network…'}</strong></div><p>haatz.quilibrium.com</p><div className="network-facts"><div><span>Protocol</span><strong>Farcaster-compatible</strong></div><div><span>Ownership</span><strong>Community-run</strong></div><div><span>Access</span><strong>Open to everyone <IconArrowUpRight size={12} /></strong></div></div><a href="https://hypersnap.org/docs" target="_blank" rel="noopener noreferrer">Explore the protocol <IconArrowUpRight size={15} /></a></section>
       <section className="open-card"><IconCode size={23} /><h3>Built in the open.</h3><p>A Quorum fork by Arca. Powered by Hypersnap, made for everyone.</p><a href={sourceUrl} target="_blank" rel="noopener noreferrer">Read the source <IconArrowUpRight size={14} /></a></section>
       <footer><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a><a href="https://www.quorummessenger.com" target="_blank" rel="noopener noreferrer">Quorum</a><a href={`${sourceUrl}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a><span>Made for the open internet <span className="footer-star">✳</span></span></footer>
     </aside>
-    <nav className="mobile-nav" aria-label="Mobile navigation"><Button variant="ghost" aria-label="Discover" onClick={() => navigate('/')}><IconCompass /></Button><Button variant="ghost" aria-label="Following" onClick={() => navigate('/following')}><IconUsers /></Button><Button variant="ghost" aria-label="Bookmarks" onClick={() => navigate('/bookmarks')}><IconBookmark /></Button><Button variant="ghost" aria-label="Account" onClick={() => session ? navigate('/profile') : requestSignIn()}><IconKey /></Button></nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation"><Button variant="ghost" aria-label="Discover" onClick={() => navigate('/')}><IconCompass /></Button><Button variant="ghost" aria-label="Following" onClick={() => navigate('/following')}><IconUsers /></Button><Button variant="ghost" aria-label="Search" onClick={() => navigate('/search')}><IconSearch /></Button><Button variant="ghost" aria-label="Notifications" onClick={() => navigate('/notifications')}><IconBell /></Button><Button variant="ghost" aria-label="Channels" onClick={() => navigate('/channels')}><IconHash /></Button><Button variant="ghost" aria-label="Account" onClick={() => session ? navigate('/profile') : requestSignIn()}><IconKey /></Button></nav>
     {toast && <div className="toast" role="status"><span>{toast}</span><Button variant="ghost" aria-label="Dismiss notification" onClick={() => setToast('')}><IconX size={17} /></Button></div>}
     {signIn && <Suspense fallback={<Modal title="Connect your identity" onClose={() => setSignIn(false)}><p className="pairing-copy" role="status">Loading device sign-in…</p></Modal>}><ConnectAccount requestedScopes={signInScopes} initialFid={session?.fid} onClose={() => { setSignIn(false); setSignInScopes(undefined); afterSocialConnect.current = null; }} onConnect={value => { session?.dispose(); setSession(value); setSignIn(false); setSignInScopes(undefined); if (afterSocialConnect.current === 'edit' && profile?.fid === value.fid) setEditProfile(true); afterSocialConnect.current = null; notify(`Welcome, @${value.user.username || value.fid}. You’re connected to Hypersnap.`); }} /></Suspense>}
     {deviceSettings && session && <Suspense fallback={<Modal title="This device’s access" onClose={() => setDeviceSettings(false)}><p role="status">Loading device settings…</p></Modal>}><DeviceSettings session={session} onClose={() => setDeviceSettings(false)} onLock={revoked => lockSession(session, revoked)} notify={notify} /></Suspense>}
@@ -420,6 +482,14 @@ export default function App() {
       profileCache.current.set(String(updated.fid), updated); if (updated.username) profileCache.current.set(updated.username, updated);
       setProfile(updated); setSession(current => current?.publicKey === session.publicKey ? { ...current, user: updated } : current);
     }} onClose={() => setEditProfile(false)} />}
+    {quotedCast && !signIn && <Modal title="Quote cast" onClose={() => { quoteGeneration.current += 1; setQuotedCast(null); }} wide><Composer key={`${session?.publicKey ?? 'guest'}:${quotedCast.hash}`} session={session} quote={quotedCast} onSignIn={() => requestSignIn()} onPosted={() => { if (quoteVersion === quoteGeneration.current && currentSession.current?.publicKey === session?.publicKey) setQuotedCast(null); setRefresh(n => n + 1); }} notify={notify} /></Modal>}
+    {deletedCast && !signIn && <DeleteCastDialog cast={deletedCast} session={session} onEnable={() => requestSignIn(FULL_CLIENT_SCOPES)} onClose={() => setDeletedCast(null)} onDeleted={cast => {
+      setDeletedCast(null); setCasts(current => current.filter(item => item.hash !== cast.hash));
+      const saved = bookmarks.filter(item => item.hash !== cast.hash); setBookmarks(saved); try { localStorage.setItem('quorum.bookmarks.v1', JSON.stringify(saved)); } catch {}
+      threadCache.current.delete(castPath(cast.hash));
+      if (currentRoute.current.kind === 'cast' && currentRoute.current.hash === cast.hash) navigate(routePath(currentBase.current), true);
+      setRefresh(value => value + 1); notify('Cast deletion confirmed by Hypersnap.');
+    }} />}
     {sharedCast && <ShareCastDialog cast={sharedCast} onClose={() => setSharedCast(null)} notify={notify} />}
   </div>;
 }

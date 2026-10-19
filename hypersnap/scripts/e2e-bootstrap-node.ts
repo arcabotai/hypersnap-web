@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import http2 from 'node:http2';
 import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { buildSignedMessage, FarcasterNetwork, MessageType, SignatureScheme, farcasterTimestamp, blake3_20, encodeMessageEnvelope } from '../src/lib/protocol/messageBuilder';
@@ -15,8 +16,11 @@ import { abiEncodeSignedKeyRequestMetadata, addressFromCustodyPrivateKey, bytesT
 
 const HTTP = 'http://127.0.0.1:13381';
 const RPC = 'http://127.0.0.1:13383';
-const FIXTURE = '/tmp/arca-hypersnap-e2e/identity.json';
-const scopes = [1, 3, 4, 5, 6, 11];
+const fixtureArg = process.argv.indexOf('--fixture-dir');
+const fixtureDir = resolve(fixtureArg >= 0 ? process.argv[fixtureArg + 1] ?? '' : '/tmp/arca-hypersnap-e2e');
+assert.match(fixtureDir, /^\/(?:private\/)?tmp\/arca-hypersnap-e2e(?:-[a-z0-9-]+)?$/, 'Use a dedicated synthetic fixture directory under /tmp.');
+const FIXTURE = `${fixtureDir}/identity.json`;
+const scopes = [1, 2, 3, 4, 5, 6, 11];
 const legacyKey = hexToBytes('05'.repeat(32));
 let eventNumber = 100;
 
@@ -67,7 +71,7 @@ async function seed(fid: number, custodyHex: string, deviceHex: string) {
   const rent = new ProtoWriter(); rent.writeBytesField(1, hexToBytes(address)); rent.writeVarintField(2, 100); rent.writeVarintField(3, Math.floor(Date.now() / 1000) + 31_536_000);
   await adminEvent(fid, 4, 12, rent.bytes());
   // A separate legacy fixture key can produce compact-state fixtures. The app's
-  // scoped device key receives exactly its reviewed six scopes, never type 14.
+  // scoped device key receives exactly its reviewed client scopes, never type 14.
   const legacy = new ProtoWriter(); legacy.writeBytesField(1, ed25519.getPublicKey(legacyKey)); legacy.writeVarintField(2, 1); legacy.writeVarintField(3, 1); legacy.writeVarintField(5, 1);
   await adminEvent(fid, 1, 9, legacy.bytes());
   await until(`synthetic FID ${fid} registration`, async () => (await json(`/v1/onChainIdRegistryEventByAddress?address=${address}`)).fid === fid);
@@ -113,7 +117,7 @@ async function main() {
     }
     const after = await json('/v1/signersByFid?fid=1234');
     const proof = { actualNode: HTTP, worker, firstStatus: results[0].status, firstCommittedNonce: admissionOnly ? null : results[0].nonce, firstAdmittedNonce: results[0].nonce, secondStatus: results[1].status, secondRawResponse: results[1].response, storedNonceAfter: after.currentUserNonce, automaticRetries: 0 };
-    await writeFile(`/tmp/arca-hypersnap-e2e/${nextWindow ? 'rate-limit-worker-proof' : 'rate-limit-proof'}.json`, JSON.stringify(proof, null, 2));
+    await writeFile(`${fixtureDir}/${nextWindow ? 'rate-limit-worker-proof' : 'rate-limit-proof'}.json`, JSON.stringify(proof, null, 2));
     console.log(JSON.stringify(proof));
     return;
   }

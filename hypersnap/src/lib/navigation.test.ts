@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { castPath, parseRoute, profilePath, publicUrl } from './navigation';
+import { castPath, parseRoute, profilePath, publicUrl, routePath, searchPath, parseLocalPath } from './navigation';
 
 const hash = '0x0123456789abcdef0123456789abcdef01234567';
 const route = (pathname: string, search = '') => parseRoute({ pathname, search });
@@ -41,6 +41,27 @@ describe('public Hypersnap routes', () => {
     for (const channel of ['', 'a'.repeat(65), 'a.b', '@art', 'a/b']) {
       expect(route(`/channel/${channel}`)).toEqual({ kind: 'not-found' });
     }
+  });
+
+  it('preserves feature routes and profile tabs across direct loads and thread backgrounds', () => {
+    expect(route('/notifications')).toEqual({ kind: 'notifications' });
+    expect(route('/channels')).toEqual({ kind: 'channels' });
+    expect(route('/profile/1234', '?tab=replies')).toEqual({ kind: 'profile', identifier: '1234', tab: 'replies' });
+    expect(route('/profile', '?tab=media')).toEqual({ kind: 'profile', tab: 'media' });
+    expect(route('/profile/1234', '?tab=other').kind).toBe('not-found');
+    expect(route('/profile/1234', '?tab=media&tab=casts').kind).toBe('not-found');
+    expect(profilePath(1234, 'media')).toBe('/profile/1234?tab=media');
+    const search = searchPath('hello 🌱', 'users');
+    expect(parseLocalPath(search)).toEqual({ kind: 'search', query: 'hello 🌱', searchKind: 'users' });
+    expect(routePath(parseLocalPath(search))).toBe(search);
+    expect(routePath(parseLocalPath('/profile/1234?tab=media'))).toBe('/profile/1234?tab=media');
+  });
+
+  it('bounds search input and refuses ambiguous or unsupported search modes', () => {
+    expect(route('/search')).toEqual({ kind: 'search', query: '', searchKind: 'casts' });
+    for (const query of ['?q=a&q=b', '?type=wallets', '?type=casts&type=users', '?q=%00', `?q=${'a'.repeat(257)}`]) expect(route('/search', query).kind).toBe('not-found');
+    expect(() => searchPath('😀'.repeat(65))).toThrow('Invalid search');
+    expect(() => publicUrl('/profile/1234?tab=bad')).toThrow();
   });
 
   it('rejects malformed or oversized targets before an API can be selected', () => {

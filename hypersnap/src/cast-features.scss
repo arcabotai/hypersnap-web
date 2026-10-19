@@ -1,0 +1,13 @@
+.quoted-cast { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; margin: .8rem 0; border: 1px solid var(--border); border-radius: 12px; color: var(--color-text-strong); text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
+.quoted-cast span { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.quoted-cast small { color: var(--color-text-subtle); }
+.quoted-cast:hover { border-color: var(--accent); }
+.cast__actions { flex-wrap: wrap; gap: .25rem; }
+.channel-status { padding: 1rem 1.5rem; }
+.delete-cast-dialog { padding: 1.2rem; }
+.delete-cast-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1rem; }
+.delete-cast-preview { margin: 1rem 0; padding: 1rem; border-left: 2px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .cast__actions .button { min-width: 30px; padding-inline: 4px; } .mobile-nav .button { min-width: 36px; } }
+
+.sidebar { overflow-y: auto; }
+.delete-cast-confirm { background: rgb(var(--danger)); }

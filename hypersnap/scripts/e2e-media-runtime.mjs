@@ -45,7 +45,8 @@ export function replaceTestMediaGuards(source, id, origin) {
   }
   if (normalized.endsWith('/src/components/EditProfileDialog.tsx')) source = source.replace("parsed.protocol === 'https:' &&", `(parsed.protocol === 'https:' || ${media('parsed')}) &&`);
   if (normalized.endsWith('/src/lib/social.ts')) source = source.replace("url.protocol !== 'https:' ||", `(url.protocol !== 'https:' && !${media('url')}) ||`);
-  if (normalized.endsWith('/src/lib/auth.ts')) source = source.replace("url.protocol !== 'https:' || !!url.username", `(url.protocol !== 'https:' && !${media('url')}) || !!url.username`);
+  if (normalized.endsWith('/src/lib/auth.ts')) source = source.replace(/url\.protocol !== 'https:' \|\| ((?:!!)?url\.username)/, (_match, credentials) => `(url.protocol !== 'https:' && !${media('url')}) || ${credentials}`);
+  if (normalized.endsWith('/src/lib/api.ts')) source = source.replace("url.protocol === 'https:' && (", `(url.protocol === 'https:' || ${media('url')}) && (`);
   return source;
 }
 
@@ -119,7 +120,17 @@ export async function createMediaRuntime({ nodeUrl, origin = PRIMARY_ORIGIN, ass
       if (incoming.origin !== 'https://haatz.quilibrium.com') throw new Error('External network is unavailable in this E2E runtime.');
       const target = new URL(incoming.pathname + incoming.search, node.origin);
       nodeRequests.push({ method: request.method, path: incoming.pathname });
-      const response = await fetch(target, { method: request.method, headers: request.headers, redirect: 'manual', ...(request.method !== 'GET' && request.method !== 'HEAD' ? { body: await request.arrayBuffer() } : {}) });
+      let response;
+      try {
+        // workerd's Headers is not Node's Headers implementation. Normalize
+        // entries and let Node calculate framing from the buffered bytes.
+        const headers = new Headers(Array.from(request.headers.entries()));
+        headers.delete('content-length'); headers.delete('transfer-encoding');
+        response = await fetch(target, { method: request.method, headers, redirect: 'manual', ...(request.method !== 'GET' && request.method !== 'HEAD' ? { body: new Uint8Array(await request.arrayBuffer()).slice().buffer } : {}) });
+      } catch (error) {
+        nodeErrors.push({ method: request.method, path: incoming.pathname, status: 0, detail: error instanceof Error ? `${error.message}: ${error.cause instanceof Error ? error.cause.message : ''}` : 'Local transport failed.' });
+        throw error;
+      }
       const bytes = await response.arrayBuffer();
       if (!response.ok) nodeErrors.push({ method: request.method, path: incoming.pathname, status: response.status, detail: new TextDecoder().decode(bytes).slice(0, 4096) });
       return new RuntimeResponse(bytes, { status: response.status, headers: response.headers });

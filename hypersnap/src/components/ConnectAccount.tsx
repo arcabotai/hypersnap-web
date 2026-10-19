@@ -67,7 +67,7 @@ function AccountFacts({ request }: { request: PairingRequest }) {
     <div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div>
     <div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div>
     <div><dt>Request checksum</dt><dd className="pairing-mono">{hashPairingRequest(request)}</dd></div>
-    <div><dt>Permission</dt><dd>{request.scopes.includes(11) ? 'Publish casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : 'Publish casts and add or remove reactions'}</dd></div>
+    <div><dt>Permission</dt><dd>{request.scopes.includes(2) ? 'Publish and delete your own casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : request.scopes.includes(11) ? 'Publish casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : 'Publish casts and add or remove reactions'}</dd></div>
     <div><dt>Inactivity expiry</dt><dd>7 days, renewed by signing activity</dd></div>
     <div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div>
     <div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div>
@@ -77,6 +77,7 @@ function AccountFacts({ request }: { request: PairingRequest }) {
 export default function ConnectAccount({ onClose, onConnect, requestedScopes, initialFid }: { onClose(): void; onConnect(session: WalletSession): void; requestedScopes?: readonly number[]; initialFid?: number }) {
   const [scopes] = useState(() => validatePairingScopes(requestedScopes ? [...requestedScopes] : [...PAIRING_SCOPES]));
   const socialApproval = scopes.includes(11);
+  const deletionApproval = scopes.includes(2);
   const [identifier, setIdentifier] = useState(initialFid ? String(initialFid) : '');
   const [request, setRequest] = useState<PairingRequest | null>(null);
   const [approval, setApproval] = useState<PairingApproval | null>(null);
@@ -195,9 +196,9 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     finally { if (run === generation.current) setBusy(false); }
   }
 
-  return <Modal title={socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Your identity. Safer sign-in.'} onClose={close}>
+  return <Modal title={deletionApproval ? 'Enable cast deletion' : socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Your identity. Safer sign-in.'} onClose={close}>
     <div className="pairing-hero"><span className="pairing-symbol"><IconShieldLock size={27} /></span><div><strong>Your recovery phrase stays out of this website.</strong><p>Approve a separate device key in your own wallet app.</p></div></div>
-    {socialApproval && <p className="pairing-copy">Approve a new device key with permission to follow and unfollow accounts and edit your profile, alongside casts and reactions. Previous keys retain their original network permissions; switching does not revoke them. The app switches only after Hypersnap confirms the new approval.</p>}
+    {socialApproval && <p className="pairing-copy">Approve a new device key with permission to {deletionApproval ? 'delete your own casts, ' : ''}follow and unfollow accounts and edit your profile, alongside casts and reactions. {deletionApproval && 'Cast deletion cannot be undone. '}Previous keys retain their original network permissions; switching does not revoke them. The app switches only after Hypersnap confirms the new approval.</p>}
     {unlock ? <form onSubmit={unlockDevice}>
       <p className="pairing-copy">Your posting key is encrypted on this device. Unlock it to reconnect; your custody wallet is not needed.</p>
       <label className="field-label" htmlFor="device-password">Device vault password</label>
@@ -333,7 +334,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
     finally { if (run === generation.current) { setAttempted(pending.current?.submitted ?? false); setBusy(false); setStage(''); } }
   }
   return <Modal title="This device’s access" onClose={close}>
-    <div className="pairing-hero"><span className="pairing-symbol"><IconKey size={27} /></span><div><strong>@{session.user.username || session.fid}</strong><p>FID {session.fid} · {session.scopes.includes(11) ? 'casts, reactions, follows, and profile edits' : 'casting and reactions'}</p></div></div>
+    <div className="pairing-hero"><span className="pairing-symbol"><IconKey size={27} /></span><div><strong>@{session.user.username || session.fid}</strong><p>FID {session.fid} · {session.scopes.includes(2) ? 'casts, deletion, reactions, follows, and profile edits' : session.scopes.includes(11) ? 'casts, reactions, follows, and profile edits' : 'casting and reactions'}</p></div></div>
     <dl className="pairing-facts"><div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(session.publicKey)}</dd></div><div><dt>Storage</dt><dd>{saved ? 'Encrypted key saved in this browser' : 'Key held only in this tab'}</dd></div><div><dt>Inactivity expiry</dt><dd>7 days, renewed by signing activity</dd></div></dl>
     {!request && <>
       <div className="device-action"><div><strong>Lock this tab</strong><p>Clear its active signing key. A saved vault can be unlocked again. Network authorization remains active.</p></div><Button variant="secondary" onClick={() => onLock()} disabled={busy}><IconLock size={16} />Lock</Button></div>
