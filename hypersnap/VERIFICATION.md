@@ -1,21 +1,30 @@
 # Verification record · 2026-10-19
 
-The standalone Hypersnap entry passes `cd hypersnap && yarn verify`: **46 tests** (26 Worker, 8 API, 11 auth, 1 independent protocol golden vector), TypeScript including the Worker, and a production build. Browser checks covered live feed rendering, profile lookup, bookmarks, and rejecting/clearing an invalid recovery phrase. Public live checks read data only. No real wallet authorization, signer registration, reaction, or cast was submitted.
+The standalone Hypersnap entry passes `cd hypersnap && yarn verify`: **91 tests** (26 Worker, 8 API, 9 public transfer boundary, 8 native signer, 18 auth, 7 encrypted vault/storage, 14 wallet provider, and 1 independent Rust protocol golden vector), TypeScript for browser/Worker/native code, and browser plus native payload builds.
 
-Cloudflare deployment initially exposed a runtime difference: Workers rejects Fetch's `redirect: 'error'` mode. The Worker now uses `manual`, rejects all upstream redirects, and has a regression test for this behavior. See [Cloudflare's Request documentation](https://developers.cloudflare.com/workers/runtime-apis/request/).
+Wallet tests use independent viem EIP-712 hashing and synthetic keys to verify exact KeyAdd, SignedKeyRequest, and KeyRemove compatibility. They cover custody mismatch, account/network changes, rejected or malformed signatures, bounded timeouts, cancellation between prompts, provider discovery and untrusted metadata. Vault tests include actual IndexedDB transactions across two connections, preventing another tab’s replacement vault from being erased. Unknown network writes are never automatically resubmitted.
 
-The original Quorum messenger build is retained unchanged. Its separate root verification command was attempted, but its dependencies and linked sibling repositories are not installed in this checkout. The exact verdict block from that attempt follows; this is not a passing messenger regression run. Its permanent-account mint guard was respected.
+Native UI smoke verified importing a public synthetic request, reviewing public account/key/permissions, signing with a public test-only 24-word phrase, clearing its input, and exporting an approval whose signatures then verified cryptographically. Browser smoke covered public account lookup, phrase-free sign-in, mobile wallet guidance, and rejecting an approval for another request. Native payload builds were repeated and their manifests matched.
+
+Live integration checks perform public reads only. No real wallet approval, signer registration/removal, cast, or reaction was submitted. Physical iOS/Android wallet approval remains untested. Cross-platform support uses documented EIP-1193/EIP-6963 and typed-data-v4 interfaces; it is not a claim that every wallet/browser combination works. No independent security audit is claimed. The optional macOS beta is Developer ID signed; notarization is deferred.
+
+The live node’s HTTP `requesterFids` sequence query fails to decode; bracket queries are ignored. The UI therefore supports custody-approved removal through wallet or offline signatures using the current user nonce, rather than guessing an app nonce. No upstream node mutation was performed.
+
+The Worker uses manual redirects and rejects all upstream redirects, with regression coverage for Cloudflare runtime compatibility.
+
+The retained Quorum messenger is separate. Its root verification was attempted but cannot run its tools without the original dependencies and sibling shared/SDK repositories. Its permanent-account mint guard was respected. This is the complete recorded verdict from that attempt (line-end padding omitted) (before the final wallet UI edits), not a passing messenger regression run:
 
 ```text
 ── VERIFY ──────────────────────────────────────────────
   ENVIRONMENT
-    desktop   db04b99  ⚠ working tree dirty (2 files)
+    desktop   52af2a5  ⚠ working tree dirty (17 files)
     shared    NOT INSTALLED
     sdk       NOT INSTALLED
 
   ROUTED    desktop
   TIER      fast + live
-            (not on the safe list: desktop/<no base branch — cannot tell what this branch changed>)
+            (not on the safe list: desktop/.gitignore, desktop/hypersnap/package.json, desktop/hypersnap/src/App.tsx)
+            (… and 20 more)
             (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
 
   desktop  typecheck      FAIL       0s

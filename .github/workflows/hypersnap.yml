@@ -21,3 +21,13 @@ jobs:
           cache-dependency-path: hypersnap/yarn.lock
       - run: yarn install --frozen-lockfile
       - run: yarn verify
+      - name: Check offline signer payload reproducibility
+        run: |
+          cp dist-signer/BUILD-MANIFEST.json /tmp/arca-signer-manifest.json
+          yarn signer:build
+          diff -u /tmp/arca-signer-manifest.json dist-signer/BUILD-MANIFEST.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arca-signer-reviewed-payload
+          path: hypersnap/dist-signer/
+          retention-days: 30

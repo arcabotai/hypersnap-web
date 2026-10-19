@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconCopy, IconHash, IconHeart, IconHome, IconKey, IconLogout, IconMessageCircle, IconMoon, IconRefresh, IconRepeat, IconSearch, IconShieldLock, IconSparkles, IconSun, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconCopy, IconHash, IconHeart, IconHome, IconKey, IconLock, IconMessageCircle, IconMoon, IconRefresh, IconRepeat, IconSearch, IconShieldLock, IconSparkles, IconSun, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
 import { Button, Input, Modal } from './components/ui';
 import { getFeed, getUser, getInfo, getConversation, type Cast, type User, type ConversationNode } from './lib/api';
 import type { WalletSession } from './lib/auth';
+
+const ConnectAccount = lazy(() => import('./components/ConnectAccount'));
+const DeviceSettings = lazy(() => import('./components/ConnectAccount').then(module => ({ default: module.DeviceSettings })));
 
 type View = 'discover' | 'following' | 'bookmarks' | 'channel' | 'profile';
 const channels = [{ id: 'quilibrium', name: 'Quilibrium', mark: 'Q' }, { id: 'farcaster', name: 'Farcaster', mark: 'F' }, { id: 'dev', name: 'Developers', mark: '</>' }, { id: 'art', name: 'Art & creativity', mark: '✳' }, { id: 'crypto', name: 'Crypto', mark: 'Ξ' }];
@@ -26,40 +29,6 @@ function Avatar({ user, large = false }: { user?: User; large?: boolean }) {
 }
 function CastText({ text }: { text: string }) {
   return <>{text.split(/(https:\/\/[^\s]+)/g).map((part, i) => part.startsWith('https://') ? <a key={i} href={safeUrl(part)} target="_blank" rel="noopener noreferrer">{part.length > 65 ? `${part.slice(0, 62)}…` : part}</a> : part)}</>;
-}
-function SignIn({ onClose, onConnect }: { onClose(): void; onConnect(session: WalletSession): void }) {
-  const [seed, setSeed] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState('');
-  const [error, setError] = useState('');
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => () => controller.current?.abort(), []);
-  async function connect(event: FormEvent) {
-    event.preventDefault(); setError(''); setBusy(true);
-    controller.current = new AbortController();
-    try {
-      const { connectWithSeedPhrase } = await import('./lib/auth');
-      if (controller.current.signal.aborted) return;
-      const session = await connectWithSeedPhrase(seed, { signal: controller.current.signal, onDerived: () => setSeed(''), onProgress: setStage });
-      if (controller.current.signal.aborted) { session.dispose(); return; }
-      onConnect(session);
-    } catch (error) { if (!controller.current.signal.aborted) setError(message(error)); }
-    finally { setBusy(false); setSeed(''); }
-  }
-  return <Modal title="Your identity. Your keys." onClose={onClose}>
-    <div className="signin-symbol"><IconKey size={30} /></div>
-    <p className="modal-intro">Bring your Farcaster identity to Hypersnap.</p>
-    <p className="muted">Use the recovery phrase of your Farcaster custody wallet. Your existing profile and follows come with you.</p>
-    <form onSubmit={connect}>
-      <label className="field-label" htmlFor="recovery-phrase">Farcaster recovery phrase</label>
-      <Input id="recovery-phrase" type="password" placeholder="Your 12 or 24 words" value={seed} onChange={event => setSeed(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={busy} required aria-describedby="key-privacy" />
-      <div className="privacy-note" id="key-privacy"><IconShieldLock size={21} /><span>Your phrase stays in this browser and is cleared after derivation. Only signed messages leave your device. Signing access ends when you close or refresh this tab.</span></div>
-      <p className="fine-print">Connecting authorizes an app signer for your FID on Hypersnap. No transaction fee. This requires an existing Farcaster custody wallet; a verified wallet alone won’t work.</p>
-      {error && <p role="alert" className="error">{error}</p>}
-      <Button type="submit" className="full-width" disabled={busy || !seed.trim()}>{busy ? <><IconRefresh className="spin" size={18} /> {stage || 'Connecting…'}</> : <>Connect to Hypersnap <IconArrowUpRight size={18} /></>}</Button>
-    </form>
-    <a className="source-note" href={`${sourceUrl}/tree/main/hypersnap`} target="_blank" rel="noopener noreferrer"><IconCode size={16} /> Open source. Inspect how your keys are handled.</a>
-  </Modal>;
 }
 function CastCard({ cast, onProfile, onThread, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onThread(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
   const [liked, setLiked] = useState(false);
@@ -111,6 +80,7 @@ export default function App() {
   const [channel, setChannel] = useState(channels[0].id);
   const [session, setSession] = useState<WalletSession | null>(null);
   const [signIn, setSignIn] = useState(false);
+  const [deviceSettings, setDeviceSettings] = useState(false);
   const [profile, setProfile] = useState<User | null>(null);
   const [casts, setCasts] = useState<Cast[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -170,6 +140,11 @@ export default function App() {
     return () => controller.abort();
   }, [notify]);
 
+  function lockSession(expectedSession = session, revoked = false) {
+    if (!expectedSession || currentSession.current?.publicKey !== expectedSession.publicKey) return;
+    expectedSession.dispose(); setSession(null); setDeviceSettings(false);
+    if (!revoked) notify('This tab is locked. Network authorization remains active; unlock a saved vault or approve a new device key to reconnect.');
+  }
   function save(cast: Cast) {
     const next = bookmarks.some(item => item.hash === cast.hash) ? bookmarks.filter(item => item.hash !== cast.hash) : [cast, ...bookmarks].slice(0, 200);
     setBookmarks(next); try { localStorage.setItem('quorum.bookmarks.v1', JSON.stringify(next)); } catch { notify('Browser storage is full. Bookmarks will last for this tab.'); }
@@ -206,27 +181,28 @@ export default function App() {
       </nav>
       <div className="sidebar__section-label">EXPLORE CHANNELS <IconHash size={14} /></div>
       <nav aria-label="Channels">{channels.map(item => <Button key={item.id} variant="ghost" className={`channel-nav ${view === 'channel' && channel === item.id ? 'active' : ''}`} onClick={() => { setChannel(item.id); setView('channel'); }}><span className="channel-mark">{item.mark}</span>{item.name}</Button>)}</nav>
-      <div className="sidebar__bottom">{session ? <div className="session-card"><Button variant="ghost" className="session-user" onClick={() => openProfile(session.user)}><Avatar user={session.user} /><span><strong>{session.user.display_name || session.user.username}</strong><small>@{session.user.username}</small></span></Button><Button variant="ghost" aria-label="Sign out and clear signing key" onClick={() => { session.dispose(); setSession(null); notify('Signed out. Signing key cleared from this tab.'); }}><IconLogout size={19} /></Button></div> : <><div className="sidebar-invite"><IconWorld size={21} /><p>The social web,<br /><strong>on your terms.</strong></p></div><Button className="full-width" onClick={() => setSignIn(true)}>Connect Farcaster <IconArrowUpRight size={17} /></Button></>}<p className="sidebar-foot">OPEN PROTOCOL. OPEN POSSIBILITIES.</p></div>
+      <div className="sidebar__bottom">{session ? <div className="session-card"><Button variant="ghost" className="session-user" onClick={() => openProfile(session.user)}><Avatar user={session.user} /><span><strong>{session.user.display_name || session.user.username}</strong><small>@{session.user.username}</small></span></Button><Button variant="ghost" aria-label="Manage this device’s signing access" onClick={() => setDeviceSettings(true)}><IconShieldLock size={19} /></Button></div> : <><div className="sidebar-invite"><IconWorld size={21} /><p>The social web,<br /><strong>on your terms.</strong></p></div><Button className="full-width" onClick={() => setSignIn(true)}>Connect Farcaster <IconArrowUpRight size={17} /></Button></>}<p className="sidebar-foot">OPEN PROTOCOL. OPEN POSSIBILITIES.</p></div>
     </aside>
     <main className="main">
       <header className="page-header"><div><span className="eyebrow">YOUR CORNER OF THE OPEN SOCIAL WEB</span><h1>{activeTitle}<span className="title-star">✳</span></h1></div><div className="header-actions"><span className="live-pill"><span className={`status-dot ${networkError ? 'status-dot--offline' : ''}`} />{networkError ? 'Node unavailable' : info ? 'Live on Hypersnap' : 'Connecting'}</span><Button variant="ghost" aria-label="Refresh feed" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={19} className={loading ? 'spin' : ''} /></Button><Button className="mobile-connect" variant="secondary" onClick={() => session ? openProfile(session.user) : setSignIn(true)}>{session ? 'My profile' : 'Connect'}</Button></div></header>
       <div className="compact-tools"><form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Find a username or FID" placeholder="Find a username or FID" value={query} onChange={event => setQuery(event.target.value)} disabled={searching} /><Button variant="ghost" type="submit" disabled={searching} aria-label="Find profile"><IconChevronRight size={18} /></Button></form><nav className="channel-chips" aria-label="Explore channels">{channels.map(item => <Button key={item.id} variant="ghost" className={view === 'channel' && channel === item.id ? 'active' : ''} onClick={() => { setChannel(item.id); setView('channel'); }}>/{item.id}</Button>)}</nav></div>
       {view === 'discover' && <section className="welcome"><div className="welcome__copy"><span className="eyebrow"><IconSparkles size={14} /> A LITTLE MORE OPEN</span><h2>Good conversations.<br /><span>No gatekeepers.</span></h2><p>Your people, your identity, your voice.<br />A familiar social world, on a network we all own.</p><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Meet Hypersnap <IconArrowUpRight size={16} /></a></div><div className="orbit" aria-hidden="true"><div className="orbit__ring orbit__ring--one" /><div className="orbit__ring orbit__ring--two" /><div className="orbit__ring orbit__ring--three" /><div className="orbit__core"><img src="/quorum-symbol.svg" alt="" /></div><span className="orbit__point orbit__point--a" /><span className="orbit__point orbit__point--b" /><span className="orbit__point orbit__point--c" /><span className="orbit__star">✳</span></div></section>}
-      {view === 'profile' && profile && <section className="profile"><Button variant="ghost" onClick={() => setView('discover')}><IconArrowLeft size={17} /> Back to discover</Button><Avatar user={profile} large /><h2>{profile.display_name || profile.username}</h2><p className="muted">@{profile.username} <span>· FID {profile.fid}</span></p><p className="profile__bio">{profile.profile?.bio?.text || 'A voice on the open social web.'}</p><div className="profile__counts"><span><strong>{short(profile.following_count)}</strong> following</span><span><strong>{short(profile.follower_count)}</strong> followers</span></div>{session?.fid === profile.fid && <Button variant="secondary" className="profile-signout" onClick={() => { session.dispose(); setSession(null); notify('Signed out. Signing key cleared from this tab.'); }}><IconLogout size={17} /> Sign out</Button>}</section>}
+      {view === 'profile' && profile && <section className="profile"><Button variant="ghost" onClick={() => setView('discover')}><IconArrowLeft size={17} /> Back to discover</Button><Avatar user={profile} large /><h2>{profile.display_name || profile.username}</h2><p className="muted">@{profile.username} <span>· FID {profile.fid}</span></p><p className="profile__bio">{profile.profile?.bio?.text || 'A voice on the open social web.'}</p><div className="profile__counts"><span><strong>{short(profile.following_count)}</strong> following</span><span><strong>{short(profile.follower_count)}</strong> followers</span></div>{session?.fid === profile.fid && <div className="profile-device-actions"><Button variant="secondary" className="profile-signout" onClick={() => setDeviceSettings(true)}><IconShieldLock size={17} /> Device access</Button><Button variant="ghost" className="profile-signout" onClick={() => lockSession()}><IconLock size={17} /> Lock this tab</Button></div>}</section>}
       {view !== 'bookmarks' && view !== 'profile' && view !== 'channel' && <Composer session={session} onSignIn={() => setSignIn(true)} onPosted={() => setRefresh(n => n + 1)} notify={notify} />}
       <div className="feed-heading"><div><IconHome size={17} /><span>{view === 'discover' ? 'Around the network' : view === 'bookmarks' ? 'Saved for later' : view === 'profile' ? 'Casts' : view === 'following' ? 'From your people' : `/${channel}`}</span></div><span>{view === 'discover' ? <><IconSparkles size={13} /> Trending</> : view === 'bookmarks' ? 'Stored on this device' : 'Latest casts'}</span></div>
       {loading ? <div aria-label="Loading casts" role="status" className="skeleton-list">{[0, 1, 2].map(n => <div className="skeleton-cast" key={n}><span className="skeleton-avatar" /><div><span /><span /><span /></div></div>)}<p className="muted">Finding conversations on Hypersnap…</p></div> : error ? <div className="empty"><IconWorld size={35} /><h3>The network is taking a moment.</h3><p>{error}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={16} />Try again</Button></div> : view === 'following' && !session ? <div className="empty"><IconUsers size={35} /><h3>Your people are here.</h3><p>Connect your Farcaster wallet to see casts from the people you follow.</p><Button onClick={() => setSignIn(true)}>Connect Farcaster <IconArrowUpRight size={16} /></Button></div> : visibleCasts.length ? <div className="feed">{visibleCasts.map(card)}{cursor && view !== 'bookmarks' && <Button variant="secondary" className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More conversations'}<IconArrowDown size={16} /></Button>}<p className="feed-end">You’re connected to the open social web. <IconWorld size={13} /></p></div> : <div className="empty"><IconBookmark size={35} /><h3>{view === 'bookmarks' ? 'A place for the good stuff.' : 'The conversation is open.'}</h3><p>{view === 'bookmarks' ? 'Tap the bookmark on any cast to save it here.' : 'No casts returned for this feed yet. Try another channel or start a conversation.'}</p>{cursor && <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Check next page'}<IconArrowDown size={16} /></Button>}</div>}
     </main>
     <aside className="rightbar">
       <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Find a Farcaster username or FID" placeholder="Find a username or FID" value={query} onChange={event => setQuery(event.target.value)} disabled={searching} /><Button variant="ghost" type="submit" disabled={searching} aria-label="Search profiles"><IconChevronRight size={18} /></Button></form>
-      {!session && <section className="join-card"><span className="tiny-icon"><IconWorld size={23} /></span><h2>You already belong.</h2><p>Your Farcaster identity works here.<br />Bring your profile. Find your people.<br />Make yourself heard.</p><Button className="full-width" onClick={() => setSignIn(true)}>Connect your wallet <IconArrowUpRight size={17} /></Button><span className="join-card__note"><IconShieldLock size={13} /> Your keys stay with you.</span></section>}
+      {!session && <section className="join-card"><span className="tiny-icon"><IconWorld size={23} /></span><h2>You already belong.</h2><p>Your Farcaster identity works here.<br />Bring your profile. Find your people.<br />Make yourself heard.</p><Button className="full-width" onClick={() => setSignIn(true)}>Connect your wallet <IconArrowUpRight size={17} /></Button><span className="join-card__note"><IconShieldLock size={13} /> Recovery words stay outside this site.</span></section>}
       <section className="network-card"><div className="card-label">A NETWORK, NOT A PLATFORM <IconWorld size={16} /></div><div className="node-status"><span className={`status-dot ${networkError ? 'status-dot--offline' : ''}`} /><strong>{networkError ? 'Node unavailable' : info ? 'Connected to Hypersnap' : 'Checking the network…'}</strong></div><p>haatz.quilibrium.com</p><div className="network-facts"><div><span>Protocol</span><strong>Farcaster-compatible</strong></div><div><span>Ownership</span><strong>Community-run</strong></div><div><span>Access</span><strong>Open to everyone <IconArrowUpRight size={12} /></strong></div></div><a href="https://hypersnap.org/docs" target="_blank" rel="noopener noreferrer">Explore the protocol <IconArrowUpRight size={15} /></a></section>
       <section className="open-card"><IconCode size={23} /><h3>Built in the open.</h3><p>A Quorum fork by Arca. Powered by Hypersnap, made for everyone.</p><a href={sourceUrl} target="_blank" rel="noopener noreferrer">Read the source <IconArrowUpRight size={14} /></a></section>
       <footer><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a><a href="https://www.quorummessenger.com" target="_blank" rel="noopener noreferrer">Quorum</a><a href={`${sourceUrl}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a><span>Made for the open internet <span className="footer-star">✳</span></span></footer>
     </aside>
     <nav className="mobile-nav" aria-label="Mobile navigation"><Button variant="ghost" aria-label="Discover" onClick={() => setView('discover')}><IconCompass /></Button><Button variant="ghost" aria-label="Following" onClick={() => setView('following')}><IconUsers /></Button><Button variant="ghost" aria-label="Bookmarks" onClick={() => setView('bookmarks')}><IconBookmark /></Button><Button variant="ghost" aria-label="Account" onClick={() => session ? openProfile(session.user) : setSignIn(true)}><IconKey /></Button></nav>
     {toast && <div className="toast" role="status"><span>{toast}</span><Button variant="ghost" aria-label="Dismiss notification" onClick={() => setToast('')}><IconX size={17} /></Button></div>}
-    {signIn && <SignIn onClose={() => setSignIn(false)} onConnect={value => { session?.dispose(); setSession(value); setSignIn(false); notify(`Welcome, @${value.user.username}. You’re connected to Hypersnap.`); }} />}
+    {signIn && <Suspense fallback={<Modal title="Connect your identity" onClose={() => setSignIn(false)}><p className="pairing-copy" role="status">Loading device sign-in…</p></Modal>}><ConnectAccount onClose={() => setSignIn(false)} onConnect={value => { session?.dispose(); setSession(value); setSignIn(false); notify(`Welcome, @${value.user.username || value.fid}. You’re connected to Hypersnap.`); }} /></Suspense>}
+    {deviceSettings && session && <Suspense fallback={<Modal title="This device’s access" onClose={() => setDeviceSettings(false)}><p role="status">Loading device settings…</p></Modal>}><DeviceSettings session={session} onClose={() => setDeviceSettings(false)} onLock={revoked => lockSession(session, revoked)} notify={notify} /></Suspense>}
     {thread && <Modal title="Conversation" onClose={() => setThread(null)} wide>{card(conversation?.cast || thread)}<Composer session={session} onSignIn={() => { setThread(null); setSignIn(true); }} onPosted={() => setRefresh(n => n + 1)} parent={thread} notify={notify} />{threadError ? <p className="error">{threadError}</p> : conversation ? conversation.replies.length ? conversation.replies.map(node => card(node.cast)) : <p className="thread-empty">The first reply could be yours.</p> : <p className="thread-empty">Loading replies…</p>}</Modal>}
   </div>;
 }
