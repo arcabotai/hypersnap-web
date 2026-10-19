@@ -163,8 +163,13 @@ describe('the fixed Hypersnap gateway', () => {
     const csp = response.headers.get('Content-Security-Policy');
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain('wss://relay.walletconnect.org');
+    expect(csp).toContain('frame-src https://verify.walletconnect.org https://verify.walletconnect.com;');
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain('unsafe-inline');
+    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).not.toContain('pulse.walletconnect');
+    expect(csp).not.toMatch(/(?:connect-src|frame-src)[^;]*\*/);
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });

@@ -4,13 +4,39 @@ The website never asks for your recovery phrase. Use a compatible wallet app to 
 
 ## Connect with a wallet app
 
-1. On a computer, use a compatible Ethereum wallet extension. On iOS or Android, open `https://quorum.arca.computer` inside a compatible wallet's own browser. Normal Safari or Chrome on a phone may have no injected wallet provider. Opening a different browser starts a new device session.
+1. Open `https://quorum.arca.computer` in your normal browser. Choose **Connect your wallet app** for WalletConnect: scan the QR code from another device, or tap your installed wallet on the same phone. Keep the browser tab open. A compatible desktop extension or wallet's built-in browser can alternatively connect directly. Opening a different browser starts a separate device session.
 2. If your Farcaster custody wallet is not already in your chosen wallet, import its 24-word phrase **inside the wallet's own import screen**. Never paste it into this website. Use the wallet's add/import flow rather than resetting an existing wallet. Check the wallet's own backup and cloud-sync settings before importing.
 3. Find your public Farcaster account on Quorum. Select the imported custody address in the wallet; a different verified address cannot approve this account.
-4. Review the browser's complete posting key, permissions, and expiry. Choose your wallet and approve the two typed signing requests: `KeyAdd`, then `SignedKeyRequest`.
+4. Review the browser's complete posting key, permissions, and inactivity lifetime. Choose your wallet and approve the two typed signing requests: `KeyAdd`, then `SignedKeyRequest`. On mobile, return to the browser between prompts and use **Open wallet to approve** again if the phone does not switch automatically.
 5. The website verifies both signatures against the custody address. Select **Connect to Hypersnap** to register the posting key. Future casts and reactions use that limited device key, with optional password-encrypted local storage.
 
-The integration uses standard EIP-1193 requests and EIP-6963 wallet discovery, with no WalletConnect project ID, hosted relay, Farcaster sign-in service, or wallet SDK backend. Wallet providers and their supplied names are not authenticated by discovery; choose software you trust. A malicious extension can impersonate another wallet.
+Direct browser connections use standard EIP-1193 requests and EIP-6963 discovery. Wallet providers and their supplied names are not authenticated by discovery; choose software you trust. A malicious extension can impersonate another wallet. The optional WalletConnect route connects a separate wallet app through Reown's external relay; it needs a configured public project ID. Neither route uses a Farcaster sign-in service.
+
+### WalletConnect privacy and connection lifetime
+
+WalletConnect encrypts messages between the browser and wallet. Recovery phrases and custody private keys stay in the wallet. Encryption does not hide routing metadata: the relay can observe connection IPs, project/client identifiers, random topics, message sizes, timing, and protocol tags. Verify can receive the site's origin and message identifiers for domain attestation. Reown's [privacy policy](https://reown.com/privacy-policy) also describes data collected across its broader services; do not treat encrypted transport as anonymity.
+
+The connection requests Ethereum Mainnet typed-data signing only. It does not request transfers, swaps, social/email authentication, or blockchain balance queries. The site uses the minimal SignClient library, locally generated QR codes, and reviewed wallet-opening links rather than AppKit. The WalletConnect session and pairing are disconnected after the signing attempt finishes or is cancelled; the browser's separate posting key remains subject to the Hypersnap authorization you approved. Reject a prompt left open in the wallet if you cancel here. Closing a website cannot force a wallet app to close its own prompt.
+
+The pairing QR/link includes an ephemeral encryption secret. Share it only with your intended wallet. Never post it to support, chat, issue reports, logs, or public screenshots. Approval signatures are verified locally against the exact custody address and request before any Hypersnap message is submitted.
+
+### WalletConnect deployment and license
+
+Set `VITE_WALLETCONNECT_PROJECT_ID` at build time, using the public ID from your own [Reown Dashboard project](https://dashboard.reown.com). The value is intentionally visible in the built website. Set exact domain allowlists for production and any preview origin you deploy; no Dashboard API secret belongs in frontend configuration. Leave social/email login, Reown-hosted authentication, payments, swaps, and event tracking disabled for this signing-only integration. See [project settings](https://docs.reown.com/cloud/dashboard-configuration-settings).
+
+The pinned `@walletconnect/sign-client` 2.26.0 is distributed under the [WalletConnect Community License](licenses/walletconnect-2.26.0-LICENSE.md). The project owner approved using it and the encrypted external relay. This is a separately licensed bundled component, and the fork's own app code remains AGPL. The license includes redistribution/attribution obligations, required Reown network connectivity, and commercial thresholds of 500 monthly active users or 2,500,000 monthly RPCs, subject to its terms and current service conditions. It must not be described as Apache-licensed or wholly open-source software. Operators of forks should review the included license before distributing or operating their build.
+
+For this pinned SDK, the connection allowlist covers:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `wss://relay.walletconnect.org` | Default encrypted WalletConnect messaging relay. |
+| `https://verify.walletconnect.org` | Verify domain-attestation iframe and attestation/public-key requests. |
+| `https://verify.walletconnect.com` | SDK-trusted alternate Verify host. |
+
+SDK telemetry is disabled; `https://pulse.walletconnect.org/batch` is the SDK's telemetry destination and is not needed for this integration. Website scripts, styles, fonts, wallet links and QR generation remain locally bundled. The Verify iframe is external content in its own origin. This list describes the browser-side integration, not every endpoint contacted independently by a user's wallet app.
+
+These endpoints and defaults are documented in the [pinned relay constants](https://github.com/WalletConnect/walletconnect-monorepo/blob/63094dcb6fded05dcbc2b08b8895ada75a31dcb5/packages/core/src/constants/relayer.ts), [Verify implementation](https://github.com/WalletConnect/walletconnect-monorepo/blob/63094dcb6fded05dcbc2b08b8895ada75a31dcb5/packages/core/src/controllers/verify.ts), and [telemetry implementation](https://github.com/WalletConnect/walletconnect-monorepo/blob/63094dcb6fded05dcbc2b08b8895ada75a31dcb5/packages/core/src/controllers/events.ts). Re-test network traffic and CSP after SDK upgrades; the much broader AppKit CSP is not the specification for this integration.
 
 MetaMask is one compatible example, not a requirement. Its [official import guide](https://support.metamask.io/start/use-an-existing-wallet/) supports 12- and 24-word English wallets on extension and mobile; its [mobile browser guide](https://support.metamask.io/configure/wallet/how-to-use-the-metamask-mobile-browser/) explains opening dapps inside the app. Instances linked to Google, Apple, or Telegram may link/sync newly imported wallets, so review those settings if you want local-only custody. MetaMask's current mobile license is source-available, not an open-source license. Our adapter is open-source and allows other compatible wallets.
 
@@ -77,4 +103,4 @@ Release packaging requires a clean, committed tree. An optional `--notary-profil
 
 The companion uses a sandboxed renderer, context isolation, narrow validated IPC, a nonpersistent session, an allowlisted local protocol, and denied network/navigation/permissions. Electron's run-as-Node, inspector, and Node-options fuses are disabled. ASAR integrity validation is enabled. Only explicit user-selected public request/approval files are read or exported; the app has no automatic updates.
 
-The browser and Worker use no Farcaster-operated sign-in service. Public reads and signed messages go through Arca's Cloudflare Worker to the Quilibrium-operated Hypersnap node. That node remains an availability and correctness dependency; confirmations are node observations, not independently verified consensus proofs. Cloudflare and GitHub distribute code, and compromised releases can compromise future imports. An infected operating system, clipboard monitor, or malicious signer build can steal a phrase despite this design. Never send a real recovery phrase to support, chat, issue reports, or screenshots.
+The browser and Worker use no Farcaster-operated sign-in service. Public reads and signed messages go through Arca's Cloudflare Worker to the Quilibrium-operated Hypersnap node. That node remains an availability and correctness dependency; confirmations are node observations, not independently verified consensus proofs. Optional WalletConnect signing adds Reown's relay and Verify services, plus the user's selected wallet software, to the connection's trust and availability boundaries. Cloudflare and GitHub distribute code, and compromised releases can compromise future imports. An infected operating system, clipboard monitor, or malicious signer build can steal a phrase despite this design. Never send a real recovery phrase to support, chat, issue reports, or screenshots.

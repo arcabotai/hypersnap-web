@@ -58,14 +58,32 @@
 .wallet-not-found { padding-top: .6rem; border-top: .0625rem solid rgb(var(--accent-rgb) / .2); }
 .wallet-not-found strong { font-size: .73rem; font-weight: 550; }
 .wallet-not-found > .button { font-size: .65rem; min-height: 2rem; }
-.wallet-mobile-help { margin: 1rem 0; padding: .8rem; border: .0625rem solid var(--surface-3); border-radius: .65rem; background: var(--surface-1); }
-.wallet-mobile-help p { font-size: .67rem; color: var(--color-text-subtle); line-height: 1.8; margin: 0 0 .6rem; }
-.wallet-mobile-help a { display: inline-flex; align-items: center; gap: .35rem; font-size: .68rem; }
-.wallet-mobile-help small { display: block; margin-top: .5rem; font-size: .59rem; line-height: 1.7; color: var(--color-text-muted); }
-.wallet-mobile-help--compact { margin-bottom: .4rem; }
 .wallet-approved { display: flex; gap: .5rem; align-items: flex-start; padding: .8rem; border: .0625rem solid var(--surface-4); border-radius: .65rem; color: var(--green); font-size: .7rem; line-height: 1.7; margin: 1rem 0; overflow-wrap: anywhere; }
 .pairing-advanced { margin: 1.1rem 0; border: .0625rem solid var(--surface-3); border-radius: .7rem; padding: .8rem; }
 .pairing-advanced summary { color: var(--color-text-subtle); font-size: .68rem; line-height: 1.6; cursor: pointer; }
 .pairing-advanced summary:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .2rem; }
 .pairing-advanced[open] summary { margin-bottom: .8rem; }
 .pairing-advanced .pairing-offline { margin-bottom: .8rem; }
+
+.walletconnect-start { margin-top: .9rem; }
+.wallet-extension-label { display: flex; align-items: center; gap: .6rem; margin-top: 1.1rem; color: var(--color-text-muted); font-size: .6rem; }
+.wallet-extension-label::before, .wallet-extension-label::after { content: ''; height: .0625rem; background: var(--surface-4); flex: 1; }
+.walletconnect-panel { margin: .9rem 0; padding: .8rem; background: var(--surface-0); border: .0625rem solid var(--surface-4); border-radius: .7rem; }
+.walletconnect-heading { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.walletconnect-heading h4 { display: flex; align-items: center; gap: .4rem; font-size: .75rem; font-weight: 550; margin: 0; }
+.walletconnect-heading .button { padding: .3rem; min-height: unset; }
+.walletconnect-panel > p { font-size: .65rem; line-height: 1.8; color: var(--color-text-subtle); }
+.walletconnect-panel .walletconnect-progress { display: flex; align-items: flex-start; gap: .4rem; color: var(--color-text-strong); }
+.walletconnect-progress svg { margin-top: .2rem; }
+.walletconnect-qr { display: flex; align-items: center; justify-content: center; border-radius: .6rem; overflow: hidden; margin: .8rem auto; max-width: 17.5rem; aspect-ratio: 1; background: var(--surface-2); }
+.walletconnect-qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.walletconnect-qr span { text-align: center; color: var(--color-text-subtle); font-size: .65rem; line-height: 1.8; padding: 1rem; }
+.walletconnect-apps { display: grid; gap: .5rem; margin-block: .8rem; }
+.walletconnect-apps .button { font-size: .7rem; padding: .7rem .6rem; text-decoration: none; }
+.walletconnect-panel .walletconnect-return { color: var(--color-text-strong); }
+.walletconnect-panel .walletconnect-privacy { display: flex; align-items: flex-start; gap: .4rem; color: var(--color-text-muted); font-size: .58rem; }
+.walletconnect-privacy svg { margin-top: .2rem; }
+
+.walletconnect-start-label { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: .12rem; text-align: left; }
+.walletconnect-start-label strong { font: inherit; }
+.walletconnect-start-label small { font-size: .56rem; font-weight: 400; opacity: .85; }

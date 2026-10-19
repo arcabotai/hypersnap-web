@@ -1,8 +1,13 @@
 # Verification record · 2026-10-19
 
-The standalone Hypersnap entry passes `cd hypersnap && yarn verify`: **91 tests** (26 Worker, 8 API, 9 public transfer boundary, 8 native signer, 18 auth, 7 encrypted vault/storage, 14 wallet provider, and 1 independent Rust protocol golden vector), TypeScript for browser/Worker/native code, and browser plus native payload builds.
+The standalone Hypersnap entry passes `cd hypersnap && yarn verify`: **110 tests** (26 Worker, 8 API, 9 public transfer boundary, 8 native signer, 18 auth, 7 encrypted vault/storage, 14 wallet provider, 12 WalletConnect adapter, 7 SDK lifecycle, and 1 independent Rust protocol golden vector), TypeScript for browser/Worker/native code, and browser plus native payload builds.
 
 Wallet tests use independent viem EIP-712 hashing and synthetic keys to verify exact KeyAdd, SignedKeyRequest, and KeyRemove compatibility. They cover custody mismatch, account/network changes, rejected or malformed signatures, bounded timeouts, cancellation between prompts, provider discovery and untrusted metadata. Vault tests include actual IndexedDB transactions across two connections, preventing another tab’s replacement vault from being erased. Unknown network writes are never automatically resubmitted.
+
+
+WalletConnect uses the current pinned 2.26.0 SignClient/Core with the project owner’s explicit approval of its Community License and external relay. The project ID is configured in ignored local build environment files and a GitHub Actions public repository variable; no Dashboard API secret is used. Runtime dependency audit reported zero advisories. The SDK is lazy-loaded, uses fresh memory storage and a unique prefix, disables telemetry and global Core caching, permits only the exact displayed typed-data operation, and clears local session/pairing keys during bounded cleanup. The temporary nonsecret SDK environment flag is restored after initialization.
+
+A live browser pairing with the supplied project ID produced a real local QR and canonical wallet-app links. A separate synthetic SignClient peer settled the restricted Mainnet namespace, received and checked the exact FID 1234 KeyAdd scopes `[1,3,4]` and TTL `604800`, then returned user rejection code 5000. The browser showed the controlled rejection, cleared pairing UI, and kept network submission disabled. The synthetic test produced no signature or Hypersnap write; its private temporary pairing file was deleted and relay keys cleared. Physical MetaMask/Trust Wallet approval and successful real-account registration remain untested.
 
 Native UI smoke verified importing a public synthetic request, reviewing public account/key/permissions, signing with a public test-only 24-word phrase, clearing its input, and exporting an approval whose signatures then verified cryptographically. Browser smoke covered public account lookup, phrase-free sign-in, mobile wallet guidance, and rejecting an approval for another request. Native payload builds were repeated and their manifests matched.
 
@@ -12,19 +17,19 @@ The live node’s HTTP `requesterFids` sequence query fails to decode; bracket q
 
 The Worker uses manual redirects and rejects all upstream redirects, with regression coverage for Cloudflare runtime compatibility.
 
-The retained Quorum messenger is separate. Its root verification was attempted but cannot run its tools without the original dependencies and sibling shared/SDK repositories. Its permanent-account mint guard was respected. This is the complete recorded verdict from that attempt (line-end padding omitted) (before the final wallet UI edits), not a passing messenger regression run:
+The retained Quorum messenger is separate. Its root verification was attempted but cannot run its tools without the original dependencies and sibling shared/SDK repositories. Its permanent-account mint guard was respected. This is the complete recorded verdict from that attempt (line-end padding omitted) (before the final WalletConnect tests and UI edits), not a passing messenger regression run:
 
 ```text
 ── VERIFY ──────────────────────────────────────────────
   ENVIRONMENT
-    desktop   52af2a5  ⚠ working tree dirty (17 files)
+    desktop   ae8a469  ⚠ working tree dirty (18 files)
     shared    NOT INSTALLED
     sdk       NOT INSTALLED
 
   ROUTED    desktop
   TIER      fast + live
-            (not on the safe list: desktop/.gitignore, desktop/hypersnap/package.json, desktop/hypersnap/src/App.tsx)
-            (… and 20 more)
+            (not on the safe list: desktop/.github/workflows/hypersnap.yml, desktop/hypersnap/package.json, desktop/hypersnap/src/components/ConnectAccount.tsx)
+            (… and 10 more)
             (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
 
   desktop  typecheck      FAIL       0s

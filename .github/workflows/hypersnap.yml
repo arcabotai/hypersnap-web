@@ -9,6 +9,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.VITE_WALLETCONNECT_PROJECT_ID }}
     defaults:
       run:
         working-directory: hypersnap

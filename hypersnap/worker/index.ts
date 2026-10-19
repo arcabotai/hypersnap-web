@@ -1,5 +1,5 @@
-/** Fixed-origin, bounded gateway. Private keys and recovery phrases belong only
- * in browser memory; this worker accepts public queries or signed wire bytes.
+/** Fixed-origin, bounded gateway. Custody secrets stay in the user's wallet;
+ * this worker accepts public queries or signed wire bytes.
  */
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -12,7 +12,7 @@ const UPSTREAM_TIMEOUT_MS = 20_000;
 const SUBMISSION_UNKNOWN = 'Submission status is unknown. Check your profile or signer state before trying again.';
 
 const SECURITY_HEADERS: Record<string, string> = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self' wss://relay.walletconnect.org wss://relay.walletconnect.com https://verify.walletconnect.org https://verify.walletconnect.com; frame-src https://verify.walletconnect.org https://verify.walletconnect.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',

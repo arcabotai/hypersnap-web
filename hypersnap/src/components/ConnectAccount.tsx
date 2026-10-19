@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconCheck, IconCode, IconDeviceDesktop, IconFileCheck, IconKey, IconLock, IconRefresh, IconShieldLock, IconTrash, IconWallet } from '@tabler/icons-react';
 import { Button, Input, Modal } from './ui';
+import WalletConnectLogo from './WalletConnectLogo';
 import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation, type WalletSession } from '../lib/auth';
 import { hashPairingRequest, hashRevocationRequest, validatePairingApproval, verifyPairingApproval, validateRevocationApproval, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationApproval, type RevocationRequest } from '../lib/pairing';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
@@ -12,15 +13,7 @@ const approvalLimitBytes = 16 * 1024;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'This action could not be completed.';
 const fingerprint = (key: string) => key.match(/.{1,8}/g)?.join(' ') ?? key;
 
-const mobileWalletUrl = 'https://link.metamask.io/dapp/quorum.arca.computer/';
-
-function MobileWalletHelp({ compact = false }: { compact?: boolean }) {
-  return <div className={`wallet-mobile-help ${compact ? 'wallet-mobile-help--compact' : ''}`}>
-    <p>On mobile, open this site in a compatible wallet app’s browser. Select your Farcaster custody account; import it into your trusted wallet app first if needed. Brave Wallet in the Brave browser is another compatible option. Never enter recovery words on this website.</p>
-    <a href={mobileWalletUrl}><IconArrowUpRight size={15} />Open in MetaMask’s browser</a>
-    <small>This opens a new browser session. Find your account again there to create a fresh device key.</small>
-  </div>;
-}
+const WalletConnectPanel = lazy(() => import('./WalletConnectPanel'));
 
 function WalletApproval({ request, disabled, onApproved, onBusy, onError }: {
   request: PairingRequest | RevocationRequest;
@@ -33,12 +26,14 @@ function WalletApproval({ request, disabled, onApproved, onBusy, onError }: {
   const [waiting, setWaiting] = useState('');
   const [progress, setProgress] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const [walletConnect, setWalletConnect] = useState(false);
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => discoverInjectedWallets(setWallets), [refresh]);
   useEffect(() => () => { generation.current += 1; controller.current?.abort(); }, [request.requestId]);
   async function approve(wallet: InjectedWallet) {
     if (disabled || waiting) return;
+    setWalletConnect(false);
     const run = ++generation.current; controller.current?.abort(); controller.current = new AbortController(); setWaiting(wallet.id); setProgress('Connecting your custody wallet…'); onBusy(true); onError('');
     const options = { signal: controller.current.signal, onProgress: (text: string) => { if (run === generation.current) setProgress(text); } };
     try {
@@ -52,7 +47,9 @@ function WalletApproval({ request, disabled, onApproved, onBusy, onError }: {
   return <section className="wallet-approval">
     <h3><IconWallet size={19} />Approve with your wallet</h3>
     <p>{request.kind === 'arca.hypersnap.signer.request' ? 'Connect the wallet account that owns this identity, then approve two signature requests for this device’s posting key.' : 'Connect the custody wallet and approve the signature request to revoke this device’s posting key.'} Review the FID, key, permissions, and deadline. No transaction fee is required.</p>
-    {wallets.length ? <div className="wallet-list">{wallets.map(wallet => <Button key={wallet.id} variant="secondary" disabled={disabled || !!waiting} onClick={() => void approve(wallet)}>{waiting === wallet.id ? <IconRefresh size={17} className="spin" /> : <IconWallet size={17} />}<span>{waiting === wallet.id ? 'Check your wallet…' : `Connect ${wallet.name} & approve`}</span><IconArrowUpRight size={15} /></Button>)}</div> : <div className="wallet-not-found"><strong>No wallet detected in this browser.</strong><p>On desktop, enable a compatible wallet extension that supports typed-data signatures. On mobile, use the wallet’s browser.</p><Button variant="secondary" disabled={disabled} onClick={() => setRefresh(value => value + 1)}><IconRefresh size={15} />Refresh wallets</Button><MobileWalletHelp compact /></div>}
+    {!walletConnect ? <><Button aria-label="Connect wallet app" className="full-width walletconnect-start" disabled={disabled || !!waiting} onClick={() => { onBusy(true); onError(''); setWalletConnect(true); }}><WalletConnectLogo size={27} /><span className="walletconnect-start-label"><strong>Connect wallet app</strong><small>WalletConnect</small></span><IconArrowUpRight size={16} /></Button><p className="pairing-release">WalletConnect · scan a QR code on desktop or open your wallet app on mobile. Keep using this browser.</p></> : <Suspense fallback={<div className="walletconnect-panel"><p role="status"><IconRefresh size={16} className="spin" />Loading wallet app connection…</p><Button variant="ghost" onClick={() => { setWalletConnect(false); onBusy(false); }}>Cancel</Button></div>}><WalletConnectPanel request={request} onApproved={onApproved} onBusy={onBusy} onError={onError} onClose={() => setWalletConnect(false)} /></Suspense>}
+    <div className="wallet-extension-label">Or use a browser wallet</div>
+    {wallets.length ? <div className="wallet-list">{wallets.map(wallet => <Button key={wallet.id} variant="secondary" disabled={disabled || !!waiting} onClick={() => void approve(wallet)}>{waiting === wallet.id ? <IconRefresh size={17} className="spin" /> : <IconWallet size={17} />}<span>{waiting === wallet.id ? 'Check your wallet…' : `Connect ${wallet.name} & approve`}</span><IconArrowUpRight size={15} /></Button>)}</div> : <div className="wallet-not-found"><p>No browser wallet detected. Use <strong>Connect wallet app</strong> above, or enable a compatible extension.</p><Button variant="secondary" disabled={disabled} onClick={() => setRefresh(value => value + 1)}><IconRefresh size={15} />Refresh browser wallets</Button></div>}
     {waiting && <><p className="pairing-copy" role="status">{progress}</p><p className="pairing-release">If you close this dialog, reject any pending request in your wallet. This website cannot close the wallet popup.</p></>}
     <p className="pairing-release">Select Ethereum Mainnet in your wallet for signing (chain ID 1). These signatures use the historical “Farcaster KeyAdd” domain to authorize this key on Hypersnap. No Farcaster login, ETH, or wallet transaction is required.</p>
     <p className="pairing-release">The connected address must match <span className="pairing-mono">{request.custodyAddress}</span>. A verified wallet address alone does not grant account access. Wallet support depends on its provider and signing capabilities.</p>
@@ -204,8 +201,7 @@ export default function ConnectAccount({ onClose, onConnect }: { onClose(): void
     </form> : <>
       <ol className="pairing-steps" aria-label="Connection steps"><li className={!request ? 'active' : 'complete'}><span>{request ? <IconCheck size={13} /> : '1'}</span>Find account</li><li className={request && !approval ? 'active' : approval ? 'complete' : ''}><span>{approval ? <IconCheck size={13} /> : '2'}</span>Approve key</li><li className={approval ? 'active' : ''}><span>3</span>Connect</li></ol>
       {!request ? <form onSubmit={prepare}>
-        <p className="pairing-copy">Use a compatible wallet extension on desktop or a wallet app’s browser on mobile. Find your public account to create this browser’s separate posting key.</p>
-        <MobileWalletHelp />
+        <p className="pairing-copy">Connect your existing wallet app from this browser, or use a compatible wallet extension. Find your public account to create this browser’s separate posting key.</p>
         <label className="field-label" htmlFor="account-identifier">Username, FID, or custody wallet address</label>
         <Input id="account-identifier" placeholder="@username, 1234, or 0x…" value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} required />
         <p className="fine-print">Use your account’s custody wallet, which may differ from a verified wallet. Do not enter your recovery words.</p>
