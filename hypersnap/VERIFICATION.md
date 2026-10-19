@@ -39,17 +39,17 @@ The retained Quorum messenger is separate. Its root verification was attempted b
 ```text
 ── VERIFY ──────────────────────────────────────────────
   ENVIRONMENT
-    desktop   71db400  ⚠ working tree dirty (21 files)
+    desktop   3b68055  clean
     shared    NOT INSTALLED
     sdk       NOT INSTALLED
 
   ROUTED    desktop
   TIER      fast + live
-            (not on the safe list: desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/components/EditProfileDialog.tsx, desktop/hypersnap/src/lib/api.test.ts)
+            (not on the safe list: desktop/hypersnap/scripts/e2e-bootstrap-node.ts, desktop/hypersnap/scripts/e2e-browser-server.mjs, desktop/hypersnap/scripts/e2e-media-checks.mjs)
             (… and 16 more)
             (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
 
-  desktop  typecheck      FAIL       1s
+  desktop  typecheck      FAIL       0s
   desktop  lint           FAIL       0s
   desktop  unit           FAIL       0s
   desktop  harness-offline FAIL       0s
