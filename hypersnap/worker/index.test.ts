@@ -297,6 +297,10 @@ describe('the fixed Hypersnap gateway', () => {
     expect(csp).not.toContain('unsafe-eval');
     expect(csp).not.toContain('pulse.walletconnect');
     expect(csp).not.toMatch(/(?:connect-src|frame-src)[^;]*\*/);
+    const permissions = response.headers.get('Permissions-Policy');
+    expect(permissions).toContain('publickey-credentials-create=(self)');
+    expect(permissions).toContain('publickey-credentials-get=(self)');
+    expect(permissions).not.toContain('*');
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });

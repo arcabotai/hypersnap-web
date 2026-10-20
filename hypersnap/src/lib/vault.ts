@@ -1,6 +1,7 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
 import { validatePairingScopes } from './pairing';
+import { validatePasskeyDescriptor, type PasskeyDescriptor } from './passkey';
 
 // Platform-agnostic crypto/schema are candidates for a future shared signer
 // package; IndexedDB intentionally stays in this browser adapter.
@@ -28,6 +29,19 @@ export interface SignerVault {
   cipher: { name: 'AES-GCM'; length: 256; iv: string; tagLength: 128 };
   ciphertext: string;
 }
+
+export interface PasskeySignerVault {
+  kind: typeof KIND;
+  version: 2;
+  metadata: VaultMetadata;
+  /** The actual WebAuthn origin can differ from the protocol label in local development. */
+  passkey: PasskeyDescriptor;
+  kdf: { name: 'HKDF'; hash: 'SHA-256'; salt: string };
+  cipher: { name: 'AES-GCM'; length: 256; iv: string; tagLength: 128 };
+  ciphertext: string;
+}
+export type StoredSignerVault = SignerVault | PasskeySignerVault;
+export type SavedSessionMethod = 'password' | 'passkey';
 
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -69,6 +83,31 @@ function validateVault(value: unknown): SignerVault {
     throw new Error('The saved device vault is invalid. You can forget it and authorize a new device.');
   }
   return { kind: KIND, version: 1, metadata: validateMetadata(value.metadata), kdf: value.kdf as SignerVault['kdf'], cipher: value.cipher as SignerVault['cipher'], ciphertext: value.ciphertext };
+}
+
+export function validateSignerVault(value: unknown): StoredSignerVault {
+  if (object(value) && value.version === 1) return validateVault(value);
+  if (!object(value) || !exact(value, ['kind', 'version', 'metadata', 'passkey', 'kdf', 'cipher', 'ciphertext']) || value.kind !== KIND || value.version !== 2
+    || !object(value.kdf) || !exact(value.kdf, ['name', 'hash', 'salt']) || value.kdf.name !== 'HKDF' || value.kdf.hash !== 'SHA-256'
+    || typeof value.kdf.salt !== 'string' || !/^[0-9a-f]{64}$/.test(value.kdf.salt)
+    || !object(value.cipher) || !exact(value.cipher, ['name', 'length', 'iv', 'tagLength']) || value.cipher.name !== 'AES-GCM' || value.cipher.length !== 256 || value.cipher.tagLength !== 128
+    || typeof value.cipher.iv !== 'string' || !/^[0-9a-f]{24}$/.test(value.cipher.iv)
+    || typeof value.ciphertext !== 'string' || !/^[0-9a-f]{96}$/.test(value.ciphertext)) throw new Error('The saved device vault is invalid. You can forget it and authorize a new device.');
+  return {
+    kind: KIND, version: 2, metadata: validateMetadata(value.metadata), passkey: validatePasskeyDescriptor(value.passkey),
+    kdf: { name: 'HKDF', hash: 'SHA-256', salt: value.kdf.salt },
+    cipher: { name: 'AES-GCM', length: 256, iv: value.cipher.iv, tagLength: 128 }, ciphertext: value.ciphertext,
+  };
+}
+
+export function savedVaultMethod(value: unknown): SavedSessionMethod { return validateSignerVault(value).version === 1 ? 'password' : 'passkey'; }
+
+export function passkeyVault(value: unknown, metadataOrigin: string, actualOrigin: string): PasskeySignerVault {
+  const vault = validateSignerVault(value);
+  if (vault.version !== 2) throw new Error('This device vault uses a password. Choose password unlock.');
+  if (vault.metadata.origin !== metadataOrigin) throw new Error('This device vault belongs to a different website.');
+  validatePasskeyDescriptor(vault.passkey, actualOrigin);
+  return vault;
 }
 
 export function validateVaultPassword(password: string): void {
@@ -137,6 +176,61 @@ export async function decryptSignerVault(value: unknown, password: string, origi
   }
 }
 
+function passkeyHeader(vault: Omit<PasskeySignerVault, 'ciphertext'>): Omit<PasskeySignerVault, 'ciphertext'> {
+  return {
+    kind: KIND, version: 2, metadata: validateMetadata(vault.metadata), passkey: validatePasskeyDescriptor(vault.passkey),
+    kdf: { name: 'HKDF', hash: 'SHA-256', salt: vault.kdf.salt },
+    cipher: { name: 'AES-GCM', length: 256, iv: vault.cipher.iv, tagLength: 128 },
+  };
+}
+function passkeyAad(vault: Omit<PasskeySignerVault, 'ciphertext'>): ArrayBuffer {
+  return new TextEncoder().encode(JSON.stringify(passkeyHeader(vault))).buffer;
+}
+async function passkeyKey(secret: Uint8Array, vault: Omit<PasskeySignerVault, 'ciphertext'>): Promise<CryptoKey> {
+  if (!(secret instanceof Uint8Array) || secret.length !== 32) throw new Error('A verified 32-byte passkey PRF result is required.');
+  const materialBytes = new Uint8Array(secret);
+  const crypto = cryptoProvider();
+  try {
+    const material = await crypto.subtle.importKey('raw', materialBytes.buffer, 'HKDF', false, ['deriveKey']);
+    const info = new TextEncoder().encode(`arca.hypersnap.device-vault.webauthn-prf.v2\n${JSON.stringify({ metadata: validateMetadata(vault.metadata), passkey: validatePasskeyDescriptor(vault.passkey) })}`);
+    return await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: hexToBytes(vault.kdf.salt).buffer as ArrayBuffer, info: info.buffer }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  } finally { materialBytes.fill(0); }
+}
+
+/** The PRF result is transient input, never a persisted key or credential field. */
+export async function encryptSignerVaultWithPasskey(privateKey: Uint8Array, metadata: VaultMetadata, descriptor: PasskeyDescriptor, prfSecret: Uint8Array): Promise<PasskeySignerVault> {
+  const checked = validateMetadata(metadata);
+  const passkey = validatePasskeyDescriptor(descriptor);
+  if (privateKey.length !== 32 || bytesToHex(ed25519.getPublicKey(privateKey)) !== checked.publicKey) throw new Error('The device signer does not match its public key.');
+  const crypto = cryptoProvider();
+  const header: Omit<PasskeySignerVault, 'ciphertext'> = {
+    kind: KIND, version: 2, metadata: checked, passkey,
+    kdf: { name: 'HKDF', hash: 'SHA-256', salt: bytesToHex(crypto.getRandomValues(new Uint8Array(32))) },
+    cipher: { name: 'AES-GCM', length: 256, iv: bytesToHex(crypto.getRandomValues(new Uint8Array(12))), tagLength: 128 },
+  };
+  const plaintext = new Uint8Array(privateKey);
+  try {
+    const key = await passkeyKey(prfSecret, header);
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: hexToBytes(header.cipher.iv).buffer as ArrayBuffer, tagLength: 128, additionalData: passkeyAad(header) }, key, plaintext.buffer);
+    return { ...header, ciphertext: bytesToHex(new Uint8Array(encrypted)) };
+  } finally { plaintext.fill(0); }
+}
+
+export async function decryptSignerVaultWithPasskey(value: unknown, prfSecret: Uint8Array, metadataOrigin: string, actualOrigin = metadataOrigin): Promise<{ metadata: VaultMetadata; privateKey: Uint8Array }> {
+  const vault = passkeyVault(value, metadataOrigin, actualOrigin);
+  const key = await passkeyKey(prfSecret, vault);
+  let plaintext: Uint8Array | undefined;
+  try {
+    const decrypted = await cryptoProvider().subtle.decrypt({ name: 'AES-GCM', iv: hexToBytes(vault.cipher.iv).buffer as ArrayBuffer, tagLength: 128, additionalData: passkeyAad(vault) }, key, hexToBytes(vault.ciphertext).buffer as ArrayBuffer);
+    plaintext = new Uint8Array(decrypted);
+    if (plaintext.length !== 32 || bytesToHex(ed25519.getPublicKey(plaintext)) !== vault.metadata.publicKey) throw new Error('Invalid signer.');
+    return { metadata: vault.metadata, privateKey: plaintext };
+  } catch {
+    plaintext?.fill(0);
+    throw new Error('Could not unlock the device vault with this passkey. Use the original passkey or authorize this device again.');
+  }
+}
+
 async function database(): Promise<IDBDatabase> {
   if (!globalThis.indexedDB) throw new Error('Device storage is unavailable in this browser.');
   return new Promise((resolve, reject) => {
@@ -161,7 +255,37 @@ async function transaction<T>(mode: IDBTransactionMode, action: (store: IDBObjec
 }
 
 export async function readSavedVault(): Promise<unknown> { return transaction('readonly', store => store.get(RECORD)); }
-export async function writeSavedVault(vault: SignerVault): Promise<void> { await transaction('readwrite', store => store.put(validateVault(vault), RECORD)); }
+export async function writeSavedVault(vault: StoredSignerVault): Promise<void> { await transaction('readwrite', store => store.put(validateSignerVault(vault), RECORD)); }
+/** Compare the entire old encrypted wrapper in the same transaction as the
+ * replacement. A concurrent tab can change even a wrapper for the same key. */
+export async function compareAndSwapSavedVault(expected: StoredSignerVault | undefined, next: StoredSignerVault | undefined, signal?: AbortSignal): Promise<boolean> {
+  const previous = expected === undefined ? undefined : JSON.stringify(validateSignerVault(expected));
+  const replacement = next === undefined ? undefined : validateSignerVault(next);
+  const cancelled = () => new DOMException('Device saving cancelled.', 'AbortError');
+  if (signal?.aborted) throw cancelled();
+  const db = await database();
+  if (signal?.aborted) { db.close(); throw cancelled(); }
+  return new Promise<boolean>((resolve, reject) => {
+    let changed = false;
+    const tx = db.transaction(STORE, 'readwrite', { durability: 'strict' });
+    const abort = () => { try { tx.abort(); } catch { /* A completed transaction is checked by the caller. */ } };
+    signal?.addEventListener('abort', abort, { once: true });
+    const store = tx.objectStore(STORE);
+    const request = store.get(RECORD);
+    request.onsuccess = () => {
+      let observed: string | undefined;
+      try { observed = request.result === undefined ? undefined : JSON.stringify(validateSignerVault(request.result)); }
+      catch { return; } // Preserve a newer corrupt or unfamiliar record.
+      if (signal?.aborted || observed !== previous) return;
+      if (replacement === undefined) store.delete(RECORD);
+      else store.put(replacement, RECORD);
+      changed = true;
+    };
+    const close = () => { db.close(); signal?.removeEventListener('abort', abort); };
+    tx.oncomplete = () => { close(); resolve(changed); };
+    tx.onabort = tx.onerror = () => { close(); reject(signal?.aborted ? cancelled() : new Error('Could not access device storage.')); };
+  });
+}
 /**
  * A matching-key deletion is one readwrite transaction, so a different tab
  * cannot replace the record between comparison and deletion. An unqualified

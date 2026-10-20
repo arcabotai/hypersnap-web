@@ -3,7 +3,8 @@ import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage,
 import { PAIRING_SCOPES, PAIRING_TTL_SECONDS, validatePairingRequest, validatePairingScopes, verifyPairingApproval, validateRevocationRequest, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationRequest, type RevocationApproval } from './pairing';
 import { buildSignedMessage, CastType, farcasterTimestamp, MessageType, ReactionType, SignatureScheme, type MessageDataInput } from './protocol/messageBuilder';
 import { abiEncodeSignedKeyRequestMetadata, bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
-import { decryptSignerVault, deleteSavedVault, encryptSignerVault, readSavedVault, writeSavedVault, type VaultMetadata } from './vault';
+import { compareAndSwapSavedVault, decryptSignerVault, decryptSignerVaultWithPasskey, deleteSavedVault, encryptSignerVault, encryptSignerVaultWithPasskey, passkeyVault, readSavedVault, savedVaultMethod, validateSignerVault, type SavedSessionMethod, type StoredSignerVault, type VaultMetadata } from './vault';
+import { enrollPasskey, evaluatePasskey } from './passkey';
 import { profileChanges, type ProfileField, type ProfilePatch, type ProfileUpdateResult } from './social';
 import { createMediaUploadGrant, type MediaUploadInput, type MediaUploadGrant } from './media';
 
@@ -51,7 +52,9 @@ export interface WalletSession {
   refreshProfile(): Promise<User>;
   authorizeMediaUpload(input: MediaUploadInput): Promise<MediaUploadGrant>;
   /** Explicit opt-in: only the app signer is encrypted. */
-  saveToDevice(password: string): Promise<void>;
+  saveToDevice(password: string, options?: ConnectOptions): Promise<void>;
+  /** Explicit local wrapping only; this never grants new network permissions. */
+  saveToDeviceWithPasskey(options?: ConnectOptions): Promise<void>;
   /** Offline custody approval works even when the node omits app nonces. */
   prepareRevocation(options?: ConnectOptions): Promise<PendingRevocation>;
   /** Self-revoke on Hypersnap, confirm removal, then clear local signer/vault. */
@@ -232,6 +235,13 @@ export async function hasSavedSession(publicKey?: string): Promise<boolean> {
   const saved = await readSavedVault();
   return publicKey ? savedPublicKey(saved) === publicKey : saved !== undefined;
 }
+export async function getSavedSessionMethod(publicKey?: string): Promise<SavedSessionMethod | undefined> {
+  const saved = await readSavedVault();
+  if (saved === undefined) return undefined;
+  const vault = validateSignerVault(saved);
+  if (publicKey && vault.metadata.publicKey !== publicKey) return undefined;
+  return savedVaultMethod(vault);
+}
 export async function deleteSavedSession(publicKey?: string): Promise<void> {
   await deleteSavedVault(publicKey);
 }
@@ -239,6 +249,7 @@ export async function unlockSavedSession(password: string, options: ConnectOptio
   assertActive(options.signal);
   const saved = await readSavedVault();
   if (saved === undefined) throw new Error('There is no saved device signer. Authorize this device first.');
+  if (validateSignerVault(saved).version !== 1) throw new Error('This device vault uses a passkey. Choose passkey unlock.');
   const origin = options.origin ?? globalThis.location?.origin;
   if (!origin) throw new Error('Could not determine this website’s origin.');
   const { privateKey, metadata } = await decryptSignerVault(saved, password, clientOrigin(origin));
@@ -255,12 +266,43 @@ export async function unlockSavedSession(password: string, options: ConnectOptio
   } finally { if (!transferred) privateKey.fill(0); }
 }
 
+export async function unlockSavedSessionWithPasskey(options: ConnectOptions & { origin?: string } = {}): Promise<WalletSession> {
+  assertActive(options.signal);
+  const saved = await readSavedVault();
+  if (saved === undefined) throw new Error('There is no saved device signer. Authorize this device first.');
+  const origin = options.origin ?? globalThis.location?.origin;
+  if (!origin) throw new Error('Could not determine this website’s origin.');
+  const vault = passkeyVault(saved, clientOrigin(origin), origin);
+  assertActive(options.signal);
+  options.onProgress?.('Unlock your saved device key with its passkey…');
+  let secret: Uint8Array | undefined;
+  let privateKey: Uint8Array | undefined;
+  let transferred = false;
+  try {
+    secret = await evaluatePasskey(vault.passkey, { origin, signal: options.signal });
+    assertActive(options.signal);
+    const unlocked = await decryptSignerVaultWithPasskey(vault, secret, clientOrigin(origin), origin);
+    privateKey = unlocked.privateKey;
+    secret.fill(0); secret = undefined;
+    assertActive(options.signal);
+    options.onProgress?.('Checking custody and saved signer authorization…');
+    const [user, registry] = await Promise.all([getUser({ fid: vault.metadata.fid }, options.signal), getSigners(vault.metadata.fid, options.signal)]);
+    assertActive(options.signal);
+    if (user.fid !== vault.metadata.fid || custodyAddress(user) !== vault.metadata.custodyAddress) throw new Error('Account custody changed. Forget this vault and authorize a new device signer.');
+    if (!usableSigner(signerIn(registry, vault.metadata.publicKey), vault.metadata.fid, vault.metadata.scopes)) throw new Error('This device signer is expired or revoked. Forget this vault and authorize the device again.');
+    const session = createSession(user, privateKey, vault.metadata, true);
+    transferred = true;
+    return session;
+  } finally { secret?.fill(0); if (!transferred) privateKey?.fill(0); }
+}
+
 function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetadata, persisted = false): WalletSession {
   const publicKey = hexToBytes(metadata.publicKey);
   let disposed = false;
   let revoking = false;
   let revokeSubmitted = false;
   let saving: Promise<void> | undefined;
+  let saveController: AbortController | undefined;
   let profileSaving = false;
   const uncertainProfileFields = new Map<ProfileField, string>();
   const followingBusy = new Set<number>();
@@ -270,7 +312,46 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
   let lastWriteTimestamp = 0;
   const assertSession = () => { if (disposed || revoking || revokeSubmitted) throw new Error('Your session has ended or is being revoked. Unlock or authorize your device again.'); };
   const sign = async (digest: Uint8Array) => { if (disposed) throw new Error('Your session has ended.'); return ed25519.sign(digest, privateKey); };
-  const dispose = () => { disposed = true; privateKey.fill(0); };
+  const dispose = () => { disposed = true; saveController?.abort(); privateKey.fill(0); };
+  const saveWrappedVault = async (wrap: (signal: AbortSignal) => Promise<StoredSignerVault>, options: ConnectOptions = {}) => {
+    assertSession();
+    assertActive(options.signal);
+    if (saving) throw new Error('This device signer is already being saved.');
+    const controller = new AbortController(); saveController = controller;
+    const abort = () => controller.abort();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    const active = () => { assertSession(); assertActive(controller.signal); };
+    // Start both before the first await: the explicit click must reach WebAuthn
+    // creation while Safari still has the user's transient activation.
+    const snapshot = readSavedVault();
+    const wrapping = wrap(controller.signal);
+    const operation = (async () => {
+      let previous: StoredSignerVault | undefined;
+      let vault: StoredSignerVault | undefined;
+      try {
+        const [saved, wrapped] = await Promise.all([snapshot, wrapping]);
+        previous = saved === undefined ? undefined : validateSignerVault(saved);
+        vault = wrapped;
+        active();
+        if (!await compareAndSwapSavedVault(previous, vault, controller.signal)) throw new Error('The saved device changed in another tab. Nothing was replaced. Check saved devices before trying again.');
+        persisted = true;
+        try { active(); }
+        catch (cause) {
+          // A commit can complete just before a cancellation or local lock.
+          // Restore only our exact wrapper; never remove another tab's save.
+          const restored = await compareAndSwapSavedVault(vault, previous);
+          persisted = !restored || previous?.metadata.publicKey === metadata.publicKey;
+          throw cause;
+        }
+      } catch (cause) {
+        controller.abort();
+        throw cause;
+      } finally { options.signal?.removeEventListener('abort', abort); }
+    })();
+    saving = operation;
+    try { await operation; }
+    finally { if (saving === operation) saving = undefined; if (saveController === controller) saveController = undefined; }
+  };
   const finishRevocation = async () => {
     // A save may already be committing when revocation starts. Wait for its
     // transaction before deciding whether there is a matching vault to clear.
@@ -283,13 +364,15 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
     }
     dispose();
   };
-  const assertAuthorized = async (type: MessageType) => {
+  const assertAuthorized = async (type: MessageType, signal?: AbortSignal) => {
     assertSession();
+    assertActive(signal);
     if (!metadata.scopes.includes(type)) throw new Error(type === MessageType.CAST_REMOVE
       ? 'Approve cast deletion with your custody wallet before deleting casts. Existing device permissions do not include deletion.'
       : 'Enable social features with your custody wallet before following accounts or editing your profile.');
-    const [currentUser, registry] = await Promise.all([getUser({ fid: metadata.fid }), getSigners(metadata.fid)]);
+    const [currentUser, registry] = await Promise.all([getUser({ fid: metadata.fid }, signal), getSigners(metadata.fid, signal)]);
     assertSession();
+    assertActive(signal);
     if (currentUser.fid !== metadata.fid || custodyAddress(currentUser) !== metadata.custodyAddress || !usableSigner(signerIn(registry, metadata.publicKey), metadata.fid, metadata.scopes)) throw new Error('This device signer is no longer authorized. Reconnect before posting.');
   };
   const send = async (data: MessageDataInput, onAttempt?: (receipt: WriteReceipt) => void): Promise<WriteReceipt> => {
@@ -465,28 +548,29 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
       assertSession();
       return grant;
     },
-    async saveToDevice(password) {
-      assertSession();
-      if (saving) throw new Error('This device signer is already being saved.');
-      const operation = (async () => {
+    async saveToDevice(password, options = {}) {
+      try { await saveWrappedVault(() => encryptSignerVault(privateKey, metadata, password), options); }
+      finally { password = ''; }
+    },
+    async saveToDeviceWithPasskey(options = {}) {
+      const origin = globalThis.location?.origin;
+      if (!origin) throw new Error('Could not determine this website’s origin.');
+      await saveWrappedVault(async signal => {
+        options.onProgress?.('Create a passkey to protect this device’s existing signing key…');
+        let secret: Uint8Array | undefined;
         try {
-          const vault = await encryptSignerVault(privateKey, metadata, password);
-          password = '';
-          assertSession();
-          await writeSavedVault(vault);
-          persisted = true;
-          // A close/sign-out can happen while the IndexedDB transaction commits.
-          // A save that never completed must not silently survive that close.
-          if (disposed) {
-            await deleteSavedSession(metadata.publicKey);
-            persisted = false;
-          }
-          assertSession();
-        } finally { password = ''; }
-      })();
-      saving = operation;
-      try { await operation; }
-      finally { if (saving === operation) saving = undefined; }
+          const enrolled = await enrollPasskey({ origin, account: { fid: metadata.fid, publicKey: metadata.publicKey }, signal });
+          secret = enrolled.prfSecret;
+          assertSession(); assertActive(signal);
+          const vault = await encryptSignerVaultWithPasskey(privateKey, metadata, enrolled.descriptor, secret);
+          passkeyVault(vault, metadata.origin, origin);
+          secret.fill(0); secret = undefined;
+          options.onProgress?.('Checking current custody and device authorization before saving…');
+          await assertAuthorized(MessageType.CAST_ADD, signal);
+          assertSession(); assertActive(signal);
+          return vault;
+        } finally { secret?.fill(0); }
+      }, options);
     },
     async prepareRevocation(options = {}) {
       if (disposed) throw new Error('Your session has ended. Unlock this device before revoking it.');

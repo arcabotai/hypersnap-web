@@ -93,3 +93,15 @@
 .walletconnect-start-label { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: .12rem; text-align: left; }
 .walletconnect-start-label strong { font: inherit; }
 .walletconnect-start-label small { font-size: .56rem; font-weight: 400; opacity: .85; }
+
+.pairing-storage { margin-top: 1rem; padding: 1rem; border: .0625rem solid var(--surface-4); border-radius: .75rem; background: var(--surface-1); }
+.pairing-storage > .wallet-approved { margin-top: 0; }
+.pairing-storage__choices { display: flex; align-items: stretch; gap: .5rem; flex-wrap: wrap; margin-block: 1rem; }
+.pairing-storage__choices > .button { min-height: 2.75rem; font-size: .72rem; flex-wrap: wrap; }
+.pairing-storage__choices .button[aria-pressed="true"] { border-color: var(--accent-300); color: var(--accent-300); }
+.pairing-storage__choices small, .pairing-storage__recommended { display: inline-flex; align-items: center; margin-left: .35rem; font-size: .55rem; font-weight: 500; line-height: 1.5; color: var(--accent-300); }
+.pairing-storage .device-action { border-top: 0; padding-top: 0; flex-wrap: wrap; }
+.pairing-storage .device-action > .button { flex-shrink: 0; }
+.pairing-storage > .button--ghost { min-height: 2.75rem; padding-inline: 0; font-size: .72rem; text-align: left; }
+.pairing-storage .pairing-passwords { border-top: .0625rem solid var(--surface-4); margin-top: 1rem; padding-top: .25rem; }
+@media (max-width: 36rem) { .pairing-storage { padding: .8rem; }.pairing-storage__choices { flex-direction: column; }.pairing-storage__choices > .button { justify-content: center; }.pairing-storage .device-action { gap: .75rem; }.pairing-storage .device-action > .button { width: 100%; } }

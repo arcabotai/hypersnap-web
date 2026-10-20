@@ -1,4 +1,52 @@
-# Verification record · 2026-10-19
+# Verification record · 2026-10-20
+
+## Passkey-protected local device vaults
+
+The standalone `cd hypersnap && yarn verify` gate passes **363 tests across 22 files**, browser/Worker/native TypeScript, production browser build, and the offline signer payload build. The optional published native beta is unchanged. No new runtime dependency or authentication service is introduced.
+
+New passkey checks cover exact origins/RP IDs, fresh challenges, native response shape and credential identity, user presence and verification, PRF availability, bounded cancellation/timeouts even for late native promises, and clearing both raw and copied PRF outputs. Local vault tests use real HKDF/AES-GCM, authenticated metadata, malformed/tampered records and an independent legacy password-vault fixture. Auth regressions verify current custody/scopes/expiry after unlock, no signer submission, preservation on failed/cancelled setup, whole-record atomic replacement, same-key cross-tab races, late-commit rollback, and erasing PRF material before network reads. UI regressions cover explicit fresh-click enrollment, opt-in storage, legacy passwords, unsupported providers, closing during saves/unlock, corrupt-vault recovery, stale storage reads, and account changes during pending operations.
+
+The repeatable [passkey check runner](scripts/e2e-passkey-checks.ts) uses the actual app WebAuthn adapter, real vault cryptography, in-memory IndexedDB, the real Worker, and the existing OS-isolated Hypersnap node's actual synthetic signer registry. Only the authenticator is a synthetic WebAuthn/PRF provider. It completed password unlock, failed/cancelled setup preserving the old vault, v2 migration, lock/passkey unlock, wrong-origin rejection before a prompt, wrong-PRF rejection and unchanged permissions. Its proof records **9 public reads, zero network writes and zero production writes** at `/tmp/arca-hypersnap-e2e-features/passkey-checks-proof.json`. No real user passkey, wallet approval or production vault was created or changed. A static browser preview of the actual device-settings component was checked with all actions disabled; physical OS/browser/passkey-provider interoperability remains untested by agents.
+
+Passkeys are recommended only when the selected browser/provider returns a valid PRF output. API availability alone does not establish PRF support. Existing password vaults remain readable, and users can choose password encryption or memory-only access explicitly. Credential synchronization by a passkey provider does not synchronize this browser's local ciphertext; a new browser/device or cleared site storage needs custody-wallet reconnection. An unlocked signer and the delivered website code remain trust boundaries. See [SIGNER.md](SIGNER.md) for recovery, storage, provider synchronization and threat-model details.
+
+The Worker explicitly permits WebAuthn create/get only for its own origin, while retaining its existing CSP/frame/credential-forwarding restrictions. No new third-party network destination is required for passkey vault encryption; the selected passkey provider may operate its own credential synchronization independently.
+
+The retained messenger's separate root gate still lacks its original dependencies and sibling repositories. Its permanent-production-account mint guard remained enabled. Current full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   0e1f14b  ⚠ working tree dirty (15 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/components/ConnectAccount.tsx, desktop/hypersnap/src/lib/auth.test.ts, desktop/hypersnap/src/lib/auth.ts)
+            (… and 8 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
+## Earlier feature release verification
 
 ## Expanded client feature release
 

@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage, type Cast, type SignersResponse, type User } from './api';
-import { deleteSavedSession, hasSavedSession, preparePairing, unlockSavedSession, type PendingPairing, type PendingRevocation } from './auth';
+import { deleteSavedSession, getSavedSessionMethod, hasSavedSession, preparePairing, unlockSavedSession, unlockSavedSessionWithPasskey, type PendingPairing, type PendingRevocation } from './auth';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES, hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
 import { blake3_20 } from './protocol/messageBuilder';
 import { addressFromCustodyPrivateKey, bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest, signEip712Digest } from './protocol/signedKeyRequest';
-import { deleteSavedVault, readSavedVault, writeSavedVault } from './vault';
+import { compareAndSwapSavedVault, deleteSavedVault, readSavedVault, writeSavedVault } from './vault';
+import * as vaultModule from './vault';
+import { enrollPasskey, evaluatePasskey, type PasskeyDescriptor } from './passkey';
 import { mediaGrantPayload } from './media';
 
 vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getCast: vi.fn(), getFollowStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
-vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
+vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), compareAndSwapSavedVault: vi.fn(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
+vi.mock('./passkey', async importOriginal => ({ ...await importOriginal<typeof import('./passkey')>(), enrollPasskey: vi.fn(), evaluatePasskey: vi.fn() }));
 
 const ORIGIN = 'https://quorum.arca.computer';
 const CUSTODY_KEY = hexToBytes('01'.repeat(32)); // synthetic test fixture; no real account
@@ -20,6 +23,8 @@ let registry: SignersResponse;
 let currentProfile: User;
 let currentCast: Cast | undefined;
 const target = { fid: user.fid, hash: 'ab'.repeat(20) };
+const descriptor = (origin = ORIGIN): PasskeyDescriptor => ({ origin, rpId: new URL(origin).hostname, credentialId: 'c3ludGhldGlj', prfSalt: '23'.repeat(32), userHandle: '34'.repeat(32) });
+const prfSecret = () => new Uint8Array(32).fill(25); // Public synthetic PRF fixture.
 
 function approvalFor(pending: PendingPairing): PairingApproval {
   const request = pending.request;
@@ -71,9 +76,10 @@ async function connect(requestedScopes?: readonly number[]) {
 }
 
 describe('offline approved per-device authentication', () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubGlobal('location', { origin: ORIGIN });
     registry = { signers: [], currentUserNonce: 4, gaslessSignerCount: 0, gaslessSignerLimit: 1000, requesterFidNonces: { '1234': 8 } };
     currentProfile = structuredClone(user);
     currentCast = { hash: `0x${target.hash}`, author: user, text: 'Synthetic cast' } as Cast;
@@ -85,6 +91,18 @@ describe('offline approved per-device authentication', () => {
     vi.mocked(getSigners).mockImplementation(async () => structuredClone(registry));
     vi.mocked(readSavedVault).mockResolvedValue(undefined);
     vi.mocked(writeSavedVault).mockImplementation(async vault => { vi.mocked(readSavedVault).mockResolvedValue(vault); });
+    vi.mocked(deleteSavedVault).mockImplementation(async expected => {
+      const saved = await readSavedVault();
+      if (expected === undefined || saved && typeof saved === 'object' && 'metadata' in saved && saved.metadata && typeof saved.metadata === 'object' && 'publicKey' in saved.metadata && saved.metadata.publicKey === expected) vi.mocked(readSavedVault).mockResolvedValue(undefined);
+    });
+    vi.mocked(compareAndSwapSavedVault).mockImplementation(async (expected, next) => {
+      if (JSON.stringify(await readSavedVault()) !== JSON.stringify(expected)) return false;
+      if (next === undefined) await deleteSavedVault(expected?.metadata.publicKey);
+      else await writeSavedVault(next);
+      return true;
+    });
+    vi.mocked(enrollPasskey).mockImplementation(async options => ({ descriptor: descriptor(options.origin), prfSecret: prfSecret() }));
+    vi.mocked(evaluatePasskey).mockImplementation(async () => prfSecret());
     vi.mocked(submitMessage).mockImplementation(async envelope => {
       const data = fields(fields(envelope).get(1) as Uint8Array);
       if (data.get(1) === 16) {
@@ -97,6 +115,206 @@ describe('offline approved per-device authentication', () => {
       else mergeProfileMessage(envelope);
       return {};
     });
+  });
+
+  it('migrates an already approved signer to PRF storage and unlocks it with fresh read-only authorization checks', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    await session.saveToDevice('synthetic-device-password');
+    expect(await getSavedSessionMethod()).toBe('password');
+    const enrollmentSecret = prfSecret(); const unlockSecret = prfSecret();
+    vi.mocked(enrollPasskey).mockResolvedValueOnce({ descriptor: descriptor(), prfSecret: enrollmentSecret });
+    await session.saveToDeviceWithPasskey();
+    expect(enrollPasskey).toHaveBeenCalledWith({ origin: ORIGIN, account: { fid: session.fid, publicKey: session.publicKey }, signal: expect.any(AbortSignal) });
+    expect(enrollmentSecret.every(byte => byte === 0)).toBe(true);
+    expect(await getSavedSessionMethod(session.publicKey)).toBe('passkey');
+    expect(await getSavedSessionMethod('ff'.repeat(32))).toBeUndefined();
+    expect(submitMessage).toHaveBeenCalledOnce(); // Migration never creates another KEY_ADD.
+    await expect(unlockSavedSession('synthetic-device-password', { origin: ORIGIN })).rejects.toThrow('uses a passkey');
+    session.dispose();
+    vi.mocked(evaluatePasskey).mockResolvedValueOnce(unlockSecret);
+    const beforeReads = vi.mocked(getUser).mock.calls.length;
+    const unlocked = await unlockSavedSessionWithPasskey({ origin: ORIGIN });
+    expect(unlocked.publicKey).toBe(session.publicKey); expect(unlocked.scopes).toEqual(FULL_CLIENT_SCOPES);
+    expect(vi.mocked(getUser).mock.calls.length).toBe(beforeReads + 1);
+    expect(evaluatePasskey).toHaveBeenCalledWith(descriptor(), { origin: ORIGIN, signal: undefined });
+    expect(unlockSecret.every(byte => byte === 0)).toBe(true);
+    expect(submitMessage).toHaveBeenCalledOnce(); unlocked.dispose();
+  });
+
+  it('starts passkey enrollment in the initial click stack while the old-vault read is pending', async () => {
+    const { session } = await connect();
+    let finish!: (value: unknown) => void;
+    vi.mocked(readSavedVault).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const saving = session.saveToDeviceWithPasskey();
+    expect(enrollPasskey).toHaveBeenCalledOnce(); // No awaited IndexedDB/network prerequisite.
+    finish(undefined); await saving;
+    expect(await getSavedSessionMethod()).toBe('passkey'); session.dispose();
+  });
+
+  it('preserves the legacy password vault on missing PRF support, cancellation, malformed output and concurrent save rejection', async () => {
+    const { session } = await connect();
+    await session.saveToDevice('synthetic-device-password');
+    const original = await readSavedVault();
+    for (const failure of [new Error('PRF not supported.'), new DOMException('Cancelled.', 'AbortError')]) {
+      vi.mocked(enrollPasskey).mockRejectedValueOnce(failure);
+      await expect(session.saveToDeviceWithPasskey()).rejects.toThrow();
+      expect(await readSavedVault()).toEqual(original);
+    }
+    const missing = new Uint8Array(31).fill(25);
+    vi.mocked(enrollPasskey).mockResolvedValueOnce({ descriptor: descriptor(), prfSecret: missing });
+    await expect(session.saveToDeviceWithPasskey()).rejects.toThrow('32-byte');
+    expect(missing.every(byte => byte === 0)).toBe(true); expect(await readSavedVault()).toEqual(original);
+    vi.mocked(compareAndSwapSavedVault).mockResolvedValueOnce(false);
+    await expect(session.saveToDeviceWithPasskey()).rejects.toThrow('changed in another tab');
+    expect(await readSavedVault()).toEqual(original); expect(submitMessage).toHaveBeenCalledOnce();
+    session.dispose();
+  });
+
+  it('wipes a late enrollment result after cancellation or disposal and never persists it', async () => {
+    for (const dispose of [false, true]) {
+      const { session } = await connect();
+      await session.saveToDevice('synthetic-device-password');
+      const original = await readSavedVault();
+      const controller = new AbortController();
+      const late = prfSecret(); let finish!: (value: Awaited<ReturnType<typeof enrollPasskey>>) => void;
+      vi.mocked(enrollPasskey).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const saving = session.saveToDeviceWithPasskey({ signal: controller.signal });
+      const rejection = expect(saving).rejects.toThrow();
+      await expect(session.saveToDeviceWithPasskey()).rejects.toThrow('already being saved');
+      if (dispose) session.dispose(); else controller.abort();
+      expect(vi.mocked(enrollPasskey).mock.calls.at(-1)![0].signal?.aborted).toBe(true);
+      finish({ descriptor: descriptor(), prfSecret: late }); await rejection;
+      expect(late.every(byte => byte === 0)).toBe(true); expect(await readSavedVault()).toEqual(original);
+      session.dispose();
+    }
+  });
+
+  it('restores the old vault after a late committed cancellation and preserves a newer concurrent wrapper', async () => {
+    const { session } = await connect();
+    await session.saveToDevice('synthetic-device-password');
+    const original = await readSavedVault();
+    const controller = new AbortController();
+    vi.mocked(writeSavedVault).mockImplementationOnce(async value => { vi.mocked(readSavedVault).mockResolvedValue(value); controller.abort(); });
+    await expect(session.saveToDeviceWithPasskey({ signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(await readSavedVault()).toEqual(original);
+    const newer = structuredClone(original) as vaultModule.SignerVault;
+    newer.cipher.iv = 'ab'.repeat(12); // Public wrapper-only concurrent-record fixture; never decrypted.
+    const nextController = new AbortController();
+    vi.mocked(compareAndSwapSavedVault).mockImplementationOnce(async (_expected, _next) => {
+      vi.mocked(readSavedVault).mockResolvedValue(newer); nextController.abort(); return true;
+    });
+    await expect(session.saveToDeviceWithPasskey({ signal: nextController.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(await readSavedVault()).toEqual(newer); session.dispose();
+  });
+
+  it('does not commit a password wrapper after its dialog is cancelled during PBKDF2', async () => {
+    const { session } = await connect();
+    const controller = new AbortController();
+    const saving = session.saveToDevice('synthetic-device-password', { signal: controller.signal });
+    controller.abort();
+    await expect(saving).rejects.toMatchObject({ name: 'AbortError' });
+    expect(writeSavedVault).not.toHaveBeenCalled(); expect(await readSavedVault()).toBeUndefined();
+    await session.cast('The active tab remains usable after cancelling local storage.');
+    expect(submitMessage).toHaveBeenCalledTimes(2); session.dispose();
+  });
+
+  it('uses the actual localhost WebAuthn origin without changing canonical network-approval metadata', async () => {
+    const { session } = await connect(); const local = 'http://127.0.0.1:5173';
+    vi.stubGlobal('location', { origin: local });
+    await session.saveToDeviceWithPasskey();
+    const saved = await readSavedVault() as vaultModule.PasskeySignerVault;
+    expect(saved.metadata.origin).toBe(ORIGIN); expect(saved.passkey.origin).toBe(local); expect(saved.passkey.rpId).toBe('127.0.0.1');
+    expect(vi.mocked(enrollPasskey).mock.calls.at(-1)![0].origin).toBe(local);
+    session.dispose(); const unlocked = await unlockSavedSessionWithPasskey();
+    expect(vi.mocked(evaluatePasskey).mock.calls.at(-1)![1].origin).toBe(local);
+    expect(unlocked.publicKey).toBe(session.publicKey); expect(submitMessage).toHaveBeenCalledOnce(); unlocked.dispose();
+  });
+
+  it('rejects revoked, expired, scope-changed and custody-transferred saved keys after PRF decryption, wiping failed plaintext', async () => {
+    const { session } = await connect(FULL_CLIENT_SCOPES);
+    await session.saveToDeviceWithPasskey(); session.dispose();
+    const original = structuredClone(registry);
+    const real = await vi.importActual<typeof import('./vault')>('./vault');
+    const plaintexts: Uint8Array[] = [];
+    vi.spyOn(vaultModule, 'decryptSignerVaultWithPasskey').mockImplementation(async (...args) => {
+      const unlocked = await real.decryptSignerVaultWithPasskey(...args); plaintexts.push(unlocked.privateKey); return unlocked;
+    });
+    for (const variant of ['revoked', 'expired', 'scopes', 'custody']) {
+      registry = structuredClone(original); currentProfile = structuredClone(user);
+      if (variant === 'revoked') registry.signers = [];
+      if (variant === 'expired') registry.signers[0].expiresAt = 1;
+      if (variant === 'scopes') registry.signers[0].scopes = scopes;
+      if (variant === 'custody') currentProfile.custody_address = `0x${'ff'.repeat(20)}`;
+      const result = prfSecret(); vi.mocked(evaluatePasskey).mockResolvedValueOnce(result);
+      await expect(unlockSavedSessionWithPasskey({ origin: ORIGIN })).rejects.toThrow();
+      expect(result.every(byte => byte === 0)).toBe(true);
+      expect(plaintexts.at(-1)!.every(byte => byte === 0)).toBe(true);
+    }
+    expect(submitMessage).toHaveBeenCalledOnce();
+  });
+
+  it('rejects wrong origins, password-only and corrupt records before any passkey prompt', async () => {
+    const { session } = await connect();
+    await session.saveToDevice('synthetic-device-password');
+    await expect(unlockSavedSessionWithPasskey({ origin: ORIGIN })).rejects.toThrow('uses a password');
+    expect(evaluatePasskey).not.toHaveBeenCalled();
+    await session.saveToDeviceWithPasskey();
+    await expect(unlockSavedSessionWithPasskey({ origin: 'https://elsewhere.example' })).rejects.toThrow('different website');
+    expect(evaluatePasskey).not.toHaveBeenCalled();
+    vi.mocked(readSavedVault).mockResolvedValue({ corrupt: true });
+    await expect(getSavedSessionMethod()).rejects.toThrow('invalid');
+    await expect(unlockSavedSessionWithPasskey({ origin: ORIGIN })).rejects.toThrow('invalid');
+    expect(evaluatePasskey).not.toHaveBeenCalled(); session.dispose();
+  });
+
+  it('preserves existing storage when the newly created passkey wrapper belongs to another browser origin', async () => {
+    const { session } = await connect();
+    await session.saveToDevice('synthetic-device-password'); const original = await readSavedVault();
+    const result = prfSecret(); vi.mocked(enrollPasskey).mockResolvedValueOnce({ descriptor: descriptor('https://other.example'), prfSecret: result });
+    await expect(session.saveToDeviceWithPasskey()).rejects.toThrow();
+    expect(result.every(byte => byte === 0)).toBe(true); expect(await readSavedVault()).toEqual(original);
+    session.dispose();
+  });
+
+  it('wipes decrypted signer and PRF buffers when unlock is cancelled during its fresh authorization read', async () => {
+    const { session } = await connect();
+    await session.saveToDeviceWithPasskey(); session.dispose();
+    const original = await readSavedVault(); const controller = new AbortController();
+    const real = await vi.importActual<typeof import('./vault')>('./vault');
+    let plaintext: Uint8Array | undefined;
+    vi.spyOn(vaultModule, 'decryptSignerVaultWithPasskey').mockImplementation(async (...args) => {
+      const unlocked = await real.decryptSignerVaultWithPasskey(...args); plaintext = unlocked.privateKey; return unlocked;
+    });
+    const result = prfSecret(); vi.mocked(evaluatePasskey).mockResolvedValueOnce(result);
+    let started!: () => void; const reading = new Promise<void>(resolve => { started = resolve; });
+    vi.mocked(getUser).mockImplementationOnce(async (_lookup, signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('Cancelled.', 'AbortError')), { once: true }); started();
+      expect(result.every(byte => byte === 0)).toBe(true); // Already erased while the network read is still blocked.
+    }));
+    const unlocking = unlockSavedSessionWithPasskey({ signal: controller.signal });
+    const rejection = expect(unlocking).rejects.toMatchObject({ name: 'AbortError' });
+    await reading; controller.abort(); await rejection;
+    expect(plaintext!.every(byte => byte === 0)).toBe(true); expect(result.every(byte => byte === 0)).toBe(true);
+    expect(await readSavedVault()).toEqual(original); expect(submitMessage).toHaveBeenCalledOnce();
+  });
+
+  it('checks authorization after passkey enrollment and preserves the previous wrapper if the signer is now revoked', async () => {
+    const { session } = await connect();
+    await session.saveToDevice('synthetic-device-password'); const original = await readSavedVault();
+    registry.signers = [];
+    const result = prfSecret(); vi.mocked(enrollPasskey).mockResolvedValueOnce({ descriptor: descriptor(), prfSecret: result });
+    await expect(session.saveToDeviceWithPasskey()).rejects.toThrow('no longer authorized');
+    expect(result.every(byte => byte === 0)).toBe(true); expect(await readSavedVault()).toEqual(original);
+    expect(submitMessage).toHaveBeenCalledOnce(); session.dispose();
+  });
+
+  it('wipes a wrong PRF result without querying authorization or writing to Hypersnap', async () => {
+    const { session } = await connect(); await session.saveToDeviceWithPasskey(); session.dispose();
+    const beforeReads = vi.mocked(getUser).mock.calls.length;
+    const wrong = new Uint8Array(32).fill(26); vi.mocked(evaluatePasskey).mockResolvedValueOnce(wrong);
+    await expect(unlockSavedSessionWithPasskey()).rejects.toThrow('Could not unlock');
+    expect(wrong.every(byte => byte === 0)).toBe(true); expect(vi.mocked(getUser).mock.calls.length).toBe(beforeReads);
+    expect(submitMessage).toHaveBeenCalledOnce();
   });
 
   it('publishes signed cast-ID quotes and channel parent URLs using the Hypersnap protobuf fields', async () => {
