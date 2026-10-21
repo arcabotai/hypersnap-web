@@ -1,3 +1,45 @@
+# Release log checks · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **467 tests across 29 files**, browser/Worker/native TypeScript, production browser build and the offline signer payload build. Seventeen new tests use temporary local Git repositories to exercise missing milestones, editing/reordering old entries, valid ancestor source commits, wrong dates, missing/nonancestor source objects, history deletion, development-only exemptions, untracked runtime files, explicit-head isolation, missing bases, feature-branch merge bases and initial pushes. Static validation rejects executable expressions, duplicate IDs, impossible dates and incorrect ordering. No new dependency, network/account write or signing permission is introduced.
+
+The CI guard reads literal milestone data through the existing TypeScript compiler without importing code from either revision. Default-branch pushes compare before/after commits; PRs and feature/tag pushes compare against their merge base. A tag named `main` cannot be mistaken for the default branch. Full Git history is fetched, and absent history fails with an actionable message. CI always reports its check, including docs-only changes. The release checklist and scoped agent instructions require the same guard before every deployment and require user-facing prose to cover each shipped feature or fix. The check proves that a new valid entry exists; it cannot judge prose accuracy or intercept a direct manual Wrangler command.
+
+The public log now also records its own launch and these release checks. The retained messenger's root gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   4a70b32  ⚠ working tree dirty (7 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/.github/workflows/hypersnap.yml, desktop/hypersnap/package.json, desktop/hypersnap/src/lib/devLog.ts)
+            (… and 2 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       1s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Public dev log · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

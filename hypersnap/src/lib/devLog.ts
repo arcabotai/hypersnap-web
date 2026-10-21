@@ -19,6 +19,19 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'public-development-log',
+    date: '2026-10-21',
+    title: 'The project’s story, open to everyone',
+    summary: 'A public dev log brings together the work since the first Hypersnap client commit, with links to the code behind each milestone.',
+    changes: [
+      'Browse the full timeline without signing in, or filter by wallets, security, social features and reliability.',
+      'Read from the beginning or start with the latest changes, on desktop or mobile.',
+      'Keep the project’s security model, infrastructure dependencies and beta limitations alongside its progress.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/4a70b32ebde73989cb222e55097c604235630b42',
+    tag: 'Launch',
+  },
+  {
     id: 'community-avatar-fallback',
     date: '2026-10-21',
     title: 'Community profiles stay readable when pictures fail',

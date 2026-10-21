@@ -10,7 +10,7 @@ Use Node 22 and Yarn 1.22. `yarn install --frozen-lockfile`, then `yarn dev`. Vi
 
 ## Deploy
 
-`yarn build`, then `wrangler deploy`. `wrangler.jsonc` targets the Arca Cloudflare account, the `hypersnap-quorum` Worker, and the `quorum.arca.computer` custom domain. Use your own account/domain when deploying another fork. Authentication is handled by the local Wrangler CLI; credentials never belong in source or browser environment variables.
+Follow the [release checklist](#release-notes), including the dev log check, verification and a build in a fresh external directory. `wrangler.jsonc` targets the Arca Cloudflare account, the `hypersnap-quorum` Worker, and the `quorum.arca.computer` custom domain. Use your own account/domain when deploying another fork. Authentication is handled by the local Wrangler CLI; credentials never belong in source or browser environment variables.
 
 Copy `.env.example` to your own ignored `.env.local` for local development, or provide `VITE_WALLETCONNECT_PROJECT_ID` in your build environment for wallet app connections. Obtain your own public project ID from the [Reown Dashboard](https://dashboard.reown.com). Allowlist the precise deployed origins in its project configuration. No Dashboard API secret, private wallet key, social login, or hosted account authentication is needed. Vite embeds this public ID into the browser bundle; changes require a rebuild. Missing configuration disables WalletConnect while browser wallet and offline approval remain available.
 
@@ -36,7 +36,20 @@ The retained Quorum app and this fork's own application code remain under the re
 
 The public [dev log](https://quorum.arca.computer/devlog) records the standalone client's history from its first commit. It is available without sign-in, with topic filters, oldest/latest ordering and links to the code behind each milestone. The header link remains available on small screens.
 
-For future releases, add a milestone to `src/lib/devLog.ts` using the actual commit date and a verified commit URL. Describe shipped behavior, explain changes to previous designs, and preserve any relevant limits. Keep future plans distinct from completed work; test counts belong to a dated release rather than a permanent live claim. The page and its styles load only when opened.
+Every feature/fix release must include a new milestone; the [release checklist](#release-notes) and CI enforce that requirement. The page and its styles load only when opened.
+
+## Release notes
+
+1. Record the commit currently deployed before starting the release. Implement and commit the feature or fix, then prepend a milestone in `src/lib/devLog.ts` before shipping. Its source link uses the implementation commit's full hash and its recorded author date (`git show -s --format=%aI <commit>`). A separate note commit avoids a circular hash. Group related work if useful, but describe every shipped feature or fix.
+2. Give the note a unique ID, title, summary, topic and concrete changes. Describe user-visible behavior and relevant limits. Keep plans separate from completed work, preserve earlier milestones, and date verification claims rather than implying continuous coverage.
+3. From `hypersnap/`, run `yarn check:devlog --base <currently-deployed-commit>` and `yarn verify`. Without `--head`, the guard includes committed, staged, unstaged and untracked work. For a committed range, add `--head <commit>`; for a feature branch comparison, add `--merge-base`. Fetch the base/history first. Missing history is an error, never an exemption.
+4. Build into a **new** directory outside this cloud-synced checkout: `yarn build --outDir /tmp/arca-release-<unique-name>`. Inspect its contents, then use `wrangler deploy --assets /tmp/arca-release-<unique-name>` and confirm the live `/devlog` includes the release. Never deploy preview wrappers or isolated-test fixtures. Record the deployed commit and Worker version with the release verification.
+
+CI runs the guard for PRs and pushes. Default-branch pushes compare the event's before/after commits; PRs and feature-branch pushes compare their merge base with the target/default branch, so incremental branch commits can share a release note. A new default branch with an all-zero previous SHA compares against an empty tree. A runtime, UI/style, public-asset, signer, build/config or dependency change requires a **new ID**; editing an old entry does not satisfy it. Docs, tests, protocol golden fixtures, licenses, the log data itself and development-only E2E/guard scripts are exempt. Unknown files in `hypersnap/` require a note. New entries must link to an existing ancestor implementation commit with its recorded date; the guard also checks literal data, unique IDs, fields, real dates, newest-first ordering and preserved history.
+
+CI validates that an entry exists and its source is real; release review still checks that the prose accurately covers the changes. It does not intercept a direct manual Wrangler command. Contributors and coding agents must run this checklist for every deployment, including hotfixes. See [AGENTS.md](AGENTS.md).
+
+## Supported behavior
 
 Implemented:
 
