@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
-import { IconBell, IconChevronRight, IconHash, IconHeart, IconMessageCircle, IconRefresh, IconSearch, IconUsers, IconWorld } from '@tabler/icons-react';
+import { IconBell, IconBookmark, IconChevronRight, IconHash, IconHeart, IconMessageCircle, IconRefresh, IconSearch, IconUsers, IconWorld } from '@tabler/icons-react';
 import { getChannels, getNotifications, searchCasts, searchUsers, type ActivityItem, type Cast, type Channel, type User } from '../lib/api';
 import { castPath, profilePath } from '../lib/navigation';
 import { Button, Input } from './ui';
@@ -168,29 +168,35 @@ function readTimestamp(fid?: number): number {
   catch { return 0; }
 }
 const activityLabels: Record<ActivityItem['type'], string> = { reactions: 'reacted to your cast', follows: 'followed you', replies: 'replied to your cast', mentions: 'mentioned you', unknown: 'shared activity involving your profile' };
+const activityFilters = ['all', 'unread', 'mentions', 'replies', 'reactions', 'follows'] as const;
+type ActivityFilter = typeof activityFilters[number];
+const activityFilterLabels: Record<ActivityFilter, string> = { all: 'All', unread: 'Unread', mentions: 'Mentions', replies: 'Replies', reactions: 'Reactions', follows: 'Follows' };
 
 export function NotificationsView({ fid, onConnect, onProfile, onCast }: { fid?: number; onConnect(): void; onProfile(user: User): void; onCast(hash: string): void }) {
   const [readAt, setReadAt] = useState(() => readTimestamp(fid));
   const [readStatus, setReadStatus] = useState('');
-  useEffect(() => { setReadAt(readTimestamp(fid)); setReadStatus(''); }, [fid]);
+  const [filter, setFilter] = useState<ActivityFilter>('all');
+  useEffect(() => { setReadAt(readTimestamp(fid)); setReadStatus(''); setFilter('all'); }, [fid]);
   const result = useFeaturePages<ActivityItem>(String(fid), Boolean(fid), async options => {
     const page = await getNotifications({ fid: fid!, ...options }); return { items: page.notifications, next: page.next };
   }, item => item.id);
   const unread = result.items.filter(item => timestamp(item.timestamp) > readAt).length;
+  const visible = result.items.filter(item => filter === 'all' || (filter === 'unread' ? timestamp(item.timestamp) > readAt : item.type === filter));
   function markRead() {
     const latest = Math.max(readAt, ...result.items.map(item => timestamp(item.timestamp)));
     setReadAt(latest);
-    try { localStorage.setItem(`arca.hypersnap.activity.read.v1.${fid}`, String(latest)); setReadStatus('Visible activity marked as read on this browser.'); }
-    catch { setReadStatus('Visible activity marked as read for this visit. This browser could not save read status.'); }
+    try { localStorage.setItem(`arca.hypersnap.activity.read.v1.${fid}`, String(latest)); setReadStatus('Loaded activity marked as read on this browser.'); }
+    catch { setReadStatus('Loaded activity marked as read for this visit. This browser could not save read status.'); }
   }
   return <section className="feature-view" aria-label="Notifications">
     <div className="feature-intro"><span className="feature-kicker"><IconBell size={15} aria-hidden="true" />YOUR CONVERSATIONS</span><h2>Recent activity.</h2><p>Replies, mentions, reactions and follows reported by Hypersnap. This recent activity view may not include every event.</p></div>
     {!fid ? <div className="feature-empty"><IconBell size={32} aria-hidden="true" /><h3>Keep up with your conversations.</h3><p>Connect your wallet to view activity for your profile.</p><Button onClick={onConnect}>Connect wallet</Button></div> : <>
       <div className="feature-toolbar"><span>{!result.loaded ? result.error ? 'Activity unavailable' : 'Checking recent activity…' : unread ? `${unread} unread in this view` : 'You’re up to date in this view'}</span><div><Button variant="ghost" disabled={result.busy} onClick={result.refresh} aria-label="Refresh activity"><IconRefresh size={17} aria-hidden="true" /></Button><Button variant="secondary" disabled={!unread} onClick={markRead}>Mark read</Button></div></div>
-      <p className="feature-note feature-note--inset">Read status stays on this browser. Activity is fetched from Hypersnap.</p>
+      <nav className="feature-tabs feature-activity-filters" aria-label="Activity filters">{activityFilters.map(value => <Button key={value} variant="ghost" className={filter === value ? 'feature-tab--active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{activityFilterLabels[value]}</Button>)}</nav>
+      <p className="feature-note feature-note--inset">Filters apply to loaded activity. Mark read applies across filters. Read status stays on this browser.</p>
       {readStatus && <p className="feature-note feature-note--inset" role="status">{readStatus}</p>}
       <div aria-busy={result.busy}>
-        {result.items.length > 0 && <ul className="feature-activity">{result.items.map(item => {
+        {visible.length > 0 && <ul className="feature-activity">{visible.map(item => {
           const actor = item.actors[0];
           const hash = item.targetHash || item.cast?.hash;
           return <li key={item.id} data-unread={timestamp(item.timestamp) > readAt || undefined}>
@@ -201,50 +207,63 @@ export function NotificationsView({ fid, onConnect, onProfile, onCast }: { fid?:
             </div>
           </li>;
         })}</ul>}
-        {result.loaded && !result.items.length && !result.busy && !result.error && <div className="feature-empty"><IconBell size={30} aria-hidden="true" /><h3>A little quiet for now.</h3><p>Recent activity involving your profile will appear here when it is available on Hypersnap.</p></div>}
+        {result.loaded && !visible.length && !result.busy && !result.error && <div className="feature-empty"><IconBell size={30} aria-hidden="true" /><h3>{filter === 'all' ? 'A little quiet for now.' : `No ${filter === 'unread' ? 'unread activity' : activityFilterLabels[filter].toLowerCase()} in the loaded results.`}</h3><p>{result.more ? 'Load more activity to check earlier events, or choose another filter.' : filter === 'all' ? 'Recent activity involving your profile will appear here when it is available on Hypersnap.' : 'Choose another filter or refresh to check for new activity.'}</p></div>}
         <FeaturePager state={result} moreLabel="Load more activity" />
       </div>
     </>}
   </section>;
 }
 
-type ChannelKind = 'all' | 'trending';
-export function ChannelsView({ onChannel }: { onChannel(channel: Channel): void }) {
+type ChannelKind = 'all' | 'trending' | 'saved';
+function ChannelRows({ channels, savedIds, onChannel, onToggleSave }: { channels: readonly Channel[]; savedIds: Set<string>; onChannel(channel: Channel): void; onToggleSave?(channel: Channel): void }) {
+  return <ul className="feature-channels">{channels.map(channel => {
+    const saved = savedIds.has(channel.id);
+    return <li key={channel.id}><a href={`/channel/${encodeURIComponent(channel.id)}`} onClick={event => localClick(event, () => onChannel(channel))}>
+      {safeImage(channel.image_url) ? <img src={channel.image_url} alt="" width={46} height={46} loading="lazy" referrerPolicy="no-referrer" /> : <span className="feature-channel-mark" aria-hidden="true"><IconHash size={23} /></span>}
+      <span className="feature-channel__body"><strong>{channel.name || channel.id}</strong><span>/{channel.id}</span>{channel.description && <p>{channel.description}</p>}{typeof channel.member_count === 'number' && <small><IconUsers size={13} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</small>}</span><IconChevronRight size={17} aria-hidden="true" />
+    </a>{onToggleSave && <Button variant="ghost" className="feature-channel-save" aria-pressed={saved} aria-label={saved ? `Remove /${channel.id} from saved channels` : `Save /${channel.id} on this browser`} onClick={() => onToggleSave(channel)}><IconBookmark size={17} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" /><span>{saved ? 'Saved' : 'Save'}</span></Button>}</li>;
+  })}</ul>;
+}
+
+export function ChannelsView({ onChannel, savedChannels = [], onToggleSave }: { onChannel(channel: Channel): void; savedChannels?: readonly Channel[]; onToggleSave?(channel: Channel): void }) {
   const inputId = useId();
   const [kind, setKind] = useState<ChannelKind>('trending');
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [formError, setFormError] = useState('');
-  const result = useFeaturePages<Channel>(`${kind}:${query}`, true, async options => {
-    const page = await getChannels({ kind: query ? 'search' : kind, ...(query ? { query } : {}), ...options }); return { items: page.channels, next: page.next };
+  const result = useFeaturePages<Channel>(`${kind}:${query}`, kind !== 'saved', async options => {
+    const page = await getChannels({ kind: query ? 'search' : kind === 'trending' ? 'trending' : 'all', ...(query ? { query } : {}), ...options }); return { items: page.channels, next: page.next };
   }, channel => channel.id);
-  function search(event: FormEvent) { event.preventDefault(); const next = draft.trim(); if (next && !validQuery(next)) { setFormError('Enter a channel name of up to 256 bytes, without control characters.'); return; } setFormError(''); setQuery(next); if (next === query) result.refresh(); }
+  const savedIds = new Set(savedChannels.map(channel => channel.id));
+  const visible = kind === 'saved' ? savedChannels.filter(channel => !query || `${channel.id} ${channel.name} ${channel.description ?? ''}`.toLowerCase().includes(query.toLowerCase())) : result.items;
+  function search(event: FormEvent) { event.preventDefault(); const next = draft.trim(); if (next && !validQuery(next)) { setFormError('Enter a channel name of up to 256 bytes, without control characters.'); return; } setFormError(''); setQuery(next); if (next === query && kind !== 'saved') result.refresh(); }
+  function changeKind(value: ChannelKind) { setKind(value); setQuery(''); setDraft(''); setFormError(''); }
   return <section className="feature-view" aria-label="Browse channels">
     <div className="feature-intro"><span className="feature-kicker"><IconWorld size={15} aria-hidden="true" />FIND YOUR PEOPLE</span><h2>Small worlds. Open conversations.</h2><p>Explore public channels indexed by Hypersnap, then add your voice.</p></div>
     <form className="feature-search" role="search" onSubmit={search}><label className="visually-hidden" htmlFor={inputId}>Search channels</label><Input id={inputId} type="search" maxLength={256} placeholder="Search channels…" value={draft} onChange={event => setDraft(event.target.value)} aria-describedby={formError ? `${inputId}-error` : undefined} aria-invalid={Boolean(formError)} /><Button type="submit"><IconSearch size={17} aria-hidden="true" />Search</Button></form>
     {formError && <p id={`${inputId}-error`} className="feature-form-error" role="alert">{formError}</p>}
-    <nav className="feature-tabs" aria-label="Channel directory"><Button variant="ghost" className={kind === 'trending' && !query ? 'feature-tab--active' : ''} aria-pressed={kind === 'trending' && !query} onClick={() => { setKind('trending'); setQuery(''); setDraft(''); setFormError(''); }}>Active channels</Button><Button variant="ghost" className={kind === 'all' && !query ? 'feature-tab--active' : ''} aria-pressed={kind === 'all' && !query} onClick={() => { setKind('all'); setQuery(''); setDraft(''); setFormError(''); }}>All channels</Button>{query && <span className="feature-tab-label feature-tab--active">Results for “{query}”</span>}</nav>
-    <div aria-busy={result.busy}>
-      {result.items.length > 0 && <ul className="feature-channels">{result.items.map(channel => <li key={channel.id}><a href={`/channel/${encodeURIComponent(channel.id)}`} onClick={event => localClick(event, () => onChannel(channel))}>
-        {safeImage(channel.image_url) ? <img src={channel.image_url} alt="" width={46} height={46} loading="lazy" referrerPolicy="no-referrer" /> : <span className="feature-channel-mark" aria-hidden="true"><IconHash size={23} /></span>}
-        <span className="feature-channel__body"><strong>{channel.name || channel.id}</strong><span>/{channel.id}</span>{channel.description && <p>{channel.description}</p>}{typeof channel.member_count === 'number' && <small><IconUsers size={13} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</small>}</span><IconChevronRight size={17} aria-hidden="true" />
-      </a></li>)}</ul>}
-      {result.loaded && !result.items.length && !result.busy && !result.error && <div className="feature-empty"><IconHash size={32} aria-hidden="true" /><h3>{result.more ? 'No named channels on this page.' : 'No channels found.'}</h3><p>{result.more ? 'Load more channels to continue browsing.' : query ? 'Try a shorter channel name or browse all channels.' : 'This Hypersnap node has no channels to show yet.'}</p></div>}
-      <FeaturePager state={result} moreLabel="Load more channels" />
+    <nav className="feature-tabs" aria-label="Channel directory"><Button variant="ghost" className={kind === 'trending' && !query ? 'feature-tab--active' : ''} aria-pressed={kind === 'trending' && !query} onClick={() => changeKind('trending')}>Active channels</Button><Button variant="ghost" className={kind === 'all' && !query ? 'feature-tab--active' : ''} aria-pressed={kind === 'all' && !query} onClick={() => changeKind('all')}>All channels</Button>{(onToggleSave || savedChannels.length > 0) && <Button variant="ghost" className={kind === 'saved' ? 'feature-tab--active' : ''} aria-pressed={kind === 'saved'} onClick={() => changeKind('saved')}><IconBookmark size={15} aria-hidden="true" />Saved channels</Button>}{query && <span className="feature-tab-label feature-tab--active">Results for “{query}”</span>}</nav>
+    <div aria-busy={kind !== 'saved' && result.busy}>
+      {visible.length > 0 && <ChannelRows channels={visible} savedIds={savedIds} onChannel={onChannel} onToggleSave={onToggleSave} />}
+      {kind === 'saved' && !visible.length && <div className="feature-empty"><IconBookmark size={32} aria-hidden="true" /><h3>{query ? 'No saved channels match.' : 'Keep your favorite channels nearby.'}</h3><p>{query ? 'Try another name or clear your search.' : 'Save a channel from the directory or its channel page to add a shortcut here.'}</p></div>}
+      {kind !== 'saved' && result.loaded && !visible.length && !result.busy && !result.error && <div className="feature-empty"><IconHash size={32} aria-hidden="true" /><h3>{result.more ? 'No named channels on this page.' : 'No channels found.'}</h3><p>{result.more ? 'Load more channels to continue browsing.' : query ? 'Try a shorter channel name or browse all channels.' : 'This Hypersnap node has no channels to show yet.'}</p></div>}
+      {kind !== 'saved' && <FeaturePager state={result} moreLabel="Load more channels" />}
     </div>
     <p className="feature-note feature-note--inset">Participant totals count accounts that have posted in a channel.</p>
+    {(onToggleSave || savedChannels.length > 0) && <p className="feature-note feature-note--inset">Saved channels are shortcuts on this browser. Saving does not subscribe or enable notifications.</p>}
   </section>;
 }
 
-export function ChannelHeader({ channel, onCompose }: { channel: Channel; onCompose?(): void }) {
+export function ChannelHeader({ channel, onCompose, saved = false, onToggleSave }: { channel: Channel; onCompose?(): void; saved?: boolean; onToggleSave?(channel: Channel): void }) {
   return <div className="feature-channel-header">
     <div className="feature-channel-header__identity">{safeImage(channel.image_url) ? <img src={channel.image_url} alt="" width={64} height={64} referrerPolicy="no-referrer" /> : <span className="feature-channel-mark" aria-hidden="true"><IconHash size={30} /></span>}<div><span className="feature-kicker">HYPERSNAP CHANNEL</span><h2>{channel.name || channel.id}</h2><p>/{channel.id}</p></div></div>
     {channel.description && <p className="feature-channel-header__description">{channel.description}</p>}
-    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}</div>
+    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}{onToggleSave && <Button variant="secondary" aria-pressed={saved} onClick={() => onToggleSave(channel)}><IconBookmark size={16} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />{saved ? 'Saved on this browser' : 'Save channel'}</Button>}</div>
+    {onToggleSave && <p className="feature-note">Saved channels are local shortcuts on this browser.</p>}
   </div>;
 }
 
-export type ProfileTab = 'casts' | 'replies' | 'media';
+export type ProfileTab = 'casts' | 'replies' | 'media' | 'likes' | 'recasts';
 export function ProfileTabs({ fid, tab, onChange, hrefForTab }: { fid: number; tab: ProfileTab; onChange(tab: ProfileTab): void; hrefForTab?(tab: ProfileTab): string }) {
-  return <nav className="feature-tabs feature-profile-tabs" aria-label="Profile content">{(['casts', 'replies', 'media'] as const).map(value => <a key={value} href={hrefForTab?.(value) ?? `${profilePath(fid)}${value === 'casts' ? '' : `?tab=${value}`}`} aria-current={tab === value ? 'page' : undefined} onClick={event => localClick(event, () => onChange(value))}>{value === 'casts' ? 'Casts' : value === 'replies' ? 'Replies' : 'Photos'}</a>)}</nav>;
+  return <nav className="feature-tabs feature-profile-tabs" aria-label="Profile content">{(['casts', 'replies', 'media', 'likes', 'recasts'] as const).map(value => <a key={value} href={hrefForTab?.(value) ?? `${profilePath(fid)}${value === 'casts' ? '' : `?tab=${value}`}`} aria-current={tab === value ? 'page' : undefined} onClick={event => localClick(event, () => onChange(value))}>{value === 'casts' ? 'Casts' : value === 'replies' ? 'Replies' : value === 'media' ? 'Photos' : value === 'likes' ? 'Likes' : 'Recasts'}</a>)}</nav>;
 }

@@ -40,9 +40,11 @@ export function replaceTestMediaGuards(source, id, origin) {
   const media = variable => `(${variable}.origin === ${JSON.stringify(origin)} && /^\\/media\\/[a-f0-9]{64}$/.test(${variable}.pathname))`;
   if (normalized.endsWith('/src/App.tsx')) {
     source = source.replace("url.protocol === 'https:' ? url.href", `(url.protocol === 'https:' || ${media('url')}) ? url.href`);
+    source = source.replace("url.protocol === 'https:' && !url.username", `(url.protocol === 'https:' || ${media('url')}) && !url.username`);
     const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '\\/');
     source = source.replace(String.raw`^https:\/\/quorum\.arca\.computer\/media\/`, `^${escapedOrigin}\\/media\\/`);
   }
+  if (normalized.endsWith('/src/components/MediaViewer.tsx')) source = source.replace("url.protocol === 'https:' && !url.username", `(url.protocol === 'https:' || ${media('url')}) && !url.username`);
   if (normalized.endsWith('/src/components/EditProfileDialog.tsx')) source = source.replace("parsed.protocol === 'https:' &&", `(parsed.protocol === 'https:' || ${media('parsed')}) &&`);
   if (normalized.endsWith('/src/lib/social.ts')) source = source.replace("url.protocol !== 'https:' ||", `(url.protocol !== 'https:' && !${media('url')}) ||`);
   if (normalized.endsWith('/src/lib/auth.ts')) source = source.replace(/url\.protocol !== 'https:' \|\| ((?:!!)?url\.username)/, (_match, credentials) => `(url.protocol !== 'https:' && !${media('url')}) || ${credentials}`);

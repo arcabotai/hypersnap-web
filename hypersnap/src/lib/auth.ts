@@ -1,5 +1,5 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
+import { ApiError, getCast, getFollowStatus, getReactionStatus, getSigners, getUser, submitMessage, type Signer, type SignersResponse, type User } from './api';
 import { PAIRING_SCOPES, PAIRING_TTL_SECONDS, validatePairingRequest, validatePairingScopes, verifyPairingApproval, validateRevocationRequest, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationRequest, type RevocationApproval } from './pairing';
 import { buildSignedMessage, CastType, farcasterTimestamp, MessageType, ReactionType, SignatureScheme, type MessageDataInput } from './protocol/messageBuilder';
 import { abiEncodeSignedKeyRequestMetadata, bytesToHex, hexToBytes } from './protocol/signedKeyRequest';
@@ -47,6 +47,8 @@ export interface WalletSession {
   /** Removes only this account's cast; resolves after Hypersnap confirms absence. */
   deleteCast(target: CastTarget): Promise<WriteReceipt>;
   react(target: CastTarget, type: 'like' | 'recast', remove?: boolean): Promise<WriteReceipt>;
+  /** Read-only; an uncertain reaction stays blocked until its intent is visible. */
+  reactionStatus(target: CastTarget, type: 'like' | 'recast', signal?: AbortSignal): Promise<boolean>;
   follow(targetFid: number, remove?: boolean): Promise<WriteReceipt>;
   updateProfile(patch: ProfilePatch): Promise<ProfileUpdateResult>;
   refreshProfile(): Promise<User>;
@@ -307,6 +309,10 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
   const uncertainProfileFields = new Map<ProfileField, string>();
   const followingBusy = new Set<number>();
   const uncertainFollows = new Map<number, boolean>();
+  const reacting = new Set<string>();
+  const uncertainReactions = new Map<string, { desired: boolean; receipt: WriteReceipt }>();
+  const confirmedReactionIntents = new Map<string, { desired: boolean; receipt: WriteReceipt }>();
+  const reactionVersions = new Map<string, number>();
   const deletingCasts = new Set<string>();
   const pendingDeletions = new Map<string, WriteReceipt>();
   let lastWriteTimestamp = 0;
@@ -386,6 +392,36 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
     onAttempt?.(receipt);
     await submitMessage(envelope);
     return receipt;
+  };
+  const reactionIdentity = (target: CastTarget, type: 'like' | 'recast') => {
+    assertSession();
+    assertFid(target.fid);
+    if (type !== 'like' && type !== 'recast') throw new Error('Invalid reaction type.');
+    const normalized = { fid: target.fid, hash: bytesToHex(hashBytes(target.hash)) };
+    return { target: normalized, key: `${normalized.fid}:${normalized.hash}:${type}` };
+  };
+  const reactionUnknown = () => new ApiError('An earlier reaction has unknown status. Check reaction status again; no second reaction will be submitted until its intended state is visible.', 504, 'submission_unknown');
+  const readReactionStatus = async (target: CastTarget, type: 'like' | 'recast', signal?: AbortSignal): Promise<boolean> => {
+    const identity = reactionIdentity(target, type);
+    assertActive(signal);
+    const version = reactionVersions.get(identity.key) ?? 0;
+    const observed = await getReactionStatus(metadata.fid, identity.target, type, signal);
+    assertSession(); assertActive(signal);
+    const pending = uncertainReactions.get(identity.key);
+    // A read begun before a submission cannot reconcile that later write,
+    // even if its old value happens to match the newly requested intent.
+    if (version !== (reactionVersions.get(identity.key) ?? 0)) {
+      if (pending) throw reactionUnknown();
+      throw new ApiError('Reaction state changed while it was being checked. Check reaction status again.', 409, 'reaction_status_changed');
+    }
+    if (pending) {
+      if (observed !== pending.desired) throw reactionUnknown();
+      uncertainReactions.delete(identity.key);
+      confirmedReactionIntents.set(identity.key, pending);
+    }
+    const confirmed = confirmedReactionIntents.get(identity.key);
+    if (confirmed && observed !== confirmed.desired) confirmedReactionIntents.delete(identity.key);
+    return observed;
   };
   const confirmCastDeletion = async (target: CastTarget): Promise<void> => {
     const controller = new AbortController();
@@ -488,9 +524,35 @@ function createSession(user: User, privateKey: Uint8Array, metadata: VaultMetada
       } finally { deletingCasts.delete(targetHash); }
     },
     async react(target, type, remove = false) {
-      assertFid(target.fid);
-      return send({ type: remove ? MessageType.REACTION_REMOVE : MessageType.REACTION_ADD, fid: metadata.fid, body: { reactionBody: { type: type === 'like' ? ReactionType.LIKE : ReactionType.RECAST, target: { castId: { fid: target.fid, hash: hashBytes(target.hash) } } } } });
+      const identity = reactionIdentity(target, type);
+      if (typeof remove !== 'boolean') throw new Error('Invalid reaction action.');
+      if (reacting.has(identity.key)) throw new Error('This reaction change is already being submitted.');
+      reacting.add(identity.key);
+      let attempted: WriteReceipt | undefined;
+      try {
+        const desired = !remove;
+        const pending = uncertainReactions.get(identity.key);
+        if (pending) {
+          await readReactionStatus(identity.target, type);
+          if (pending.desired === desired) return pending.receipt;
+        } else {
+          const confirmed = confirmedReactionIntents.get(identity.key);
+          if (confirmed?.desired === desired && await readReactionStatus(identity.target, type) === desired) return confirmed.receipt;
+        }
+        confirmedReactionIntents.delete(identity.key);
+        return await send({ type: remove ? MessageType.REACTION_REMOVE : MessageType.REACTION_ADD, fid: metadata.fid, body: { reactionBody: { type: type === 'like' ? ReactionType.LIKE : ReactionType.RECAST, target: { castId: { fid: identity.target.fid, hash: hashBytes(identity.target.hash) } } } } }, receipt => {
+          attempted = receipt;
+          reactionVersions.set(identity.key, (reactionVersions.get(identity.key) ?? 0) + 1);
+        });
+      } catch (error) {
+        if (attempted && error instanceof ApiError && error.code === 'submission_unknown') {
+          uncertainReactions.set(identity.key, { desired: !remove, receipt: attempted });
+          reactionVersions.set(identity.key, (reactionVersions.get(identity.key) ?? 0) + 1);
+        }
+        throw error;
+      } finally { reacting.delete(identity.key); }
     },
+    reactionStatus: readReactionStatus,
     async follow(targetFid, remove = false) {
       assertSession();
       assertFid(targetFid);

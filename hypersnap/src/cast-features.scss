@@ -11,3 +11,29 @@
 
 .sidebar { overflow-y: auto; }
 .delete-cast-confirm { background: rgb(var(--danger)); }
+
+.media-viewer { padding: 1rem; }
+.media-viewer__stage { min-height: 12rem; display: grid; place-items: center; border-radius: .7rem; background: var(--surface-1); overflow: hidden; }
+.media-viewer__stage img { display: block; max-width: 100%; max-height: 65dvh; object-fit: contain; }
+.media-viewer__controls { display: flex; justify-content: center; align-items: center; gap: .7rem; flex-wrap: wrap; margin-top: 1rem; font-size: .8rem; }
+.profile-details { margin: .6rem 0; font-size: .75rem; color: var(--color-text-subtle); }
+.profile-details > p, .profile-details summary { display: flex; align-items: center; gap: .4rem; }
+.profile-details summary { cursor: pointer; width: fit-content; padding: .4rem 0; }
+.profile-details summary::after { content: '⌄'; }
+.profile-details details[open] summary::after { content: '⌃'; }
+.profile-details ul { display: flex; flex-direction: column; gap: .5rem; list-style: none; padding: 0; margin: .5rem 0; }
+.profile-details li { display: flex; flex-wrap: wrap; gap: .5rem; }
+.profile-details code { overflow-wrap: anywhere; color: var(--color-text-strong); }
+.cast-options { padding: 1rem; }
+.cast-options__actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.cast-options textarea { background: var(--surface-1); color: var(--color-text-strong); border: .0625rem solid var(--border); border-radius: .5rem; width: 100%; box-sizing: border-box; padding: .8rem; resize: vertical; }
+.cast-options > p { font-size: .75rem; }
+.cast-parent { display: flex; align-items: center; gap: .3rem; width: fit-content; font-size: .7rem; color: var(--color-text-subtle); padding-bottom: .6rem; }
+.reaction-status { font-size: .6rem; color: var(--color-text-subtle); }
+.reaction-status .button { font-size: .65rem; }
+.home-feed-tabs { margin: 0; }
+.cast-activity { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; font-size: .65rem; color: var(--color-text-subtle); margin-bottom: .5rem; }
+.cast-activity a { color: inherit; font-weight: 600; }
+.cast-options__quotes { margin-bottom: 1rem; }
+.channel-detail-actions { padding: 0 1.5rem 1rem; }
+@media (max-width: 40rem) { .media-viewer { padding: .6rem; } .media-viewer__controls .button { min-height: 2.75rem; } }

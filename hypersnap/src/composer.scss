@@ -1,0 +1,18 @@
+.composer-editor { position: relative; }
+.composer-editor > textarea { width: 100%; }
+.composer-suggestions { position: relative; margin: .3rem 0 .7rem; padding: .5rem; border: .0625rem solid var(--surface-5); border-radius: .65rem; background: var(--surface-0); box-shadow: 0 .35rem 1rem rgb(var(--accent-rgb) / .08); }
+.composer-suggestions__label { display: block; padding: .3rem .4rem .5rem; color: var(--color-text-subtle); font-size: .58rem; }
+.composer-suggestions > p { display: flex; align-items: center; gap: .4rem; margin: .3rem .4rem; font-size: .65rem; color: var(--color-text-subtle); line-height: 1.7; }
+.composer-suggestions ul { list-style: none; padding: 0; margin: 0; }
+.composer-suggestions li > .button { width: 100%; justify-content: flex-start; min-height: 2.6rem; gap: .4rem; padding: .55rem .5rem; font-size: .69rem; overflow-wrap: anywhere; flex-wrap: wrap; }
+.composer-suggestions li[aria-selected="true"] > .button { background: var(--soft-accent); color: var(--accent-300); }
+.composer-suggestions li > .button > span { color: var(--color-text-subtle); font-size: .62rem; }
+.composer-draft-tools { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; margin-top: .7rem; }
+.composer-draft-tools > .button { font-size: .6rem; padding: .4rem .5rem; min-height: 2rem; }
+.composer-draft-note { font-size: .58rem; color: var(--color-text-subtle); line-height: 1.75; margin: .4rem 0; }
+.composer-restore-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding: .7rem; border: .0625rem solid var(--surface-4); background: var(--soft-accent); border-radius: .6rem; margin: .6rem 0; font-size: .66rem; line-height: 1.7; }
+.composer-restore-confirm > span { flex-basis: 100%; }
+.composer-restore-confirm > .button { font-size: .64rem; min-height: 2.2rem; }
+.composer__footer > span { flex-wrap: wrap; }
+.composer__footer > span > small { display: block; flex-basis: 100%; font-size: .5rem; color: var(--color-text-muted); margin-top: .3rem; }
+@media (max-width: 43.75rem) { .composer-draft-tools > .button { min-height: 2.5rem; }.composer-suggestions li > .button { min-height: 2.8rem; }.composer__footer > span > small { font-size: .48rem; } }

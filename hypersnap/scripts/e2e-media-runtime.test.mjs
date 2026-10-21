@@ -61,15 +61,17 @@ describe('isolated media harness URL transformations', () => {
     expect(new Function('url', `return ${original};`)(new URL(media))).toBe(false);
   });
 
-  it('rewrites the actual hosted-image regex to the exact test origin without wildcard dots or ports', () => {
-    const expression = transformed.match(/map\(embed => \/(.*?)\/i\.test\(embed\.url\)/)?.[1];
+  it('uses the shared image classifier and admits only exact loopback media in the viewer', async () => {
+    expect(app).toContain('hasImageEmbed({ ...cast, embeds: [{ url }] })');
+    const viewerPath = fileURLToPath(new URL('../src/components/MediaViewer.tsx', import.meta.url));
+    const viewer = await fs.readFile(viewerPath, 'utf8');
+    const transformedViewer = replaceTestMediaGuards(replaceTestOrigins(viewer, origin), viewerPath, origin);
+    const expression = transformedViewer.match(/return (\(url\.protocol.*?)\; } catch/)?.[1];
     expect(expression).toBeTruthy();
-    const image = new RegExp(expression, 'i');
-    expect(image.test(media)).toBe(true);
-    for (const rejected of [
-      `http://127x0x0x1:5187/media/${'a'.repeat(64)}`, `http://127.0.0.1:5188/media/${'a'.repeat(64)}`,
-      `${media}/extra`, `${origin}/media/${'a'.repeat(63)}`, `https://quorum.arca.computer/media/${'a'.repeat(64)}`,
-    ]) expect(image.test(rejected)).toBe(false);
+    const accepted = new Function('url', `return ${expression};`);
+    expect(accepted(new URL(media))).toBe(true);
+    for (const rejected of [`http://127x0x0x1:5187/media/${'a'.repeat(64)}`, `http://127.0.0.1:5188/media/${'a'.repeat(64)}`, `${media}/extra`, `${origin}/media/${'a'.repeat(63)}`, `http://user@127.0.0.1:5187/media/${'a'.repeat(64)}`]) expect(accepted(new URL(rejected))).toBe(false);
+    expect(viewer).toContain("url.protocol === 'https:' && !url.username && !url.password");
   });
 
   it('never changes the fixed Hypersnap destination or arbitrary dependencies and refuses non-loopback test origins', async () => {

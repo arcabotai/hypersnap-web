@@ -44,6 +44,8 @@ export interface Cast {
   mentioned_profiles_ranges?: Array<{ start: number; end: number }>;
   channel?: Channel;
   viewer_context?: { liked: boolean; recasted: boolean };
+  /** Original publication time stays in timestamp; this identifies profile activity. */
+  reaction_context?: { fid: number; type: 'like' | 'recast'; timestamp: string };
 }
 
 export interface FeedResponse {
@@ -261,7 +263,161 @@ export async function getFeed(options: FeedOptions): Promise<FeedResponse> {
   return { casts, next: { cursor: nextCursor(next, options.cursor) } };
 }
 
-export type ProfileTab = 'casts' | 'replies' | 'media';
+export type ProfileTab = 'casts' | 'replies' | 'media' | 'likes' | 'recasts';
+
+export interface ReactionTarget { fid: number; hash: string }
+export interface ReactionStatus extends ReactionTarget { viewerFid: number; liked: boolean; recasted: boolean }
+type ReactionKind = 'like' | 'recast';
+const BASE64_TOKEN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function reactionKind(type: ReactionKind): 'Like' | 'Recast' {
+  if (type !== 'like' && type !== 'recast') throw new Error('Invalid reaction type.');
+  return type === 'like' ? 'Like' : 'Recast';
+}
+
+function reactionCursor(value: unknown, previous?: string | null): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 2048 || !BASE64_TOKEN.test(value) || value === previous) throw new ApiError('The node returned invalid reaction pagination.', 502, 'invalid_response');
+  return value;
+}
+
+/** Bounded public reads only. A failed member aborts the batch; missing data
+ * must never be interpreted as an absent relationship. */
+async function mapPublicReads<T, R>(items: T[], read: (item: T, signal: AbortSignal) => Promise<R>, signal?: AbortSignal): Promise<R[]> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort, { once: true });
+  const results = new Array<R>(items.length);
+  let index = 0;
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
+      while (index < items.length) {
+        controller.signal.throwIfAborted();
+        const current = index++;
+        try { results[current] = await read(items[current], controller.signal); }
+        catch (error) { controller.abort(error); throw error; }
+      }
+    }));
+    controller.signal.throwIfAborted();
+    return results;
+  } finally { signal?.removeEventListener('abort', abort); }
+}
+
+interface ReactionMessage {
+  hash: string;
+  data: { type: string; fid: number; timestamp: number; network: string; reactionBody: { type: string; targetCastId?: ReactionTarget; targetUrl?: string } };
+}
+
+function validateReaction(value: unknown, viewerFid: number, type: ReactionKind): ReactionMessage {
+  if (!isObject(value) || typeof value.hash !== 'string' || !HASH.test(value.hash) || !isObject(value.data)) throw new ApiError('The node returned an invalid reaction.', 502, 'invalid_response');
+  const data = value.data;
+  if (data.type !== 'MESSAGE_TYPE_REACTION_ADD' || data.fid !== viewerFid || data.network !== 'FARCASTER_NETWORK_MAINNET'
+    || !Number.isInteger(data.timestamp) || Number(data.timestamp) < 0 || Number(data.timestamp) > 0xffffffff || !isObject(data.reactionBody)
+    || data.reactionBody.type !== (type === 'like' ? 'REACTION_TYPE_LIKE' : 'REACTION_TYPE_RECAST')) throw new ApiError('The node returned an invalid reaction.', 502, 'invalid_response');
+  const body = data.reactionBody;
+  // URL reactions are real protocol messages but have no cast to hydrate.
+  if (body.targetCastId !== undefined) {
+    if (!isObject(body.targetCastId) || !Number.isSafeInteger(body.targetCastId.fid) || Number(body.targetCastId.fid) < 1
+      || typeof body.targetCastId.hash !== 'string' || !HASH.test(body.targetCastId.hash) || body.targetUrl) throw new ApiError('The node returned an invalid reaction target.', 502, 'invalid_response');
+  } else if (typeof body.targetUrl !== 'string' || !body.targetUrl) throw new ApiError('The node returned an invalid reaction target.', 502, 'invalid_response');
+  return value as unknown as ReactionMessage;
+}
+
+/** Hypersnap does not populate cast.viewer_context. Resolve the actual current
+ * add receipt; only the worker's exact source-defined absence code is false. */
+export async function getReactionStatus(viewerFid: number, target: ReactionTarget, type: ReactionKind, signal?: AbortSignal): Promise<boolean> {
+  const params = new URLSearchParams({ fid: fidValue(viewerFid), reaction_type: reactionKind(type), target_fid: fidValue(target.fid), target_hash: hashValue(target.hash) });
+  try {
+    const value = await requestJson<unknown>('/v1/reactionById', params, signal);
+    const message = validateReaction(value, viewerFid, type);
+    const observed = message.data.reactionBody.targetCastId;
+    if (!observed || observed.fid !== target.fid || hashValue(observed.hash) !== hashValue(target.hash)) throw new ApiError('The node returned a different reaction target.', 502, 'invalid_response');
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404 && error.code === 'reaction_not_found') return false;
+    throw error;
+  }
+}
+
+/** At most 25 visible casts and four requests in flight. Callers must key cached
+ * results by viewer FID as well as target and cancel when the account changes. */
+export async function getReactionStatuses(viewerFid: number, targets: ReactionTarget[], signal?: AbortSignal): Promise<ReactionStatus[]> {
+  fidValue(viewerFid);
+  if (!Array.isArray(targets) || targets.length > 25) throw new Error('Check up to 25 visible casts at a time.');
+  const unique = new Map<string, ReactionTarget>();
+  for (const target of targets) {
+    fidValue(target.fid);
+    const hash = hashValue(target.hash);
+    unique.set(`${target.fid}:${hash}`, { fid: target.fid, hash });
+  }
+  const normalized = [...unique.values()];
+  const jobs = normalized.flatMap(target => (['like', 'recast'] as const).map(type => ({ target, type })));
+  const states = await mapPublicReads(jobs, ({ target, type }, localSignal) => getReactionStatus(viewerFid, target, type, localSignal), signal);
+  return normalized.map((target, index) => ({ ...target, viewerFid, liked: states[index * 2], recasted: states[index * 2 + 1] }));
+}
+
+async function getProfileReactions(options: { fid: number; tab: 'likes' | 'recasts'; cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<FeedResponse> {
+  // Bound the entire scan + target hydration, rather than resetting a timeout
+  // for every page and every cast (which could otherwise take many minutes).
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(new DOMException('Reaction history timed out', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+  try {
+    return await readProfileReactions({ ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !options.signal?.aborted) throw new ApiError('Profile reaction history took too long to load. Try again.', 504, 'timeout');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
+async function readProfileReactions(options: { fid: number; tab: 'likes' | 'recasts'; cursor?: string | null; limit?: number; signal: AbortSignal }): Promise<FeedResponse> {
+  const type = options.tab === 'likes' ? 'like' : 'recast';
+  const limit = options.limit ?? 20;
+  const casts: Cast[] = [];
+  let cursor = options.cursor;
+  const seen = new Set<string>();
+  if (cursor) reactionCursor(cursor);
+  for (let page = 0; page < 5; page++) {
+    options.signal?.throwIfAborted();
+    if (cursor) {
+      if (seen.has(cursor)) throw new ApiError('The node returned invalid reaction pagination.', 502, 'invalid_response');
+      seen.add(cursor);
+    }
+    const remaining = limit - casts.length;
+    const params = new URLSearchParams({ fid: fidValue(options.fid), reaction_type: reactionKind(type), pageSize: String(remaining), reverse: 'true' });
+    if (cursor) params.set('pageToken', cursor);
+    const response = await requestJson<{ messages: unknown[]; nextPageToken?: string }>('/v1/reactionsByFid', params, options.signal);
+    if (!Array.isArray(response.messages) || response.messages.length > remaining) throw new ApiError('The node returned invalid reaction history.', 502, 'invalid_response');
+    const messages = response.messages.map(value => validateReaction(value, options.fid, type));
+    const next = reactionCursor(response.nextPageToken, cursor);
+    const hydrated = await mapPublicReads<ReactionMessage, Cast | undefined>(messages, async (message, localSignal) => {
+      const target = message.data.reactionBody.targetCastId;
+      if (!target) return undefined;
+      try {
+        const cast = await getCast(target.hash, localSignal);
+        if (!isObject(cast) || !publicUser(cast.author) || cast.author.fid !== target.fid || typeof cast.hash !== 'string' || hashValue(cast.hash) !== hashValue(target.hash)
+          || typeof cast.text !== 'string' || typeof cast.timestamp !== 'string' || !Number.isFinite(Date.parse(cast.timestamp)) || !Array.isArray(cast.embeds)
+          || !isObject(cast.reactions) || !Number.isSafeInteger(cast.reactions.likes_count) || cast.reactions.likes_count < 0
+          || !Number.isSafeInteger(cast.reactions.recasts_count) || cast.reactions.recasts_count < 0
+          || !isObject(cast.replies) || !Number.isSafeInteger(cast.replies.count) || cast.replies.count < 0) throw new ApiError('The node returned invalid reaction history.', 502, 'invalid_response');
+        return { ...cast, reaction_context: { fid: options.fid, type, timestamp: new Date((message.data.timestamp + 1609459200) * 1000).toISOString() } } satisfies Cast;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found') return undefined;
+        throw error;
+      }
+    }, options.signal);
+    casts.push(...hydrated.filter((cast): cast is Cast => cast !== undefined));
+    cursor = next;
+    if (!cursor || casts.length >= limit) break;
+  }
+  return { casts, next: { cursor: cursor ?? null } };
+}
 
 /** Image formats rendered by this client, including our content-addressed R2 URLs. */
 export function hasImageEmbed(cast: Cast): boolean {
@@ -283,9 +439,10 @@ export function hasImageEmbed(cast: Cast): boolean {
  * roots as replies and can skip results while truncating its fetched batch.
  */
 export async function getProfileFeed(options: { fid: number; tab: ProfileTab; cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<FeedResponse> {
-  if (!['casts', 'replies', 'media'].includes(options.tab)) throw new Error('Invalid profile tab.');
+  if (!['casts', 'replies', 'media', 'likes', 'recasts'].includes(options.tab)) throw new Error('Invalid profile tab.');
   pageParams(options.cursor, options.limit);
   fidValue(options.fid);
+  if (options.tab === 'likes' || options.tab === 'recasts') return getProfileReactions({ ...options, tab: options.tab });
   const limit = options.limit ?? 20;
   const casts: Cast[] = [];
   let cursor = options.cursor;
@@ -403,6 +560,52 @@ export async function getChannel(id: string, signal?: AbortSignal): Promise<Chan
   if (!isObject(response.channel) || typeof response.channel.id !== 'string' || !CHANNEL_ID.test(response.channel.id)
     || response.channel.id !== id || typeof response.channel.url !== 'string' || typeof response.channel.name !== 'string') throw new ApiError('The node returned an invalid channel.', 502, 'invalid_response');
   return response.channel;
+}
+
+/** A bounded friends-of-friends sample from the node, not a complete ranking. */
+export async function getSuggestedUsers(fid: number, limit = 8, signal?: AbortSignal): Promise<{ users: User[] }> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Request up to 20 suggested profiles.');
+  const response = await requestJson<{ users: User[] }>('/v2/farcaster/following/suggested', new URLSearchParams({ fid: fidValue(fid), limit: String(limit) }), signal);
+  if (!Array.isArray(response.users) || response.users.length > limit || response.users.some(user => !publicUser(user))) throw new ApiError('The node returned invalid suggested profiles.', 502, 'invalid_response');
+  return { users: [...new Map(response.users.filter(user => user.fid !== fid).map(user => [user.fid, user])).values()] };
+}
+
+/** The node's channel member index tracks people who posted here. It does not
+ * track subscriptions, permissions, ownership, or current membership. */
+export async function getChannelMembers(channelId: string, options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {}): Promise<FollowsResponse> {
+  if (!CHANNEL_ID.test(channelId)) throw new Error('Invalid channel.');
+  const limit = options.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw new Error('Request up to 25 channel participants.');
+  const decimal = (value: unknown): value is string => typeof value === 'string' && /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn;
+  if (options.cursor && !decimal(options.cursor)) throw new Error('Invalid channel participants cursor.');
+  const params = new URLSearchParams({ channel_id: channelId, limit: String(limit) });
+  if (options.cursor) params.set('cursor', options.cursor);
+  const response = await requestJson<{ members: Array<{ user: User }>; next?: { cursor?: string | null } }>('/v2/farcaster/channel/members', params, options.signal);
+  if (!Array.isArray(response.members) || response.members.length > limit || response.members.some(member => !isObject(member) || !publicUser(member.user))) throw new ApiError('The node returned invalid channel participants.', 502, 'invalid_response');
+  const next = response.next?.cursor;
+  if (next !== undefined && next !== null && (!decimal(next) || next === options.cursor)) throw new ApiError('The node returned invalid channel participants pagination.', 502, 'invalid_response');
+  return { users: [...new Map(response.members.map(member => [member.user.fid, member.user])).values()], next: { cursor: next ?? null } };
+}
+
+/** A bounded quote-index sample. An empty response also occurs on nodes with
+ * no quote index, so callers must never claim this is an exhaustive archive. */
+export async function getCastQuotes(hash: string, limit = 25, signal?: AbortSignal): Promise<FeedResponse> {
+  const targetHash = hashValue(hash);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw new Error('Request up to 25 quote casts.');
+  const response = await requestJson<{ casts: Cast[] }>('/v2/farcaster/cast/quotes', new URLSearchParams({ identifier: targetHash, type: 'hash', limit: String(limit) }), signal);
+  if (!Array.isArray(response.casts) || response.casts.length > limit) throw new ApiError('The node returned invalid quote casts.', 502, 'invalid_response');
+  const unique = new Map<string, Cast>();
+  for (const cast of response.casts) {
+    if (!isObject(cast) || !publicUser(cast.author) || typeof cast.hash !== 'string' || !HASH.test(cast.hash)
+      || typeof cast.text !== 'string' || typeof cast.timestamp !== 'string' || !Number.isFinite(Date.parse(cast.timestamp)) || !Array.isArray(cast.embeds)
+      || !isObject(cast.reactions) || !Number.isSafeInteger(cast.reactions.likes_count) || cast.reactions.likes_count < 0
+      || !Number.isSafeInteger(cast.reactions.recasts_count) || cast.reactions.recasts_count < 0
+      || !isObject(cast.replies) || !Number.isSafeInteger(cast.replies.count) || cast.replies.count < 0
+      || !cast.embeds.some(embed => isObject(embed) && 'cast_id' in embed && isObject(embed.cast_id) && Number.isSafeInteger(embed.cast_id.fid) && Number(embed.cast_id.fid) > 0
+        && typeof embed.cast_id.hash === 'string' && HASH.test(embed.cast_id.hash) && hashValue(embed.cast_id.hash) === targetHash)) throw new ApiError('The node returned invalid quote casts.', 502, 'invalid_response');
+    unique.set(hashValue(cast.hash), cast);
+  }
+  return { casts: [...unique.values()], next: { cursor: null } };
 }
 
 /** Public recent activity. The node's bounded recent-cast scan is not a complete

@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { getCast, getChannel, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getUser, searchCasts, searchUsers, type Cast, type User } from './lib/api';
+import { getCast, getChannel, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getReactionStatus, getSuggestedUsers, getChannelMembers, getCastQuotes, getUser, searchCasts, searchUsers, type Cast, type User } from './lib/api';
 import type { WalletSession } from './lib/auth';
 import { uploadMedia } from './lib/media';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './lib/pairing';
@@ -14,7 +14,7 @@ vi.mock('./components/ConnectAccount', () => ({
   DeviceSettings: () => <div>Synthetic device settings</div>,
 }));
 vi.mock('./lib/media', () => ({ uploadMedia: vi.fn() }));
-vi.mock('./lib/api', async original => ({ ...await original<typeof import('./lib/api')>(), getCast: vi.fn(), getChannel: vi.fn(), getChannels: vi.fn(), getConversation: vi.fn(), getFeed: vi.fn(), getFollowStatus: vi.fn(), getInfo: vi.fn(), getProfileFeed: vi.fn(), getUser: vi.fn(), searchCasts: vi.fn(), searchUsers: vi.fn() }));
+vi.mock('./lib/api', async original => ({ ...await original<typeof import('./lib/api')>(), getCast: vi.fn(), getChannel: vi.fn(), getChannels: vi.fn(), getConversation: vi.fn(), getFeed: vi.fn(), getFollowStatus: vi.fn(), getInfo: vi.fn(), getProfileFeed: vi.fn(), getReactionStatus: vi.fn(), getSuggestedUsers: vi.fn(), getChannelMembers: vi.fn(), getCastQuotes: vi.fn(), getUser: vi.fn(), searchCasts: vi.fn(), searchUsers: vi.fn() }));
 
 const person = (fid: number): User => ({ fid, username: `person${fid}`, display_name: `Person ${fid}`, custody_address: '0x1111111111111111111111111111111111111111', profile: { bio: { text: 'An isolated public profile' } }, follower_count: 0, following_count: 0 });
 const cast = (letter: string, authorFid: number, text: string): Cast => ({ hash: `0x${letter.repeat(40)}`, author: person(authorFid), text, timestamp: '2026-10-19T12:00:00.000Z', embeds: [], reactions: { likes_count: 0, recasts_count: 0 }, replies: { count: 0 } });
@@ -36,6 +36,10 @@ beforeEach(() => {
   vi.mocked(getProfileFeed).mockResolvedValue({ casts: [], next: {} });
   vi.mocked(getChannels).mockResolvedValue({ channels: [], next: {} });
   vi.mocked(getInfo).mockResolvedValue({ version: 'isolated-test' });
+  vi.mocked(getReactionStatus).mockResolvedValue(false);
+  vi.mocked(getSuggestedUsers).mockResolvedValue({ users: [person(30)] });
+  vi.mocked(getChannelMembers).mockResolvedValue({ users: [person(20)], next: {} });
+  vi.mocked(getCastQuotes).mockResolvedValue({ casts: [], next: {} });
   vi.mocked(getUser).mockImplementation(async lookup => person(lookup.fid ?? 10));
   vi.mocked(getFollowStatus).mockResolvedValue(false);
   vi.mocked(getConversation).mockResolvedValue({ cast: otherCast, replies: [] });
@@ -209,4 +213,55 @@ describe('isolated App feature integration', () => {
     expect(legacy.deleteCast).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Person 10');
   });
+
+  it('opens image attachments in the viewer and preserves modified-click links', async () => {
+    const photo = { ...otherCast, embeds: [{ url: 'https://example.org/a.png' }, { url: 'https://example.org/b.png' }] };
+    vi.mocked(getFeed).mockResolvedValue({ casts: [photo], next: {} });
+    await start();
+    await click(container.querySelector('a[aria-label="View attached image"]')!);
+    expect(dialog('Cast images').querySelector('img')?.src).toBe('https://example.org/a.png');
+    await click(dialog('Cast images').querySelector('button[aria-label="Next image"]')!);
+    expect(dialog('Cast images').querySelector('img')?.src).toBe('https://example.org/b.png');
+    await click(dialog('Cast images').querySelector('button[aria-label="Close dialog"]')!);
+    expect(container.querySelector('a[aria-label="View attached image"]')?.getAttribute('target')).toBe('_blank');
+    expect(dialog('Cast images')).toBeUndefined();
+  });
+
+  it('saves a channel shortcut in the sidebar and restores it after remount without a protocol write', async () => {
+    const channel = { id: 'isolated', name: 'Isolated channel', url: 'https://example.org/channels/isolated' };
+    vi.mocked(getChannel).mockResolvedValue(channel);
+    await start('/channel/isolated');
+    await click(button('Save channel'));
+    expect(container.querySelector('nav[aria-label="Saved channels"]')?.textContent).toContain('Isolated channel');
+    await act(async () => { root.unmount(); }); root = createRoot(container);
+    await act(async () => root.render(<App />));
+    expect(container.querySelector('nav[aria-label="Saved channels"]')?.textContent).toContain('Isolated channel');
+    expect(button('Saved on this browser')).toBeDefined();
+  });
+
+  it('shows shareable Likes tabs, profile links and cast text options', async () => {
+    vi.mocked(getProfileFeed).mockResolvedValue({ casts: [otherCast], next: {} });
+    await start('/profile/10?tab=likes');
+    expect(vi.mocked(getProfileFeed).mock.calls.some(([options]) => options.tab === 'likes')).toBe(true);
+    expect(container.querySelector('nav[aria-label="Profile content"] a[aria-current="page"]')?.textContent).toBe('Likes');
+    await click(button('Share profile'));
+    expect(dialog('Share profile').querySelector<HTMLInputElement>('input')?.value).toBe('https://quorum.arca.computer/profile/10');
+    await click(dialog('Share profile').querySelector('button[aria-label="Close dialog"]')!);
+    await click(container.querySelector('button[aria-label="More cast options"]')!);
+    expect(dialog('Cast options').querySelector('textarea')?.value).toBe(otherCast.text);
+    await click(button('Quote cast', dialog('Cast options')));
+    expect(dialog('Cast options')).toBeUndefined(); expect(dialog('Quote cast')).toBeDefined();
+  });
+
+  it('opens actual channel participants and clears the dialog on profile navigation', async () => {
+    const channel = { id: 'isolated', name: 'Isolated channel', url: 'https://example.org/channels/isolated' };
+    vi.mocked(getChannel).mockResolvedValue(channel);
+    await start('/channel/isolated');
+    await click(button('View participants'));
+    expect(getChannelMembers).toHaveBeenCalledWith('isolated', expect.anything());
+    const people = dialog('Participants · /Isolated channel'); expect(people).toBeDefined();
+    await click(people.querySelector('a[href="/profile/20"]')!);
+    expect(location.pathname).toBe('/profile/20'); expect(dialog('Participants · /Isolated channel')).toBeUndefined();
+  });
+
 });

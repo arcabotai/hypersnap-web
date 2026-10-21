@@ -305,3 +305,74 @@ describe('the fixed Hypersnap gateway', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 });
+
+describe('bounded public reaction endpoints', () => {
+  const target = `target_fid=3&target_hash=${'a'.repeat(40)}`;
+  it('forwards exact current-state and paginated history reads without credentials', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ messages: [] })); vi.stubGlobal('fetch', fetch);
+    const paths = [`/v1/reactionById?fid=7&reaction_type=Like&${target}`, '/v1/reactionsByFid?fid=7&reaction_type=Recast&pageSize=25&reverse=true&pageToken=dG9rZW4%3D'];
+    for (const path of paths) expect((await handleRequest(new Request(`${BASE}/api${path}`, { headers: { Cookie: 'private', Authorization: 'private' } }), env)).status).toBe(200);
+    expect(fetch.mock.calls.map(call => call[0])).toEqual(paths.map(path => `https://haatz.quilibrium.com${path}`));
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.method).toBe('GET'); expect(options.headers.get('Cookie')).toBeNull(); expect(options.headers.get('Authorization')).toBeNull();
+    }
+  });
+  it.each([
+    '/v1/reactionById?fid=7&reaction_type=like&target_fid=3&target_hash=' + 'a'.repeat(40),
+    '/v1/reactionById?fid=0&reaction_type=Like&target_fid=3&target_hash=' + 'a'.repeat(40),
+    '/v1/reactionById?fid=7&reaction_type=Like&target_fid=3',
+    '/v1/reactionById?fid=7&reaction_type=Like&target_url=https://evil.example',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=101&reverse=true',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=25&reverse=true&pageToken=https://evil.example',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=25&reverse=true&pageToken=a===',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=25&reverse=true&pageToken=dG9r&cursor=extra',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=25&reverse=true&fid=8',
+    '/v1/reactionsByFid?fid=7&reaction_type=Like&pageSize=25',
+  ])('rejects malformed or unbounded reaction reads: %s', async path => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    expect((await handleRequest(new Request(`${BASE}/api${path}`), env)).status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('maps only the exact verified reaction absence into reaction_not_found', async () => {
+    for (const metadata of ['', ', metadata: MetadataMap { headers: {} }']) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'Failed to get reaction', error_detail: `status: NotFound, message: "cast not found", details: []${metadata}` }, 400)));
+      const result = await handleRequest(new Request(`${BASE}/api/v1/reactionById?fid=7&reaction_type=Like&${target}`), env);
+      expect(result.status).toBe(404);
+      expect(await result.json()).toEqual({ code: 'reaction_not_found', message: 'This reaction does not exist.' });
+    }
+  });
+  it('keeps unrelated NotFound, storage errors, wrong status and wrong content type as failures', async () => {
+    for (const [value, status, contentType] of [
+      [{ error: 'Failed to get reaction', error_detail: 'status: Internal, message: "cast not found", details: []' }, 400, 'application/json'],
+      [{ error: 'Failed to get reaction', error_detail: 'status: NotFound, message: "FID not found", details: []' }, 400, 'application/json'],
+      [{ error: 'Other endpoint', error_detail: 'status: NotFound, message: "cast not found", details: []' }, 400, 'application/json'],
+      [{ error: 'Failed to get reaction', error_detail: 'untrusted status: NotFound, message: "cast not found", details: []' }, 400, 'application/json'],
+      [{ error: 'Failed to get reaction', error_detail: 'status: NotFound, message: "cast not found", details: []' }, 404, 'application/json'],
+      [{ error: 'Failed to get reaction', error_detail: 'status: NotFound, message: "cast not found", details: []' }, 400, 'text/html'],
+    ] as const) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(value), { status, headers: { 'Content-Type': contentType } })));
+      const result = await handleRequest(new Request(`${BASE}/api/v1/reactionById?fid=7&reaction_type=Like&${target}`), env);
+      expect((await result.json() as { code: string }).code).toBe('upstream_error');
+    }
+  });
+});
+
+describe('supported community queries', () => {
+  it('forwards only bounded suggested people, participant pages, and quote samples', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({})); vi.stubGlobal('fetch', fetch);
+    for (const path of ['/v2/farcaster/following/suggested?fid=7&limit=6', '/v2/farcaster/channel/members?channel_id=art&limit=25&cursor=5', `/v2/farcaster/cast/quotes?identifier=${'a'.repeat(40)}&type=hash&limit=25`]) {
+      expect((await handleRequest(new Request(`${BASE}/api${path}`), env)).status).toBe(200);
+    }
+    for (const path of ['/v2/farcaster/following/suggested?fid=7&limit=21', '/v2/farcaster/following/suggested?fid=7&limit=6&cursor=ignored', '/v2/farcaster/channel/members?channel_id=art&limit=26', '/v2/farcaster/channel/members?channel_id=art&limit=25&cursor=abc', `/v2/farcaster/cast/quotes?identifier=${'a'.repeat(40)}&type=hash&limit=25&cursor=ignored`]) {
+      expect((await handleRequest(new Request(`${BASE}/api${path}`), env)).status).toBe(400);
+    }
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+  it('preserves disabled social graph and participant index failures without false empty success', async () => {
+    for (const [path, message] of [['/v2/farcaster/following/suggested?fid=7&limit=6', 'Social graph indexing not enabled'], ['/v2/farcaster/channel/members?channel_id=art&limit=25', 'Channels indexing not enabled']]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ message }, 503)));
+      const result = await handleRequest(new Request(`${BASE}/api${path}`), env);
+      expect(result.status).toBe(503); expect((await result.json() as { code: string }).code).toBe('feature_unavailable');
+    }
+  });
+});

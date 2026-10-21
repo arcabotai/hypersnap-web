@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { ApiError, getCast, getFollowStatus, getSigners, getUser, submitMessage, type Cast, type SignersResponse, type User } from './api';
+import { ApiError, getCast, getFollowStatus, getReactionStatus, getSigners, getUser, submitMessage, type Cast, type SignersResponse, type User } from './api';
 import { deleteSavedSession, getSavedSessionMethod, hasSavedSession, preparePairing, unlockSavedSession, unlockSavedSessionWithPasskey, type PendingPairing, type PendingRevocation } from './auth';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES, hashPairingRequest, hashRevocationRequest, type PairingApproval, type RevocationApproval } from './pairing';
 import { blake3_20 } from './protocol/messageBuilder';
@@ -10,7 +10,7 @@ import * as vaultModule from './vault';
 import { enrollPasskey, evaluatePasskey, type PasskeyDescriptor } from './passkey';
 import { mediaGrantPayload } from './media';
 
-vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getCast: vi.fn(), getFollowStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
+vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), getCast: vi.fn(), getFollowStatus: vi.fn(), getReactionStatus: vi.fn(), getSigners: vi.fn(), getUser: vi.fn(), submitMessage: vi.fn() }));
 vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), compareAndSwapSavedVault: vi.fn(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
 vi.mock('./passkey', async importOriginal => ({ ...await importOriginal<typeof import('./passkey')>(), enrollPasskey: vi.fn(), evaluatePasskey: vi.fn() }));
 
@@ -89,6 +89,7 @@ describe('offline approved per-device authentication', () => {
       return structuredClone(currentCast);
     });
     vi.mocked(getSigners).mockImplementation(async () => structuredClone(registry));
+    vi.mocked(getReactionStatus).mockResolvedValue(false);
     vi.mocked(readSavedVault).mockResolvedValue(undefined);
     vi.mocked(writeSavedVault).mockImplementation(async vault => { vi.mocked(readSavedVault).mockResolvedValue(vault); });
     vi.mocked(deleteSavedVault).mockImplementation(async expected => {
@@ -782,6 +783,113 @@ describe('offline approved per-device authentication', () => {
     expect(fields(fields(vi.mocked(submitMessage).mock.calls[1][0]).get(1) as Uint8Array).get(1)).toBe(3);
     await expect(session.cast('😀'.repeat(257))).rejects.toThrow('1,024 UTF-8 bytes');
     await expect(session.react({ fid: 3, hash: 'bad' }, 'recast')).rejects.toThrow('Invalid cast hash');
+    session.dispose();
+  });
+
+  it('reads reaction status for this session and rejects invalid runtime reaction kinds before reads or writes', async () => {
+    const { session } = await connect();
+    vi.mocked(getReactionStatus).mockResolvedValue(true);
+    expect(await session.reactionStatus({ ...target, hash: `0x${target.hash.toUpperCase()}` }, 'like')).toBe(true);
+    expect(getReactionStatus).toHaveBeenCalledWith(session.fid, target, 'like', undefined);
+    for (const kind of ['LIKE', '', 'block'] as unknown as Array<'like'>) {
+      await expect(session.react(target, kind)).rejects.toThrow('Invalid reaction type');
+      await expect(session.reactionStatus(target, kind)).rejects.toThrow('Invalid reaction type');
+    }
+    expect(getReactionStatus).toHaveBeenCalledOnce();
+    expect(submitMessage).toHaveBeenCalledOnce();
+    session.dispose();
+    await expect(session.reactionStatus(target, 'like')).rejects.toThrow('session has ended');
+    expect(getReactionStatus).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('keeps an uncertain reaction remove=%s blocked across new view reads until its actual intent is visible', async remove => {
+    const { session } = await connect();
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Submission status is unknown.', 504, 'submission_unknown'));
+    await expect(session.react(target, 'like', remove)).rejects.toMatchObject({ code: 'submission_unknown' });
+    const attempted = { hash: bytesToHex(fields(vi.mocked(submitMessage).mock.calls[1][0]).get(2) as Uint8Array) };
+    const readAfterRemount = session.reactionStatus;
+    vi.mocked(getReactionStatus).mockResolvedValue(remove); // Still the old state, before inclusion.
+    await expect(readAfterRemount(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    await expect(session.react(target, 'like', remove)).rejects.toMatchObject({ code: 'submission_unknown' });
+    await expect(session.react(target, 'like', !remove)).rejects.toMatchObject({ code: 'submission_unknown' });
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    vi.mocked(getReactionStatus).mockResolvedValue(!remove);
+    expect(await readAfterRemount(target, 'like')).toBe(!remove);
+    expect(await session.react(target, 'like', remove)).toEqual(attempted); // A confirmed repeat is a receipt, not a new write.
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    await session.react(target, 'like', !remove);
+    expect(submitMessage).toHaveBeenCalledTimes(3);
+    expect(fields(fields(vi.mocked(submitMessage).mock.calls[2][0]).get(1) as Uint8Array).get(1)).toBe(remove ? 3 : 4);
+    session.dispose();
+  });
+
+  it('isolates uncertain reactions by target and kind and does not quarantine definitive or preflight failures', async () => {
+    const { session } = await connect();
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Unknown.', 502, 'submission_unknown'));
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    await session.react(target, 'recast');
+    await session.react({ ...target, hash: 'cd'.repeat(20) }, 'like');
+    expect(getReactionStatus).not.toHaveBeenCalled();
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Rejected.', 400, 'upstream_error'));
+    await expect(session.react(target, 'recast', true)).rejects.toMatchObject({ code: 'upstream_error' });
+    await session.react(target, 'recast', true);
+    vi.mocked(getUser).mockRejectedValueOnce(new ApiError('Read unavailable.', 502, 'submission_unknown'));
+    await expect(session.react(target, 'recast')).rejects.toThrow('Read unavailable');
+    await session.react(target, 'recast');
+    expect(getReactionStatus).not.toHaveBeenCalled();
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    expect(submitMessage).toHaveBeenCalledTimes(7);
+    session.dispose();
+  });
+
+  it('allows only one in-flight write for a reaction shared by multiple visible cards', async () => {
+    const { session } = await connect();
+    let submitted!: () => void; const entered = new Promise<void>(resolve => { submitted = resolve; });
+    let complete!: (value: {}) => void;
+    vi.mocked(submitMessage).mockImplementationOnce(async () => { submitted(); return new Promise(resolve => { complete = resolve; }); });
+    const first = session.react(target, 'like');
+    await entered;
+    await expect(session.react({ ...target, hash: `0x${target.hash}` }, 'like', true)).rejects.toThrow('already being submitted');
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    complete({}); await first;
+    session.dispose();
+  });
+
+  it('keeps uncertainty after a failed or cancelled read instead of trusting a late response', async () => {
+    const { session } = await connect();
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Unknown.', 504, 'submission_unknown'));
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    vi.mocked(getReactionStatus).mockRejectedValueOnce(new Error('Read unavailable.'));
+    await expect(session.reactionStatus(target, 'like')).rejects.toThrow('Read unavailable');
+    let finish!: (value: boolean) => void;
+    vi.mocked(getReactionStatus).mockImplementationOnce(async () => new Promise(resolve => { finish = resolve; }));
+    const controller = new AbortController();
+    const read = session.reactionStatus(target, 'like', controller.signal);
+    const rejected = expect(read).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort(); finish(true); await rejected;
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    vi.mocked(getReactionStatus).mockResolvedValue(true);
+    expect(await session.reactionStatus(target, 'like')).toBe(true);
+    await session.react(target, 'like');
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    session.dispose();
+  });
+
+  it('does not use a read started before an uncertain write to reconcile that later attempt', async () => {
+    const { session } = await connect();
+    let finish!: (value: boolean) => void;
+    vi.mocked(getReactionStatus).mockImplementationOnce(async () => new Promise(resolve => { finish = resolve; }));
+    const oldRead = session.reactionStatus(target, 'like');
+    const oldRejected = expect(oldRead).rejects.toMatchObject({ code: 'submission_unknown' });
+    vi.mocked(submitMessage).mockRejectedValueOnce(new ApiError('Unknown.', 504, 'submission_unknown'));
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    finish(true); await oldRejected;
+    await expect(session.react(target, 'like')).rejects.toMatchObject({ code: 'submission_unknown' });
+    expect(submitMessage).toHaveBeenCalledTimes(2);
+    vi.mocked(getReactionStatus).mockResolvedValue(true);
+    await session.react(target, 'like');
+    expect(submitMessage).toHaveBeenCalledTimes(2);
     session.dispose();
   });
 

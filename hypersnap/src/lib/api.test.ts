@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getChannel, getChannels, getConversation, getFeed, getFollows, getFollowStatus, getNotifications, getProfileFeed, getSigners, getUser, hasImageEmbed, searchCasts, searchUsers, submitMessage, type Cast, type User } from './api';
+import { getChannel, getChannels, getConversation, getFeed, getFollows, getFollowStatus, getNotifications, getProfileFeed, getReactionStatus, getReactionStatuses, getSuggestedUsers, getChannelMembers, getCastQuotes, getSigners, getUser, hasImageEmbed, searchCasts, searchUsers, submitMessage, type Cast, type User } from './api';
 
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 const user = (fid: number): User => ({ fid, username: `alice${fid}`, custody_address: '', profile: { bio: { text: '' } }, follower_count: 0, following_count: 0 });
@@ -316,5 +316,184 @@ describe('browser API client', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(fetch.mock.calls[0][1].signal?.aborted).toBe(true);
+  });
+});
+
+const reaction = (letter: string, type: 'Like' | 'Recast' = 'Like', targetFid = 3, accountFid = 7) => ({
+  hash: `0x${letter.repeat(40)}`,
+  data: { type: 'MESSAGE_TYPE_REACTION_ADD', fid: accountFid, timestamp: 183000000, network: 'FARCASTER_NETWORK_MAINNET',
+    reactionBody: { type: type === 'Like' ? 'REACTION_TYPE_LIKE' : 'REACTION_TYPE_RECAST', targetCastId: { fid: targetFid, hash: `0x${letter.repeat(40)}` } } },
+});
+const absentReaction = () => new Response(JSON.stringify({ code: 'reaction_not_found', message: 'Absent' }), { status: 404 });
+
+describe('authoritative public reaction reads', () => {
+  it('resolves actual viewer state and accepts only its exact normalized absence code', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(reaction('a'))).mockResolvedValueOnce(absentReaction());
+    vi.stubGlobal('fetch', fetch);
+    expect(await getReactionStatus(7, { fid: 3, hash: 'a'.repeat(40) }, 'like')).toBe(true);
+    expect(await getReactionStatus(7, { fid: 3, hash: 'a'.repeat(40) }, 'recast')).toBe(false);
+    expect(fetch.mock.calls[0][0]).toBe(`/api/v1/reactionById?fid=7&reaction_type=Like&target_fid=3&target_hash=${'a'.repeat(40)}`);
+    for (const [status, code] of [[400, 'reaction_not_found'], [404, 'upstream_error'], [502, 'upstream_error']] as const) {
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify({ status, code }), { status }));
+      await expect(getReactionStatus(7, { fid: 3, hash: 'a'.repeat(40) }, 'like')).rejects.toThrow();
+    }
+  });
+
+  it('refuses mismatched authors, targets, subtypes and invalid input instead of inventing viewer state', async () => {
+    const target = { fid: 3, hash: 'a'.repeat(40) };
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    for (const value of [reaction('a', 'Like', 3, 8), reaction('b'), reaction('a', 'Recast'), reaction('a', 'Like', 4), { data: {} }]) {
+      fetch.mockResolvedValueOnce(response(value));
+      await expect(getReactionStatus(7, target, 'like')).rejects.toMatchObject({ code: 'invalid_response' });
+    }
+    const count = fetch.mock.calls.length;
+    await expect(getReactionStatus(0, target, 'like')).rejects.toThrow('ID');
+    await expect(getReactionStatus(7, { ...target, hash: 'short' }, 'like')).rejects.toThrow('hash');
+    expect(fetch).toHaveBeenCalledTimes(count);
+  });
+
+  it('deduplicates visible targets, bounds status reads to four requests, and keys results to the viewer', async () => {
+    let inFlight = 0, max = 0;
+    const fetch = vi.fn().mockImplementation(async () => {
+      inFlight++; max = Math.max(max, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      inFlight--;
+      return absentReaction();
+    });
+    vi.stubGlobal('fetch', fetch);
+    const targets = ['a', 'b', 'c'].map(letter => ({ fid: 3, hash: letter.repeat(40) }));
+    expect(await getReactionStatuses(7, [...targets, { fid: 3, hash: `0x${targets[0].hash}` }])).toEqual(targets.map(target => ({ ...target, viewerFid: 7, liked: false, recasted: false })));
+    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(max).toBeLessThanOrEqual(4);
+    await expect(getReactionStatuses(7, new Array(26).fill(targets[0]))).rejects.toThrow('25 visible');
+    expect(fetch).toHaveBeenCalledTimes(6);
+  });
+
+  it('rejects partial status failures and cancels pending reads on account cancellation', async () => {
+    const fetch = vi.fn().mockRejectedValue(new Error('Disconnected'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(getReactionStatuses(7, [{ fid: 3, hash: 'a'.repeat(40) }])).rejects.toThrow('Disconnected');
+    const controller = new AbortController(); controller.abort();
+    const calls = fetch.mock.calls.length;
+    await expect(getReactionStatuses(7, [{ fid: 3, hash: 'a'.repeat(40) }], controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetch).toHaveBeenCalledTimes(calls);
+  });
+});
+
+describe('profile likes and recasts', () => {
+  it.each([['likes', 'Like', 'like'], ['recasts', 'Recast', 'recast']] as const)('loads newest-first %s and hydrates the actual target casts', async (tab, wireType, type) => {
+    const full = cast('a', { text: 'Authoritative target content' });
+    const fetch = vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a', wireType)], nextPageToken: 'dG9rZW4=' })).mockResolvedValueOnce(response({ cast: full }));
+    vi.stubGlobal('fetch', fetch);
+    const page = await getProfileFeed({ fid: 7, tab, limit: 1 });
+    expect(page).toEqual({ casts: [{ ...full, reaction_context: { fid: 7, type, timestamp: new Date((183000000 + 1609459200) * 1000).toISOString() } }], next: { cursor: 'dG9rZW4=' } });
+    expect(fetch.mock.calls[0][0]).toBe(`/api/v1/reactionsByFid?fid=7&reaction_type=${wireType}&pageSize=1&reverse=true`);
+    expect(fetch.mock.calls[1][0]).toBe(`/api/v2/farcaster/cast?identifier=${'a'.repeat(40)}&type=hash`);
+  });
+
+  it('continues past verified deleted targets with the real opaque cursor and no result loss', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a')], nextPageToken: 'dG9rZW4=' }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'cast_not_found' }), { status: 404 }))
+      .mockResolvedValueOnce(response({ messages: [reaction('b')], nextPageToken: '' }))
+      .mockResolvedValueOnce(response({ cast: cast('b') }));
+    vi.stubGlobal('fetch', fetch);
+    const page = await getProfileFeed({ fid: 7, tab: 'likes', limit: 1 });
+    expect(page.casts.map(value => value.hash)).toEqual(['b'.repeat(40)]);
+    expect(page.next.cursor).toBeNull();
+    expect(fetch.mock.calls[2][0]).toContain('pageToken=dG9rZW4%3D');
+    expect(fetch.mock.calls[2][0]).toContain('pageSize=1');
+  });
+
+  it('retains a continuation after the bounded scan of sparse URL-only reactions', async () => {
+    const urlReaction = { ...reaction('a'), data: { ...reaction('a').data, reactionBody: { type: 'REACTION_TYPE_LIKE', targetUrl: 'https://example.com' } } };
+    const fetch = vi.fn().mockImplementation(async (path: string) => {
+      const page = Number(new URL(path, 'https://local').searchParams.get('pageToken') ? atob(new URL(path, 'https://local').searchParams.get('pageToken')!) : '0');
+      return response({ messages: [urlReaction], nextPageToken: btoa(String(page + 1)) });
+    });
+    vi.stubGlobal('fetch', fetch);
+    expect(await getProfileFeed({ fid: 7, tab: 'likes', limit: 1 })).toEqual({ casts: [], next: { cursor: btoa('5') } });
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
+
+  it('fails closed on invalid reaction receipts, unsafe/repeated cursors, wrong target hydration and non-deletion errors', async () => {
+    for (const initial of [
+      { messages: [reaction('a', 'Like', 3, 8)] },
+      { messages: [reaction('a')], nextPageToken: 'https://evil.example/' },
+      { messages: [reaction('a')], nextPageToken: 'dG9rZW4=' },
+      { messages: [reaction('a'), reaction('b')] },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response(initial)));
+      await expect(getProfileFeed({ fid: 7, tab: 'likes', cursor: 'dG9rZW4=', limit: 1 })).rejects.toMatchObject({ code: 'invalid_response' });
+    }
+    for (const hydration of [response({ cast: cast('b') }), response({ cast: cast('a', { author: user(4) }) }), new Response(JSON.stringify({ code: 'upstream_error' }), { status: 404 })]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a')] })).mockResolvedValueOnce(hydration));
+      await expect(getProfileFeed({ fid: 7, tab: 'likes', limit: 1 })).rejects.toThrow();
+    }
+  });
+});
+
+describe('bounded community reads', () => {
+  it('loads friends-of-friends without exposing self or duplicate recommendations', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ users: [user(3), user(4), user(3)] })); vi.stubGlobal('fetch', fetch);
+    expect(await getSuggestedUsers(4, 6)).toEqual({ users: [user(3)] });
+    expect(fetch.mock.calls[0][0]).toBe('/api/v2/farcaster/following/suggested?fid=4&limit=6');
+    await expect(getSuggestedUsers(4, 21)).rejects.toThrow('20');
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it('reads actual channel participants with bounded decimal pagination', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ members: [{ user: user(3), role: 'member' }], next: { cursor: '3' } })); vi.stubGlobal('fetch', fetch);
+    expect(await getChannelMembers('art', { cursor: '2', limit: 25 })).toEqual({ users: [user(3)], next: { cursor: '3' } });
+    expect(fetch.mock.calls[0][0]).toBe('/api/v2/farcaster/channel/members?channel_id=art&limit=25&cursor=2');
+    await expect(getChannelMembers('https://evil.test')).rejects.toThrow('channel');
+    await expect(getChannelMembers('art', { cursor: 'abc' })).rejects.toThrow('cursor');
+    await expect(getChannelMembers('art', { limit: 26 })).rejects.toThrow('25');
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it('returns an explicit quote sample without inventing archive pagination or accepting unrelated casts', async () => {
+    const quoted = cast('b', { embeds: [{ cast_id: { fid: 3, hash: `0x${'a'.repeat(40)}` } }] });
+    const fetch = vi.fn().mockResolvedValueOnce(response({ casts: [quoted], next: { cursor: 'ignored' } })).mockResolvedValueOnce(response({ casts: [] }))
+      .mockResolvedValueOnce(response({ casts: [cast('c')] })); vi.stubGlobal('fetch', fetch);
+    expect(await getCastQuotes('a'.repeat(40))).toEqual({ casts: [quoted], next: { cursor: null } });
+    expect(await getCastQuotes('a'.repeat(40))).toEqual({ casts: [], next: { cursor: null } });
+    expect(fetch.mock.calls[0][0]).toBe(`/api/v2/farcaster/cast/quotes?identifier=${'a'.repeat(40)}&type=hash&limit=25`);
+    await expect(getCastQuotes('a'.repeat(40))).rejects.toThrow('invalid quote');
+    await expect(getCastQuotes('a'.repeat(40), 26)).rejects.toThrow('25');
+  });
+  it('rejects malformed people and repeated participant cursors', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ users: [{ fid: 0 }] })).mockResolvedValueOnce(response({ members: [{ user: user(3) }], next: { cursor: '3' } })); vi.stubGlobal('fetch', fetch);
+    await expect(getSuggestedUsers(7)).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(getChannelMembers('art', { cursor: '3' })).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+});
+
+describe('reaction-history operation deadline', () => {
+  it('bounds the entire lookup plus target hydration to 25 seconds and cleans every timer', async () => {
+    vi.useFakeTimers();
+    try {
+      let hydrationSignal: AbortSignal | undefined;
+      const fetch = vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a')] })).mockImplementationOnce((_url, options) => new Promise((_resolve, reject) => {
+        hydrationSignal = options.signal;
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      }));
+      vi.stubGlobal('fetch', fetch);
+      const pending = expect(getProfileFeed({ fid: 7, tab: 'likes', limit: 1 })).rejects.toMatchObject({ status: 504, code: 'timeout' });
+      await vi.advanceTimersByTimeAsync(25_000);
+      await pending;
+      expect(hydrationSignal?.aborted).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+  it('preserves caller cancellation and removes the aggregate deadline without converting cancellation into an empty page', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const fetch = vi.fn().mockImplementation((_url, options) => new Promise((_resolve, reject) => { options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }); }));
+      vi.stubGlobal('fetch', fetch);
+      const pending = expect(getProfileFeed({ fid: 7, tab: 'recasts', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+      controller.abort();
+      await pending;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 });

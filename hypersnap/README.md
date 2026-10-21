@@ -36,16 +36,20 @@ The retained Quorum app and this fork's own application code remain under the re
 
 Implemented:
 
-- Public trending and following feeds, shareable profile Casts/Replies/Photos tabs, indexed channel discovery/search/detail/feeds and channel posting, bookmarks, dark/light theme, responsive navigation, and session locking.
+- Public trending and following home tabs, shareable profile Casts/Replies/Photos/Likes/Recasts tabs, indexed channel discovery/search/detail/feeds and channel posting, bookmarks, dark/light theme, responsive navigation, and session locking.
 - Search public casts or people at `/search`; shareable queries and profile tabs survive Back/Forward and direct loads. Cast search is a bounded ranked result set; people search uses the node’s prefix index.
-- Recent notifications at `/notifications` for follows, reactions, replies and mentions, with per-account read state stored on this device. Hypersnap’s bounded activity scan is not a complete historical inbox; the client never calls the node’s placeholder mark-seen POST.
+- Recent notifications at `/notifications` for follows, reactions, replies and mentions, with All/Unread/type filters and per-account read state stored on this device. Hypersnap’s bounded activity scan is not a complete historical inbox; the client never calls the node’s placeholder mark-seen POST.
 - Protocol quote embeds and confirmed deletion of the connected account’s own casts. Unknown deletion submissions permit read-only reconciliation, with no automatic resubmission.
 - Shareable cast links at `/cast/<full-hash>`, public profiles at `/profile/<fid>` or `/profile/<username>`, and the connected account's `/profile` page. Browser Back/Forward and direct page loads restore these views; sharing uses our canonical domain.
-- Nested conversation reading, casts/replies, and like/recast add/remove. Existing protocol mentions become clickable profile links using validated UTF-8 insertion positions. The composer resolves a username or FID through Hypersnap and inserts an explicitly selected account mention; ordinary unselected `@text` stays literal.
+- Nested conversation reading with parent links, casts/replies, and like/recast add/remove. Connected-user reaction state uses actual account-scoped protocol receipts after refresh; unknown reaction writes remain blocked in the active session until their intended state is visible. Existing protocol mentions become clickable profile links using validated UTF-8 insertion positions. The composer resolves a username or FID through Hypersnap and inserts an explicitly selected account mention; ordinary unselected `@text` stays literal.
 - Public follower/following lists, following/unfollowing after explicit expanded permission approval, and editing display name, bio, or profile image. Banner writes are excluded because Hypersnap requires Pro status and does not reliably hydrate them in its public user response.
+- Explicit account/destination-scoped draft Save/Restore/Discard in this browser tab (24-hour TTL), inline mention suggestions with keyboard selection, Ctrl/Command+Enter publishing, pasted-image uploads, an accessible image viewer, copy-cast-text tools, and profile sharing/linked-address details. Drafts contain only text, public mention references and uploaded image URLs; they never contain signing keys or auto-submit.
+- Saved channel shortcuts labeled as browser-local, paginated channel participants (accounts that posted), bounded friends-of-friends profile suggestions, and a bounded quote-cast viewer with explicit node-index limits.
 - Authenticated public JPEG, PNG, WebP, or GIF uploads up to 5 MiB, with up to two image attachments per cast. The R2/SQLite Durable Object storage and quota boundary is documented in [MEDIA.md](MEDIA.md).
 
 Excluded: creating Farcaster accounts, paid storage/on-chain registration, seed recovery, wallet transfers, DM transport, push notifications, video uploads, end-user media deletion, and mini-app execution. Channel discovery depends on the Hypersnap node’s channel index. Channel parent URLs are protocol identifiers; the client does not contact any external service to resolve them.
+
+See [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md) for the source-backed feature matrix and upstream limitations.
 
 The [MIT-licensed Farcaster client snapshot](https://github.com/farcasterxyz/client) informed familiar sharing, profile, and conversation UX. These features are independently implemented against Hypersnap; no Farcaster-hosted API client, account service, websocket, or source dependency was imported.
 

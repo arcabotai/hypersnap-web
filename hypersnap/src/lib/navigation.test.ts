@@ -55,6 +55,13 @@ describe('public Hypersnap routes', () => {
     expect(parseLocalPath(search)).toEqual({ kind: 'search', query: 'hello 🌱', searchKind: 'users' });
     expect(routePath(parseLocalPath(search))).toBe(search);
     expect(routePath(parseLocalPath('/profile/1234?tab=media'))).toBe('/profile/1234?tab=media');
+    for (const tab of ['likes', 'recasts'] as const) {
+      expect(route('/profile', `?tab=${tab}`)).toEqual({ kind: 'profile', tab });
+      expect(route('/profile/1234', `?tab=${tab}`)).toEqual({ kind: 'profile', identifier: '1234', tab });
+      expect(profilePath(1234, tab)).toBe(`/profile/1234?tab=${tab}`);
+      expect(routePath(parseLocalPath(profilePath(1234, tab)))).toBe(`/profile/1234?tab=${tab}`);
+      expect(route('/profile/1234', `?tab=${tab}&tab=casts`).kind).toBe('not-found');
+    }
   });
 
   it('bounds search input and refuses ambiguous or unsupported search modes', () => {

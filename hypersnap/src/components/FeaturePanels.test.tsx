@@ -2,8 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChannelsView, NotificationsView, ProfileTabs, SearchView } from './FeaturePanels';
-import { getChannels, getNotifications, searchCasts, searchUsers, type ActivityItem, type Cast, type User } from '../lib/api';
+import { ChannelHeader, ChannelsView, NotificationsView, ProfileTabs, SearchView } from './FeaturePanels';
+import { getChannels, getNotifications, searchCasts, searchUsers, type ActivityItem, type Cast, type Channel, type User } from '../lib/api';
 
 vi.mock('../lib/api', () => ({ getChannels: vi.fn(), getNotifications: vi.fn(), searchCasts: vi.fn(), searchUsers: vi.fn() }));
 
@@ -110,6 +110,51 @@ describe('isolated feature panels', () => {
     expect(container.textContent).toContain('could not save read status');
   });
 
+  it('filters loaded activity locally, keeps continuation available and marks loaded results read across filters', async () => {
+    const first = activity('reaction', '2026-10-19T12:00:00.000Z');
+    const mention: ActivityItem = { ...activity('mention', '2026-10-19T12:01:00.000Z'), type: 'mentions' };
+    vi.mocked(getNotifications).mockResolvedValueOnce({ notifications: [first], next: { cursor: 'older' } }).mockResolvedValueOnce({ notifications: [mention], next: {} });
+    await render(<NotificationsView fid={10} onConnect={vi.fn()} onProfile={vi.fn()} onCast={vi.fn()} />);
+    await click(button('Mentions'));
+    expect(button('Mentions').getAttribute('aria-pressed')).toBe('true');
+    expect(container.textContent).toContain('No mentions in the loaded results.');
+    expect(container.textContent).toContain('Load more activity to check earlier events');
+    expect(getNotifications).toHaveBeenCalledOnce();
+    await click(button('Load more activity'));
+    expect(vi.mocked(getNotifications).mock.calls[1][0].cursor).toBe('older');
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(1);
+    expect(container.querySelector('.feature-activity')?.textContent).toContain('mentioned you');
+    await click(button('Unread'));
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(2);
+    await click(button('Mark read'));
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(0);
+    expect(container.textContent).toContain('No unread activity in the loaded results.');
+    await click(button('All'));
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-unread]')).toHaveLength(0);
+    expect(getNotifications).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the actual activity types and resets a filter when changing accounts', async () => {
+    const types: ActivityItem['type'][] = ['mentions', 'replies', 'reactions', 'follows', 'unknown'];
+    const items = types.map((type, index) => ({ ...activity(String(index), '2026-10-19T12:00:00.000Z'), type }));
+    vi.mocked(getNotifications).mockResolvedValue({ notifications: items, next: {} });
+    const props = { onConnect: vi.fn(), onProfile: vi.fn(), onCast: vi.fn() };
+    await render(<NotificationsView {...props} fid={10} />);
+    for (const [label, text] of [['Replies', 'replied to your cast'], ['Reactions', 'reacted to your cast'], ['Follows', 'followed you']]) {
+      await click(button(label));
+      expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(1);
+      expect(container.querySelector('.feature-activity')?.textContent).toContain(text);
+    }
+    await click(button('All'));
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(5);
+    await click(button('Mentions'));
+    await render(<NotificationsView {...props} fid={11} />);
+    expect(button('All').getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelectorAll('.feature-activity > li')).toHaveLength(5);
+    expect(getNotifications).toHaveBeenCalledTimes(2);
+  });
+
   it('does not request account activity before a wallet is connected', async () => {
     const onConnect = vi.fn();
     await render(<NotificationsView onConnect={onConnect} onProfile={vi.fn()} onCast={vi.fn()} />);
@@ -155,6 +200,41 @@ describe('isolated feature panels', () => {
     expect(container.textContent).toContain('2 participants');
   });
 
+  it('opens saved channel shortcuts without a node request and ignores a late directory response', async () => {
+    const remote = deferred<{ channels: Channel[]; next: {} }>();
+    vi.mocked(getChannels).mockReturnValueOnce(remote.promise);
+    const saved: Channel = { id: 'saved', name: 'Saved channel', url: 'https://example.com/saved' };
+    const onChannel = vi.fn(); const onToggleSave = vi.fn();
+    await render(<ChannelsView onChannel={onChannel} savedChannels={[saved]} onToggleSave={onToggleSave} />);
+    const signal = vi.mocked(getChannels).mock.calls[0][0].signal!;
+    await click(button('Saved channels'));
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector('a[href="/channel/saved"]')).not.toBeNull();
+    expect(container.textContent).toContain('shortcuts on this browser');
+    expect(getChannels).toHaveBeenCalledOnce();
+    await click(container.querySelector('button[aria-label="Remove /saved from saved channels"]')!);
+    expect(onToggleSave).toHaveBeenCalledWith(saved); expect(onChannel).not.toHaveBeenCalled();
+    await click(container.querySelector('a[href="/channel/saved"]')!);
+    expect(onChannel).toHaveBeenCalledWith(saved);
+    await act(async () => remote.resolve({ channels: [{ id: 'late', name: 'Late channel', url: '' }], next: {} }));
+    expect(container.querySelector('a[href="/channel/late"]')).toBeNull();
+    expect(container.querySelector('a[href="/channel/saved"]')).not.toBeNull();
+    await render(<ChannelsView onChannel={onChannel} savedChannels={[]} onToggleSave={onToggleSave} />);
+    expect(container.textContent).toContain('Keep your favorite channels nearby.');
+    expect(getChannels).toHaveBeenCalledOnce();
+  });
+
+  it('offers channel saving in the header without representing a network subscription', async () => {
+    const channel: Channel = { id: 'quorum', name: 'Quorum', url: 'https://example.com/quorum' };
+    const onToggleSave = vi.fn();
+    await render(<ChannelHeader channel={channel} onToggleSave={onToggleSave} />);
+    await click(button('Save channel'));
+    expect(onToggleSave).toHaveBeenCalledWith(channel);
+    await render(<ChannelHeader channel={channel} saved onToggleSave={onToggleSave} />);
+    expect(button('Saved on this browser').getAttribute('aria-pressed')).toBe('true');
+    expect(container.textContent).toContain('local shortcuts on this browser');
+  });
+
   it('gives each profile tab a shareable URL and intercepts only an ordinary click', async () => {
     const onChange = vi.fn();
     await render(<ProfileTabs fid={10} tab="replies" onChange={onChange} />);
@@ -164,5 +244,9 @@ describe('isolated feature panels', () => {
     expect(photos.textContent).toBe('Photos');
     expect(await click(photos, { ctrlKey: true })).toBe(true); expect(onChange).not.toHaveBeenCalled();
     expect(await click(photos)).toBe(false); expect(onChange).toHaveBeenCalledWith('media');
+    const likes = container.querySelector<HTMLAnchorElement>('a[href="/profile/10?tab=likes"]')!;
+    const recasts = container.querySelector<HTMLAnchorElement>('a[href="/profile/10?tab=recasts"]')!;
+    expect(likes.textContent).toBe('Likes'); expect(recasts.textContent).toBe('Recasts');
+    expect(await click(recasts)).toBe(false); expect(onChange).toHaveBeenLastCalledWith('recasts');
   });
 });

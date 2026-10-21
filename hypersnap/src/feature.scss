@@ -58,8 +58,11 @@
 .feature-activity__cast:hover { border-color: var(--accent-300); color: var(--color-text-strong); }
 .feature-activity a:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .2rem; border-radius: .4rem; }
 .feature-channels { list-style: none; margin: 0; padding: 0; }
+.feature-channels > li { display: flex; align-items: center; }
 .feature-channels > li + li { border-top: .0625rem solid var(--border); }
-.feature-channels a { display: flex; align-items: flex-start; gap: .85rem; padding: 1.3rem 1.75rem; color: inherit; text-decoration: none; }
+.feature-channels a { display: flex; flex: 1; min-width: 0; align-items: flex-start; gap: .85rem; padding: 1.3rem 1.75rem; color: inherit; text-decoration: none; }
+.feature-channel-save { flex-shrink: 0; margin-right: 1.25rem; font-size: .65rem; padding: .6rem .7rem; }
+.feature-channel-save[aria-pressed="true"] { color: var(--accent-300); }
 .feature-channels a:hover { background: var(--surface-1); }
 .feature-channels a:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: -.2rem; }
 .feature-channels a > img, .feature-channel-mark { width: 2.9rem; height: 2.9rem; object-fit: cover; border-radius: .85rem; flex-shrink: 0; }
@@ -93,4 +96,7 @@
   .feature-activity__symbol { width: 1.25rem; }
   .feature-toolbar { flex-wrap: wrap; }
   .feature-toolbar .button { min-height: 2.5rem; }
+  .feature-channel-save { margin-right: .6rem; padding-inline: .55rem; min-height: 2.75rem; }
+  .feature-channel-save > span { display: none; }
+  .feature-channels:has(.feature-channel-save) a { padding-right: .6rem; }
 }

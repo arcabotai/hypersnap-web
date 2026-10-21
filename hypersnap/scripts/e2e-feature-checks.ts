@@ -14,7 +14,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import 'fake-indexeddb/auto';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { getCast, getChannel, getChannels, getFeed, getFollowStatus, getNotifications, getProfileFeed, getUser, searchCasts, searchUsers, type Cast } from '../src/lib/api';
+import { getCast, getCastQuotes, getChannel, getChannelMembers, getChannels, getFeed, getFollowStatus, getNotifications, getProfileFeed, getReactionStatus, getReactionStatuses, getSuggestedUsers, getUser, searchCasts, searchUsers, type Cast } from '../src/lib/api';
 import { unlockSavedSession, type WalletSession } from '../src/lib/auth';
 import { FULL_CLIENT_SCOPES } from '../src/lib/pairing';
 import { uploadMedia } from '../src/lib/media';
@@ -23,8 +23,10 @@ import { deleteSavedVault, encryptSignerVault, writeSavedVault } from '../src/li
 
 const ORIGIN = 'https://quorum.arca.computer';
 const args = process.argv.slice(2);
-assert.equal(args.length, 2, 'Use --identity-file /tmp/arca-hypersnap-e2e-features/identity.json.');
+assert([2, 3].includes(args.length), 'Use --identity-file /tmp/arca-hypersnap-e2e-features/identity.json [--read-only].');
 assert.equal(args[0], '--identity-file');
+if (args.length === 3) assert.equal(args[2], '--read-only');
+const readOnly = args[2] === '--read-only';
 const identityFile = path.resolve(args[1]);
 assert.match(identityFile, /^\/(?:private\/)?tmp\/arca-hypersnap-e2e(?:-[a-z0-9-]+)?\/identity\.json$/, 'Use a dedicated synthetic fixture directory.');
 const fixture = JSON.parse(await fs.readFile(identityFile, 'utf8'));
@@ -52,6 +54,7 @@ globalThis.fetch = async (input, init) => {
   const incoming = typeof input === 'string' ? new URL(input, ORIGIN) : input instanceof URL ? input : new URL(input.url);
   if (incoming.origin === ORIGIN) {
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+    if (readOnly) assert.equal(method, 'GET', 'Read-only feature checks refuse mutations before dispatch.');
     if (method === 'POST' && incoming.pathname === '/api/v1/submitMessage') submissions++;
     // Native browsers attach Origin to same-origin POSTs. Node fetch does not.
     const headers = new Headers(init?.headers);
@@ -95,6 +98,38 @@ async function confirmedCast(session: WalletSession, text: string, ...options: P
 }
 
 try {
+  if (readOnly) {
+    // Inspect the completed fixture without unlocking any signer or adding a
+    // mutation. Its original root was deleted; its surviving quote still gives
+    // us a real reverse-index target, proving quote lookup need not invent one.
+    const [ownerFeed, otherFeed, participants, suggestions, likes, recasts] = await Promise.all([
+      getFeed({ kind: 'user', fid: fixture.fid, limit: 100 }),
+      getFeed({ kind: 'user', fid: fixture.otherFid, limit: 100 }),
+      getChannelMembers('arca-e2e'),
+      getSuggestedUsers(fixture.otherFid, 6),
+      getProfileFeed({ fid: fixture.otherFid, tab: 'likes', limit: 25 }),
+      getProfileFeed({ fid: fixture.otherFid, tab: 'recasts', limit: 25 }),
+    ]);
+    const quote = [...ownerFeed.casts, ...otherFeed.casts].find(cast => cast.embeds.some(embed => 'cast_id' in embed && embed.cast_id.fid === fixture.fid));
+    assert(quote, 'The completed fixture must have a surviving real quote.');
+    const reference = quote.embeds.find((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && embed.cast_id.fid === fixture.fid)!;
+    const quotes = await getCastQuotes(reference.cast_id.hash);
+    assert(quotes.casts.some(cast => cast.hash.replace(/^0x/, '') === quote.hash.replace(/^0x/, '')), 'The node must return its real surviving quote.');
+    assert(participants.users.some(user => user.fid === fixture.fid));
+    assert(suggestions.users.length <= 6 && suggestions.users.every(user => user.fid !== fixture.otherFid));
+    for (const [feed, type] of [[likes, 'like'], [recasts, 'recast']] as const) assert(feed.casts.every(cast => cast.reaction_context?.fid === fixture.otherFid && cast.reaction_context.type === type));
+    const removed = await getReactionStatuses(fixture.otherFid, [reference.cast_id]);
+    assert(removed.every(status => !status.liked && !status.recasted), 'The earlier fixture removals must remain absent.');
+    assert.equal(submissions, 0, 'Read-only mode must not submit any messages.');
+    const proof = {
+      kind: 'actual-local-hypersnap-community-read-checks', actualNode: node.origin, productionWrites: 0, localSignedSubmissions: submissions,
+      registryMocked: false, apiMocked: false, quoteReverseIndex: true, channelParticipantIndex: true,
+      suggestedProfilesRead: true, suggestedProfileCount: suggestions.users.length, likesCount: likes.casts.length, recastsCount: recasts.casts.length,
+      removedReactionStatesVerified: true, actualNodeRequests: runtime.nodeRequests.length,
+    };
+    await fs.writeFile(path.join(path.dirname(identityFile), 'feature-read-checks-proof.json'), JSON.stringify(proof, null, 2));
+    console.log(JSON.stringify(proof));
+  } else {
   const owner = await sessionFor(fixture.fid, fixture.devicePrivateKeyHex);
   const other = await sessionFor(fixture.otherFid, fixture.otherDevicePrivateKeyHex);
   console.log('PASS actual node registry + real encrypted-vault unlock for both isolated accounts');
@@ -110,6 +145,7 @@ try {
   const rootTarget = { fid: owner.fid, hash: root.hash };
   const quote = await confirmedCast(owner, `${token} quote`, undefined, { embeds: [{ castId: rootTarget }] });
   assert(quote.embeds.some(embed => 'cast_id' in embed && embed.cast_id.fid === owner.fid && embed.cast_id.hash.replace(/^0x/, '') === root.hash.replace(/^0x/, '')));
+  await until('quote reverse index', () => getCastQuotes(root.hash), result => result.casts.some(cast => cast.hash === quote.hash));
   console.log('PASS signed cast-ID quote embed persisted and hydrated by Hypersnap');
 
   const channelId = 'arca-e2e';
@@ -121,6 +157,7 @@ try {
   const searchedChannels = await until('channel search', () => getChannels({ kind: 'search', query: channelId }), result => result.channels.some(channel => channel.id === channelId));
   assert(searchedChannels.channels[0].member_count! >= 1);
   await until('channel feed inclusion', () => getFeed({ kind: 'channel', channel: channelId }), feed => feed.casts.some(cast => cast.hash === channelCast.hash));
+  await until('channel participant index', () => getChannelMembers(channelId), result => result.users.some(user => user.fid === owner.fid));
   console.log('PASS channel parent URL + detail + directory search + actual channel feed');
 
   const media = await uploadMedia(new File([new Uint8Array(runtimeModule.E2E_PNG)], 'isolated-test.png', { type: 'image/png' }), input => owner.authorizeMediaUpload(input));
@@ -136,8 +173,29 @@ try {
   assert.equal(reply.parent_author?.fid, owner.fid);
   assert(mention.mentioned_profiles?.some(user => user.fid === owner.fid));
   await other.react(rootTarget, 'like');
+  await until('persisted like receipt', () => getReactionStatus(other.fid, rootTarget, 'like'), liked => liked);
+  await other.react(rootTarget, 'recast');
+  await until('persisted like and recast state', () => getReactionStatuses(other.fid, [rootTarget]), states => states.length === 1 && states[0].liked && states[0].recasted);
+  const likedCasts = await until('profile Likes history', () => getProfileFeed({ fid: other.fid, tab: 'likes', limit: 100 }), feed => feed.casts.some(cast => cast.hash === root.hash));
+  const recastCasts = await until('profile Recasts history', () => getProfileFeed({ fid: other.fid, tab: 'recasts', limit: 100 }), feed => feed.casts.some(cast => cast.hash === root.hash));
+  for (const [feed, type] of [[likedCasts, 'like'], [recastCasts, 'recast']] as const) {
+    const hydrated = feed.casts.find(cast => cast.hash === root.hash)!;
+    assert.equal(hydrated.text, root.text);
+    assert.equal(hydrated.author.fid, owner.fid);
+    assert.equal(hydrated.reaction_context?.fid, other.fid);
+    assert.equal(hydrated.reaction_context?.type, type);
+    assert(Number.isFinite(Date.parse(hydrated.reaction_context!.timestamp)));
+  }
+  // Fresh reads, rather than optimistic card state, must preserve both toggles.
+  assert(await getReactionStatus(other.fid, rootTarget, 'like'));
+  assert(await getReactionStatus(other.fid, rootTarget, 'recast'));
+  assert.equal(await getReactionStatus(owner.fid, rootTarget, 'like'), false, 'Viewer state must not leak between the two isolated accounts.');
+  console.log('PASS actual v1 current like/recast receipts, fresh account-scoped reads, and authoritative Likes/Recasts profile hydration');
   await other.follow(owner.fid);
   await until('effective follow', () => getFollowStatus(other.fid, owner.fid), following => following);
+  const suggestions = await getSuggestedUsers(other.fid, 6);
+  assert(suggestions.users.length <= 6);
+  assert(suggestions.users.every(user => user.fid !== other.fid));
   const activity = await until('reply, mention, reaction and follow notifications', () => getNotifications({ fid: owner.fid, limit: 100 }), result => ['replies', 'mentions', 'reactions', 'follows'].every(type => result.notifications.some(item => item.type === type && item.actors.some(user => user.fid === other.fid))));
   console.log('PASS real reply/mention/reaction/follow writes and normalized recent activity');
 
@@ -150,6 +208,19 @@ try {
   const photos = await getProfileFeed({ fid: owner.fid, tab: 'media', limit: 100 });
   assert(photos.casts.some(cast => cast.hash === photo.hash));
   console.log('PASS actual full-text cast search and Casts/Replies/Photos profile tabs');
+
+  // Give remove messages a strictly later Farcaster timestamp than their adds.
+  // These are the only three additional writes in this extension: one recast
+  // above and removal of the existing like plus that recast below.
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  await other.react(rootTarget, 'like', true);
+  await other.react(rootTarget, 'recast', true);
+  await until('confirmed unlike and undo-recast', () => getReactionStatuses(other.fid, [rootTarget]), states => states.length === 1 && !states[0].liked && !states[0].recasted);
+  for (const tab of ['likes', 'recasts'] as const) {
+    const history = await getProfileFeed({ fid: other.fid, tab, limit: 100 });
+    assert(!history.casts.some(cast => cast.hash === root.hash), 'Removed reactions must disappear from profile history.');
+  }
+  console.log('PASS actual REACTION_REMOVE inclusion, exact NotFound normalization, and removal from both profile histories');
 
   const beforeForeignDelete = submissions;
   await assert.rejects(owner.deleteCast({ fid: other.fid, hash: reply.hash }), /only casts|different|own account/i);
@@ -175,12 +246,14 @@ try {
     registryMocked: false, apiMocked: false, signaturesReal: true, productionWrites: 0,
     isolatedFids: [owner.fid, other.fid], profileEditAndUserSearch: true, castSearch: true, staleDeletedSearchHitFiltered: true, searchHydrated: true,
     quoteCastIdEmbed: true, ownDelete: true, foreignDeleteDeniedBeforeSubmit: true,
-    channelParentUrl: true, channelDirectoryAndFeed: true, mediaUploadAndCast: true,
-    profileTabs: ['casts', 'replies', 'media'], activityTypes: [...new Set(activity.notifications.map(item => item.type))],
+    channelParentUrl: true, channelDirectoryAndFeed: true, channelParticipantIndex: true, quoteReverseIndex: true, boundedSuggestedProfilesRead: true, mediaUploadAndCast: true,
+    profileTabs: ['casts', 'replies', 'media', 'likes', 'recasts'], reactionReceiptReads: true, reactionAccountIsolation: true, reactionHistoryHydrated: true, reactionRemovalsConfirmed: true,
+    activityTypes: [...new Set(activity.notifications.map(item => item.type))],
     localSignedSubmissions: submissions, actualNodeRequests: runtime.nodeRequests.length,
   };
   await fs.writeFile(path.join(path.dirname(identityFile), 'feature-checks-proof.json'), JSON.stringify(proof, null, 2));
   console.log(JSON.stringify(proof));
+  }
 } catch (error) {
   console.error('Local node errors:', JSON.stringify(runtime.nodeErrors));
   throw error;

@@ -55,6 +55,8 @@ const searchQuery: Rule = value => !!value.trim() && new TextEncoder().encode(va
 const cursor: Rule = value => /^[a-zA-Z0-9_+/=:-]{1,2048}$/.test(value);
 const pagination: QueryRules = { limit: integer(100), cursor };
 const followPagination: QueryRules = { limit: integer(100), cursor: value => /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn };
+const reactionType: Rule = value => value === 'Like' || value === 'Recast';
+const reactionPageToken: Rule = value => value.length > 0 && value.length <= 2048 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
 
 interface Endpoint { required?: string[]; query: QueryRules }
 const READ_ENDPOINTS: Record<string, Endpoint> = {
@@ -62,6 +64,8 @@ const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v1/signersByFid': { required: ['fid'], query: { fid, pageSize: integer(1000), pageToken: cursor, 'requesterFids[0]': fid } },
   '/v1/onChainIdRegistryEventByAddress': { required: ['address'], query: { address } },
   '/v1/linkById': { required: ['fid', 'link_type', 'target_fid'], query: { fid, link_type: value => value === 'follow', target_fid: fid } },
+  '/v1/reactionById': { required: ['fid', 'reaction_type', 'target_fid', 'target_hash'], query: { fid, reaction_type: reactionType, target_fid: fid, target_hash: hash } },
+  '/v1/reactionsByFid': { required: ['fid', 'reaction_type', 'pageSize', 'reverse'], query: { fid, reaction_type: reactionType, pageSize: integer(100), pageToken: reactionPageToken, reverse: value => value === 'true' || value === 'false' } },
   '/v2/farcaster/user': { required: ['fid'], query: { fid } },
   '/v2/farcaster/user/by-username': { required: ['username'], query: { username } },
   '/v2/farcaster/user/search': { required: ['q'], query: { q: searchQuery, limit: integer(100) } },
@@ -80,6 +84,9 @@ const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v2/farcaster/channel/all': { query: pagination },
   '/v2/farcaster/channel/trending': { query: { limit: integer(100) } },
   '/v2/farcaster/channel/search': { required: ['q'], query: { q: searchQuery, limit: integer(100) } },
+  '/v2/farcaster/following/suggested': { required: ['fid', 'limit'], query: { fid, limit: integer(20) } },
+  '/v2/farcaster/channel/members': { required: ['channel_id', 'limit'], query: { channel_id: channel, limit: integer(25), cursor: followPagination.cursor } },
+  '/v2/farcaster/cast/quotes': { required: ['identifier', 'type', 'limit'], query: { identifier: hash, type: value => value === 'hash', limit: integer(25) } },
 };
 
 function validQuery(params: URLSearchParams, endpoint: Endpoint): boolean {
@@ -168,7 +175,7 @@ async function proxy(request: Request, url: URL): Promise<Response> {
       // Optional node indexes return 503 with these exact source-defined
       // messages. Preserve that capability boundary without forwarding raw
       // errors or making a disabled index look like an empty successful feed.
-      if (((upstream.status === 503 && (path === '/v2/farcaster/cast/search' || path.startsWith('/v2/farcaster/channel') || path === '/v2/farcaster/feed/channels' || path === '/v2/farcaster/notifications'))
+      if (((upstream.status === 503 && (path === '/v2/farcaster/cast/search' || path.startsWith('/v2/farcaster/channel') || path === '/v2/farcaster/feed/channels' || path === '/v2/farcaster/notifications' || path === '/v2/farcaster/following/suggested'))
         || (upstream.status === 404 && (path === '/v2/farcaster/cast' || path === '/v2/farcaster/channel'))) && upstream.headers.get('Content-Type')?.includes('application/json')) {
         const bytes = await readLimited(upstream.body, 4096);
         const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
@@ -176,10 +183,10 @@ async function proxy(request: Request, url: URL): Promise<Response> {
           if (upstream.status === 404 && path === '/v2/farcaster/cast' && value.message === 'Cast not found') return failure(404, 'cast_not_found', 'This cast was not found on Hypersnap.');
           if (upstream.status === 404 && path === '/v2/farcaster/channel' && value.message === 'Channel not found') return failure(404, 'channel_not_found', 'This channel was not found on Hypersnap.');
           const unavailable = path === '/v2/farcaster/cast/search' ? ['Search indexing not available', 'Search feature disabled']
-            : path.startsWith('/v2/farcaster/channel') ? ['Channels indexing not enabled'] : path === '/v2/farcaster/feed/channels' ? ['Channel feed service not available'] : ['Hub query service not available'];
+            : path.startsWith('/v2/farcaster/channel') ? ['Channels indexing not enabled'] : path === '/v2/farcaster/feed/channels' ? ['Channel feed service not available'] : path === '/v2/farcaster/following/suggested' ? ['Social graph indexing not enabled'] : ['Hub query service not available'];
           if (upstream.status === 503 && typeof value.message === 'string' && unavailable.includes(value.message)) {
             return failure(503, 'feature_unavailable', path === '/v2/farcaster/cast/search' ? 'Cast search is not enabled on this Hypersnap node.'
-              : path.startsWith('/v2/farcaster/channel') ? 'The channel index is not enabled on this Hypersnap node.' : path === '/v2/farcaster/feed/channels' ? 'Channel feeds are not enabled on this Hypersnap node.' : 'Recent activity is unavailable on this Hypersnap node.');
+              : path.startsWith('/v2/farcaster/channel') ? 'The channel index is not enabled on this Hypersnap node.' : path === '/v2/farcaster/feed/channels' ? 'Channel feeds are not enabled on this Hypersnap node.' : path === '/v2/farcaster/following/suggested' ? 'Suggested profiles are unavailable on this Hypersnap node.' : 'Recent activity is unavailable on this Hypersnap node.');
           }
         }
       }
@@ -203,6 +210,18 @@ async function proxy(request: Request, url: URL): Promise<Response> {
         if (value && typeof value === 'object' && 'error' in value && value.error === 'Failed to get link'
           && 'error_detail' in value && typeof value.error_detail === 'string' && value.error_detail.startsWith('status: NotFound,')) {
           return failure(404, 'follow_not_found', 'This follow relationship does not exist.');
+        }
+      }
+      // A missing reaction is wrapped as HTTP 400 by this exact v1 adapter.
+      // Do not turn storage failures, bad input, or unrelated NotFound errors
+      // into a false "not liked" state.
+      if (path === '/v1/reactionById' && upstream.status === 400 && upstream.headers.get('Content-Type')?.includes('application/json')) {
+        const bytes = await readLimited(upstream.body, 4096);
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (value && typeof value === 'object' && 'error' in value && value.error === 'Failed to get reaction'
+          && 'error_detail' in value && typeof value.error_detail === 'string'
+          && /^status: NotFound, message: "cast not found", details: \[\](?:, metadata: MetadataMap \{ headers: \{\} \})?$/.test(value.error_detail)) {
+          return failure(404, 'reaction_not_found', 'This reaction does not exist.');
         }
       }
       await upstream.body?.cancel();

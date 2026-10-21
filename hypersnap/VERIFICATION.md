@@ -1,3 +1,55 @@
+# Verification record · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+## Familiar client feature release
+
+The standalone `cd hypersnap && yarn verify` gate passes **450 tests across 28 files**, browser/Worker/native TypeScript, production browser build and the offline signer payload build. No runtime dependency was added. The existing published native beta is unchanged. [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md) maps familiar Farcaster behavior to source-backed Hypersnap support and records unsupported/stubbed APIs.
+
+New coverage includes reverse chronological Likes/Recasts profile history with authoritative cast hydration, exact reaction absence classification, account-scoped reaction reads, four-read concurrency bounds, cancellation and a 25-second aggregate history deadline. Active-session reaction uncertainty survives card remounts and blocks repeat writes while the node still shows the earlier state. Account changes and stale read versions cannot clear that quarantine. Explicit draft recovery, account/destination isolation across signer rotation, size/age/storage failures, inline mention selection and stale search cancellation, clipboard image uploads, IME/repeated-key guards, keyboard publishing, image navigation, profile sharing, local channel shortcuts, activity filters and bounded community panels have regression coverage.
+
+A new OS-sandboxed fixture at `/tmp/arca-hypersnap-e2e-familiar` uses the pinned actual Hypersnap binary, consensus, RocksDB, protocol signature/registry validation and real indexes. The actual app auth/vault/API and Worker/SQLite Durable Object/R2 runtime completed **14 signed submissions and 131 node requests**, all synthetic/loopback-only. Its `feature-checks-proof.json` confirms profile edits/search, quotes, channels, media bytes, all five profile tabs, real like/recast receipts, account isolation, add/remove inclusion and history disappearance, recent activity, deletion and stale search-index filtering. A subsequent GET-only run completed **9 reads, zero signed submissions**, confirming the reverse quote index, channel participants, suggestions endpoint and removed reaction states. That fixture returned no friend-of-friend suggestions; the UI does not fabricate recommendations.
+
+Browser QA used an injected synthetic wallet on the same isolated node. Explicit draft save → navigate away → restore worked; inline mention search resolved an actual indexed FID and Enter selected it without posting. Saved-channel directory and sidebar shortcuts, notification filters, clipboard PNG upload, Command+Enter cast submission, the Photos route and image viewer were checked. The uploaded image decoded at 512×512 from local R2. A signed Like remained `Unlike` after an explicit fresh feed read. No production wallet, account, passkey or media mutation was performed. These checks do not establish real Chrome/Safari/Android/iOS provider interoperability or an independent security audit.
+
+Quote results are a bounded node-index sample and may be incomplete or unavailable; channel participants are authors, not subscribers; notification filters operate over loaded recent activity; saved channels, read state, bookmarks and drafts are local. Drafts are explicitly saved in tab-scoped storage for up to 24 hours and are never automatically submitted. All social API routes retain the fixed Hypersnap upstream and query/response limits. Existing optional WalletConnect relay/license conditions remain disclosed separately.
+
+The retained messenger's root gate still lacks its original dependencies and sibling repositories. Its production-account mint guard remained enabled. Full current receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   911bbc4  ⚠ working tree dirty (34 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/scripts/e2e-feature-checks.ts, desktop/hypersnap/scripts/e2e-media-runtime.mjs, desktop/hypersnap/scripts/e2e-media-runtime.test.mjs)
+            (… and 26 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
+## Earlier verification records
+
 # Verification record · 2026-10-20
 
 ## Passkey-protected local device vaults

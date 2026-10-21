@@ -1,6 +1,6 @@
 // These helpers are platform independent and can move to a shared Hypersnap
 // client package when a mobile client needs the same public URL contract.
-export type ProfileTab = 'casts' | 'replies' | 'media';
+export type ProfileTab = 'casts' | 'replies' | 'media' | 'likes' | 'recasts';
 export type SearchKind = 'casts' | 'users';
 export type AppRoute =
   | { kind: 'discover' }
@@ -64,7 +64,7 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   }
   const tabs = new URLSearchParams(search).getAll('tab');
   const tab = tabs[0];
-  const validTab = tabs.length < 2 && (tab === undefined || ['casts', 'replies', 'media'].includes(tab));
+  const validTab = tabs.length < 2 && (tab === undefined || ['casts', 'replies', 'media', 'likes', 'recasts'].includes(tab));
   if (pathname === '/profile') return validTab ? { kind: 'profile', ...(tab && tab !== 'casts' ? { tab: tab as ProfileTab } : {}) } : { kind: 'not-found' };
 
   const segments = pathname.split('/');
@@ -82,7 +82,7 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
 /** Stable profile links use the FID, so a later username change keeps working. */
 export function profilePath(fid: number, tab: ProfileTab = 'casts'): string {
   if (!Number.isSafeInteger(fid) || fid <= 0) throw new Error('Invalid profile FID.');
-  if (!['casts', 'replies', 'media'].includes(tab)) throw new Error('Invalid profile tab.');
+  if (!['casts', 'replies', 'media', 'likes', 'recasts'].includes(tab)) throw new Error('Invalid profile tab.');
   return `/profile/${fid}${tab === 'casts' ? '' : `?tab=${tab}`}`;
 }
 
