@@ -19,6 +19,19 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'dev-log-release-checks',
+    date: '2026-10-21',
+    title: 'Every release gets a dev log update',
+    summary: 'A release check helps keep this public story current as features and fixes ship.',
+    changes: [
+      'CI now flags product changes that arrive without a new dated milestone; editing an old entry does not count.',
+      'New milestones need a description and an existing source commit, while earlier history stays available.',
+      'The release instructions require the same check before deployments, including hotfixes.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/54d9c051d5f10611a86dd25cbfa3e0ce6ea1c44b',
+    tag: 'Reliability',
+  },
+  {
     id: 'public-development-log',
     date: '2026-10-21',
     title: 'The project’s story, open to everyone',
