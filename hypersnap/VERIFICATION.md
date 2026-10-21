@@ -1,3 +1,51 @@
+# Injected wallet selection and approval recovery · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **541 tests across 38 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. Nineteen additional tests cover competing EIP-6963 and legacy providers, Coinbase namespaces and aliases, bounded discovery, identity-based selection, hostile responses, pending prompts, wrong-account recovery, cancellation, late approval suppression and expiry. A regression also keeps a pending revocation busy across its approval deadline. No signing scope, dependency, transaction RPC or account-picker permission RPC was added.
+
+Two integration tests exercise the real ConnectAccount UI, wallet adapter, EIP-712 recovery and authorization orchestration, replacing only the node boundary and saved-vault lookup. An unrelated Coinbase account is rejected before signing; an explicit retry with the matching synthetic custody account produces exactly KeyAdd and SignedKeyRequest. Neither signature submits a key until the separate button is clicked. Local cancellation ignores the original pending prompt's late result while a new attempt succeeds. Provider calls remain restricted to account requests/reads, chain reads and typed-data signing.
+
+Chrome browser QA used the existing loopback-only Hypersnap test node and a clearly marked synthetic-wallet harness on a separate local origin. The selector displayed multiple real installed provider announcements beside the synthetic wallet; only the synthetic provider was selected. Both signatures and explicit submission completed, the browser entered its connected state, and a separate local-node read confirmed the exact new public key as SIGNER_SOURCE_OFFCHAIN. Production accounts, installed wallet prompts, recovery phrases, passkeys and assets were not used. This verifies the protocol path with a synthetic provider, not physical Coinbase Wallet interoperability on the reporter's Mac.
+
+The report did not include a public FID or exact error, so the reporter's original failure remains unconfirmed. Source inspection established two actionable issues: a named wallet could suppress other legacy providers, and a pending browser approval offered no local cancellation/retry. A login requests no Ethereum transaction, NFT mint, token approval or asset transfer. The exact custody address must still match; unrelated verified wallets and ERC-1271 smart-account signatures cannot replace the recoverable Ethereum signatures required by Hypersnap. Provider labels remain self-asserted and do not authenticate an extension.
+
+Source release `7799cc99ecf767606cf4909709813fd6b80a1dc6` was deployed from the inspected fresh external directory as Cloudflare Worker version `333b3d1d-0aa4-452c-a681-2ab296753c43`. [Main CI run 39564162504](https://github.com/arcabotai/hypersnap-web/actions/runs/39564162504) passed the release-note guard, full verification and signer payload reproducibility. A fresh production Chrome tab confirmed all fourteen dev log entries and the new milestone's implementation link. Public FID lookup exposed multiple installed providers in the selector, required an explicit choice and displayed the two-signature/submission and wrong-account guidance. No provider connect/approve button was pressed; no wallet request, production submission or passkey prompt was made. The saved encrypted vault was retained. Narrow-screen inspection found equal 320-pixel client and scroll widths for the dialog. Chrome viewport sizing was restored, temporary tabs were closed and both owned loopback test processes were stopped. This is browser layout/navigation evidence, not physical mobile-device testing.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; the production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   369fd4c  ⚠ working tree dirty (8 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/components/ConnectAccount.test.tsx, desktop/hypersnap/src/components/ConnectAccount.tsx, desktop/hypersnap/src/lib/wallet.test.ts)
+            (… and 2 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       1s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       2s
+  desktop  harness-offline FAIL       1s
+  desktop  build          FAIL       1s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Live client audit and familiar browsing tools · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.
