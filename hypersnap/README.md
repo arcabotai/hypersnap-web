@@ -34,6 +34,10 @@ The retained Quorum app and this fork's own application code remain under the re
 
 ## Scope and verification
 
+The public [dev log](https://quorum.arca.computer/devlog) records the standalone client's history from its first commit. It is available without sign-in, with topic filters, oldest/latest ordering and links to the code behind each milestone. The header link remains available on small screens.
+
+For future releases, add a milestone to `src/lib/devLog.ts` using the actual commit date and a verified commit URL. Describe shipped behavior, explain changes to previous designs, and preserve any relevant limits. Keep future plans distinct from completed work; test counts belong to a dated release rather than a permanent live claim. The page and its styles load only when opened.
+
 Implemented:
 
 - Public trending and following home tabs, shareable profile Casts/Replies/Photos/Likes/Recasts tabs, indexed channel discovery/search/detail/feeds and channel posting, bookmarks, dark/light theme, responsive navigation, and session locking.

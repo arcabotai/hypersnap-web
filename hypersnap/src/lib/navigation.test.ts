@@ -46,6 +46,9 @@ describe('public Hypersnap routes', () => {
   it('preserves feature routes and profile tabs across direct loads and thread backgrounds', () => {
     expect(route('/notifications')).toEqual({ kind: 'notifications' });
     expect(route('/channels')).toEqual({ kind: 'channels' });
+    expect(route('/devlog')).toEqual({ kind: 'devlog' });
+    expect(routePath(parseLocalPath('/devlog'))).toBe('/devlog');
+    expect(publicUrl('/devlog')).toBe('https://quorum.arca.computer/devlog');
     expect(route('/profile/1234', '?tab=replies')).toEqual({ kind: 'profile', identifier: '1234', tab: 'replies' });
     expect(route('/profile', '?tab=media')).toEqual({ kind: 'profile', tab: 'media' });
     expect(route('/profile/1234', '?tab=other').kind).toBe('not-found');

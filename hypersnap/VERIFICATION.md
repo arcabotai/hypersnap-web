@@ -1,3 +1,45 @@
+# Public dev log · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **450 tests across 28 files**, browser/Worker/native TypeScript, production browser build and the offline signer payload build. This release adds a static, lazily loaded `/devlog` route, ten source-linked historical milestones, topic filters and chronological ordering. Dates were checked against commit author/committer timestamps; date rendering uses an explicit UTC calendar format to avoid moving October 19 milestones to October 18 for visitors west of UTC. Existing route tests cover the public path and canonical URL. No social API, signing, wallet permission or storage contract changed, and no account mutations were needed for these checks.
+
+Browser QA checked direct loading of `/devlog`, all ten milestones, oldest-first ordering, topic filtering, desktop navigation and a separate 320-pixel iframe preview. The mobile header link opened the log from Discover without sign-in. The iframe check establishes layout behavior rather than physical-device or wallet interoperability. Preview-only wrapper files were created outside the deployable assets. No wallet connection, signed message, upload or production account mutation was used.
+
+The inherited messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   d1e1502  ⚠ working tree dirty (8 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/lib/navigation.test.ts, desktop/hypersnap/src/lib/navigation.ts)
+            (… and 2 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       1s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Verification record · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

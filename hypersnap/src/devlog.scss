@@ -1,0 +1,57 @@
+.devlog { min-width: 0; }
+.devlog-intro { padding: 2rem 1.75rem 1.6rem; background: radial-gradient(ellipse at 100% 0%, var(--soft-accent), transparent 70%); }
+.devlog-kicker { display: flex; align-items: center; gap: .45rem; font-size: .57rem; line-height: 1.8; letter-spacing: .07rem; color: var(--lavender); }
+.devlog-intro h2 { display: flex; align-items: center; gap: .7rem; margin: 1rem 0 .8rem; font: 550 2rem/1.15 Sen, sans-serif; letter-spacing: -.05rem; }
+.devlog-intro h2 > span { font-size: 1.4rem; color: var(--lavender); }
+.devlog-intro > p { max-width: 33rem; font-size: .85rem; line-height: 1.9; color: var(--color-text-subtle); margin: 0; }
+.devlog-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: 1.2rem 0; margin: 1.3rem 0 0; border-top: .0625rem solid var(--border); }
+.devlog-facts dt { color: var(--color-text-subtle); font-size: .6rem; margin-bottom: .4rem; }
+.devlog-facts dd { font-size: .75rem; font-weight: 500; margin: 0; overflow-wrap: anywhere; }
+.devlog-intro__actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.devlog-intro__actions .button { font-size: .72rem; }
+.devlog-intro__actions > a { display: inline-flex; align-items: center; gap: .3rem; font-size: .7rem; color: var(--color-text-subtle); }
+.devlog-filters { display: flex; flex-direction: row; gap: .3rem; overflow-x: auto; border-block: .0625rem solid var(--border); padding: .65rem 1.5rem; scrollbar-width: thin; scrollbar-color: var(--surface-4) transparent; }
+.devlog-filters > .button { flex-shrink: 0; font-size: .68rem; min-height: 2.1rem; color: var(--color-text-subtle); padding: .5rem .75rem; }
+.devlog-filters > [aria-pressed="true"] { background: var(--soft-accent); color: var(--accent-300); }
+.devlog-order { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: 1.1rem 1.75rem 0; font-size: .6rem; color: var(--color-text-subtle); }
+.devlog-timeline { list-style: none; padding: 0 1.75rem; margin: .75rem 0 1.5rem; }
+.devlog-timeline > li { position: relative; padding: 0 0 0 1.6rem; border-left: .0625rem solid var(--border); margin-left: .35rem; }
+.devlog-timeline > li::before { content: ''; position: absolute; top: 1.7rem; left: -.3rem; width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent-300); box-shadow: 0 0 0 .3rem var(--surface-0); }
+.devlog-timeline > li:first-child::before { background: var(--lavender); }
+.devlog-entry { padding: 1.35rem 0 1.6rem; border-bottom: .0625rem solid var(--border); min-width: 0; scroll-margin-top: 1rem; }
+.devlog-timeline > li:last-child .devlog-entry { border-bottom: none; }
+.devlog-entry__meta { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .6rem; color: var(--color-text-subtle); }
+.devlog-tag { border-radius: .3rem; border: .0625rem solid var(--border); padding: .2rem .45rem; font-size: .55rem; color: var(--color-text-subtle); }
+.devlog-tag--security, .devlog-tag--wallets { color: var(--lavender); background: var(--soft-accent); }
+.devlog-entry h3 { font: 550 1.15rem/1.5 Sen, sans-serif; letter-spacing: -.015rem; color: var(--color-text-strong); margin: .8rem 0 .45rem; overflow-wrap: anywhere; }
+.devlog-entry > p, .devlog-entry > ul { font-size: .77rem; line-height: 1.85; color: var(--color-text-subtle); }
+.devlog-entry > p { margin: .45rem 0; }
+.devlog-entry > ul { padding-left: 1rem; margin: .75rem 0 1rem; }
+.devlog-entry > ul li { padding-left: .15rem; margin-top: .35rem; overflow-wrap: anywhere; }
+.devlog-entry > ul li::marker { color: var(--accent-300); }
+.devlog-commit { display: inline-flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .6rem; color: var(--accent-300); text-decoration: none; padding: .3rem 0; }
+.devlog-commit > span { font: .58rem ui-monospace, monospace; color: var(--color-text-subtle); }
+.devlog a:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .3rem; border-radius: .2rem; }
+.devlog-principles { margin: 1rem 1.75rem; padding: 1.3rem; border: .0625rem solid var(--border); border-radius: .9rem; background: var(--surface-1); }
+.devlog-principles h2 { font: 550 1.1rem Sen, sans-serif; margin: 0 0 1rem; }
+.devlog-principles > div:not(.devlog-reference-links) { display: flex; gap: .75rem; align-items: flex-start; margin: 1rem 0; }
+.devlog-principles > div > svg { flex-shrink: 0; color: var(--lavender); margin-top: .2rem; }
+.devlog-principles p { color: var(--color-text-subtle); font-size: .72rem; line-height: 1.85; margin: 0; }
+.devlog-principles strong { display: block; color: var(--color-text-strong); margin-bottom: .2rem; font-weight: 550; }
+.devlog-reference-links { display: flex; flex-wrap: wrap; gap: .75rem 1rem; padding-top: 1rem; border-top: .0625rem solid var(--border); }
+.devlog-reference-links a { display: inline-flex; gap: .25rem; align-items: center; color: var(--accent-300); font-size: .63rem; }
+.devlog-end { display: flex; gap: .5rem; align-items: center; justify-content: center; padding: 1.5rem 1rem; font-size: .75rem; color: var(--color-text-subtle); }
+.devlog-end > span { font-size: 1.2rem; color: var(--lavender); }
+@media (max-width: 43.75rem) {
+  .devlog-intro { padding: 1.6rem 1.2rem 1.3rem; }
+  .devlog-intro h2 { font-size: 1.7rem; }
+  .devlog-facts { gap: .6rem; }
+  .devlog-facts dd { font-size: .66rem; }
+  .devlog-filters { padding-inline: .9rem; }
+  .devlog-filters > .button { min-height: 2.75rem; }
+  .devlog-order { padding-inline: 1.2rem; }
+  .devlog-timeline { padding-inline: 1.2rem; }
+  .devlog-timeline > li { padding-left: 1.1rem; }
+  .devlog-principles { margin-inline: 1.2rem; padding: 1rem; }
+  .devlog-commit, .devlog-reference-links a, .devlog-intro__actions > a, .devlog-intro__actions .button { min-height: 2.75rem; }
+}

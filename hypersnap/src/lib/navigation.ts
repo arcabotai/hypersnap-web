@@ -8,6 +8,7 @@ export type AppRoute =
   | { kind: 'bookmarks' }
   | { kind: 'notifications' }
   | { kind: 'channels' }
+  | { kind: 'devlog' }
   | { kind: 'search'; query: string; searchKind: SearchKind }
   | { kind: 'channel'; channel: string }
   | { kind: 'profile'; identifier?: string; tab?: ProfileTab }
@@ -54,6 +55,7 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   if (pathname === '/bookmarks') return { kind: 'bookmarks' };
   if (pathname === '/notifications') return { kind: 'notifications' };
   if (pathname === '/channels') return { kind: 'channels' };
+  if (pathname === '/devlog') return { kind: 'devlog' };
   if (pathname === '/search') {
     const params = new URLSearchParams(search);
     const query = params.get('q')?.trim() ?? '';
