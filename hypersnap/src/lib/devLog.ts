@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'injected-wallet-choice-and-approval-recovery',
+    date: '2026-10-21',
+    title: 'Choose your browser wallet and recover a stuck approval',
+    summary: 'Coinbase Wallet and other compatible extensions stay discoverable beside competing wallets, with clearer account selection and a way to cancel and retry pending approval.',
+    changes: [
+      'Added an explicit browser-wallet selector for announced and supported legacy providers, including Coinbase Wallet. A detected wallet no longer hides other extensions.',
+      'Kept each approval attached to the wallet you selected as extensions announce themselves or update their labels.',
+      'Added visible progress, pending-request guidance and Cancel/Retry controls. Cancelling here ignores late replies; reject any prompt still open in the wallet before retrying.',
+      'Explained how to choose the imported Farcaster account matching the custody address. A different verified wallet cannot authorize that identity.',
+      'Clarified the two message signatures and separate Hypersnap submission. Sign-in does not mint an NFT or request an Ethereum transaction, token approval or asset transfer.',
+      'Tested synthetic multi-wallet recovery and sign-in against an isolated Hypersnap node. Compatible Ethereum typed-data signing is required; every wallet and smart-account format is not supported.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/c0c9388c5bef4acc50446016c6606e63325b671c',
+    tag: 'Wallets',
+  },
+  {
     id: 'familiar-browsing-and-content-controls',
     date: '2026-10-21',
     title: 'More ways to make Quorum feel like home',
