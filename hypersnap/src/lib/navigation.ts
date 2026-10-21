@@ -10,6 +10,7 @@ export type AppRoute =
   | { kind: 'channels' }
   | { kind: 'devlog' }
   | { kind: 'settings' }
+  | { kind: 'connect' }
   | { kind: 'search'; query: string; searchKind: SearchKind }
   | { kind: 'channel'; channel: string }
   | { kind: 'profile'; identifier?: string; tab?: ProfileTab }
@@ -58,6 +59,8 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   if (pathname === '/channels') return { kind: 'channels' };
   if (pathname === '/devlog') return { kind: 'devlog' };
   if (pathname === '/settings') return { kind: 'settings' };
+  // Account identifiers and permission requests never come from a sign-in URL.
+  if (pathname === '/connect') return { kind: 'connect' };
   if (pathname === '/search') {
     const params = new URLSearchParams(search);
     const query = params.get('q')?.trim() ?? '';
@@ -103,6 +106,13 @@ export function searchPath(query = '', kind: SearchKind = 'casts'): string {
 export function parseLocalPath(path: string): AppRoute {
   const separator = path.indexOf('?');
   return parseRoute({ pathname: separator < 0 ? path : path.slice(0, separator), search: separator < 0 ? '' : path.slice(separator) });
+}
+
+/** Sign-in can return only to a recognized local page, never another sign-in. */
+export function connectReturnPath(value: unknown): string {
+  if (typeof value !== 'string') return '/';
+  const route = parseLocalPath(value);
+  return route.kind === 'not-found' || route.kind === 'connect' ? '/' : routePath(route);
 }
 
 export function routePath(route: AppRoute): string {

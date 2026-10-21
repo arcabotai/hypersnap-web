@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { castPath, parseRoute, profilePath, publicUrl, routePath, searchPath, parseLocalPath } from './navigation';
+import { castPath, parseRoute, profilePath, publicUrl, routePath, searchPath, parseLocalPath, connectReturnPath } from './navigation';
 
 const hash = '0x0123456789abcdef0123456789abcdef01234567';
 const route = (pathname: string, search = '') => parseRoute({ pathname, search });
@@ -10,6 +10,7 @@ describe('public Hypersnap routes', () => {
     expect(route('/following')).toEqual({ kind: 'following' });
     expect(route('/bookmarks')).toEqual({ kind: 'bookmarks' });
     expect(route('/profile')).toEqual({ kind: 'profile' });
+    expect(route('/connect')).toEqual({ kind: 'connect' });
   });
 
   it('accepts bounded usernames and positive safe FIDs without looking them up', () => {
@@ -89,6 +90,20 @@ describe('public Hypersnap routes', () => {
     expect(route('/', `?tracking=${'a'.repeat(2048)}`)).toEqual({ kind: 'not-found' });
     expect(route('/', 'cast=value')).toEqual({ kind: 'not-found' });
     expect(route('/', '?tracking=\u0000')).toEqual({ kind: 'not-found' });
+  });
+});
+
+describe('sign-in navigation', () => {
+  it('keeps sign-in URLs independent of account, permission and redirect query parameters', () => {
+    expect(route('/connect', '?fid=1234&scopes=1,2,11&return=https://example.org')).toEqual({ kind: 'connect' });
+    expect(routePath(route('/connect', '?fid=1234'))).toBe('/connect');
+  });
+
+  it('accepts only canonical recognized local return pages and prevents sign-in loops', () => {
+    expect(connectReturnPath('/search?q=hello%20world&type=users')).toBe('/search?q=hello+world&type=users');
+    expect(connectReturnPath(`/cast/${hash}`)).toBe(`/cast/${hash}`);
+    expect(connectReturnPath('/profile/1234?tab=likes')).toBe('/profile/1234?tab=likes');
+    for (const value of [undefined, null, {}, 'https://example.org', '//example.org', '/\\example.org', '/connect', '/connect?return=/following', '/unknown', '/profile%2falice', '/following#x', '/search?q=%00']) expect(connectReturnPath(value)).toBe('/');
   });
 });
 

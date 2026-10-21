@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, useEffect, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -8,9 +8,13 @@ import type { WalletSession } from './lib/auth';
 import { uploadMedia } from './lib/media';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './lib/pairing';
 
-const wallet = vi.hoisted(() => ({ next: null as WalletSession | null }));
+const wallet = vi.hoisted(() => ({ next: null as WalletSession | null, signal: null as AbortSignal | null, initialFid: undefined as number | undefined, onConnect: null as ((value: WalletSession) => void) | null }));
 vi.mock('./components/ConnectAccount', () => ({
-  default: ({ onConnect, onClose, requestedScopes }: { onConnect(value: WalletSession): void; onClose(): void; requestedScopes?: readonly number[] }) => <div data-testid="synthetic-wallet"><p data-testid="requested-scopes">{requestedScopes?.join(',') || 'posting'}</p><button onClick={() => { if (wallet.next) onConnect(wallet.next); }}>Approve synthetic wallet</button><button onClick={onClose}>Cancel synthetic wallet</button></div>,
+  default: function SyntheticWallet({ onConnect, onClose, requestedScopes, initialFid, presentation }: { onConnect(value: WalletSession): void; onClose(): void; requestedScopes?: readonly number[]; initialFid?: number; presentation?: string }) {
+    const controller = useRef(new AbortController()); wallet.signal = controller.current.signal; wallet.initialFid = initialFid; wallet.onConnect = onConnect;
+    useEffect(() => () => controller.current.abort(), []);
+    return <main data-testid="synthetic-wallet" data-presentation={presentation}><p data-testid="requested-scopes">{requestedScopes?.join(',') || 'posting'}</p><button onClick={() => { if (wallet.next) onConnect(wallet.next); }}>Approve synthetic wallet</button><button onClick={onClose}>Cancel synthetic wallet</button></main>;
+  },
   DeviceSettings: () => <div>Synthetic device settings</div>,
 }));
 vi.mock('./lib/media', () => ({ uploadMedia: vi.fn() }));
@@ -27,7 +31,7 @@ function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason:
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); wallet.next = null;
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); wallet.next = null; wallet.signal = null; wallet.initialFid = undefined; wallet.onConnect = null;
   history.replaceState(null, '', '/');
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
@@ -53,12 +57,96 @@ async function start(path = '/') { history.replaceState(null, '', path); await a
 async function click(element: Element) { await act(async () => { element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); }
 function button(label: string, scope: ParentNode = container) { return [...scope.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!; }
 function dialog(title: string) { return [...container.querySelectorAll<HTMLDialogElement>('dialog')].find(item => item.querySelector('h2')?.textContent === title)!; }
-async function connect(value: WalletSession) { wallet.next = value; await click(button('Connect Farcaster')); await click(button('Approve synthetic wallet')); }
+async function settleNavigation() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); }
+async function connect(value: WalletSession) { wallet.next = value; await click(button('Connect Farcaster')); await click(button('Approve synthetic wallet')); await settleNavigation(); }
 async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
 describe('isolated App feature integration', () => {
+  it.each([
+    ['sidebar', '.sidebar__bottom button.full-width'],
+    ['join card', '.join-card button'],
+    ['composer', '.composer__submit button'],
+    ['mobile account', 'nav[aria-label="Mobile navigation"] button[aria-label="Account"]'],
+    ['header', '.mobile-connect'],
+  ])('opens the dedicated sign-in page from the %s without a modal or background feed', async (_label, selector) => {
+    await start();
+    const feedSignal = vi.mocked(getFeed).mock.calls[0][0].signal;
+    const channelSignal = vi.mocked(getChannels).mock.calls[0][0].signal;
+    vi.mocked(getFeed).mockClear(); vi.mocked(getChannels).mockClear(); vi.mocked(getInfo).mockClear();
+    await click(container.querySelector(selector)!);
+    expect(location.pathname + location.search).toBe('/connect');
+    expect(container.querySelector('[data-testid="synthetic-wallet"]')?.getAttribute('data-presentation')).toBe('page');
+    expect(container.querySelector('dialog')).toBeNull(); expect(container.querySelector('.app')).toBeNull(); expect(container.querySelector('.rightbar')).toBeNull();
+    expect(feedSignal?.aborted).toBe(true); expect(channelSignal?.aborted).toBe(true);
+    expect(getFeed).not.toHaveBeenCalled(); expect(getChannels).not.toHaveBeenCalled(); expect(getInfo).not.toHaveBeenCalled();
+  });
+
+  it('loads sign-in directly with baseline permissions and ignores forged redirect, identity and scope state', async () => {
+    history.replaceState({ quorumConnectReturn: 'https://example.org/steal', quorumConnectBackground: '//example.org', scopes: FULL_CLIENT_SCOPES, initialFid: 999 }, '', '/connect?fid=999&scopes=1,2,11&return=https://example.org');
+    await act(async () => root.render(<App />));
+    expect(location.pathname + location.search).toBe('/connect');
+    expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
+    expect(getFeed).not.toHaveBeenCalled(); expect(getChannels).not.toHaveBeenCalled(); expect(getInfo).not.toHaveBeenCalled(); expect(getUser).not.toHaveBeenCalled();
+    await click(button('Cancel synthetic wallet')); expect(location.pathname).toBe('/');
+  });
+
+  it('keeps only a validated return route after a reload and does not restore an upgrade from history', async () => {
+    history.replaceState({ quorumConnectReturn: '/search?q=cosmos&type=users', quorumConnectBackground: '/', scopes: FULL_CLIENT_SCOPES, initialFid: 999 }, '', '/connect');
+    await act(async () => root.render(<App />));
+    expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
+    await click(button('Cancel synthetic wallet'));
+    expect(location.pathname + location.search).toBe('/search?q=cosmos&type=users');
+  });
+
+  it('aborts onboarding on browser Back, rejects its late session and drops upgrade context on Forward', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [ownCast], next: {} });
+    await start(); const legacy = session(FULL_SOCIAL_SCOPES); await connect(legacy);
+    await click(container.querySelector('button[aria-label="Delete cast"]')!); await click(button('Enable deletion', dialog('Delete cast')));
+    const pendingSignal = wallet.signal; const staleConnect = wallet.onConnect!;
+    expect(location.pathname).toBe('/connect'); expect(dialog('Delete cast')).toBeUndefined();
+    expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe(FULL_CLIENT_SCOPES.join(',')); expect(wallet.initialFid).toBe(10);
+    await traverse('back'); expect(pendingSignal?.aborted).toBe(true); expect(dialog('Delete cast')).toBeDefined(); expect(legacy.dispose).not.toHaveBeenCalled();
+    const late = session(FULL_CLIENT_SCOPES, '3'); await act(async () => staleConnect(late));
+    expect(late.dispose).toHaveBeenCalledOnce(); expect(legacy.dispose).not.toHaveBeenCalled(); expect(legacy.deleteCast).not.toHaveBeenCalled();
+    await traverse('forward'); expect(location.pathname).toBe('/connect');
+    expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
+    await act(async () => staleConnect(late)); expect(legacy.dispose).not.toHaveBeenCalled();
+    await click(button('Cancel synthetic wallet')); expect(location.pathname).toBe('/'); expect(container.textContent).toContain('Person 10');
+  });
+
+  it('returns from sign-in to the original conversation and closes it back to its search background', async () => {
+    await start('/search?q=cosmos'); await click(container.querySelector('main a[aria-label="Open cast"]')!);
+    await click(button('Reply', dialog('Conversation')));
+    expect(location.pathname).toBe('/connect'); expect(container.querySelector('dialog')).toBeNull();
+    await click(button('Cancel synthetic wallet')); await settleNavigation();
+    expect(dialog('Conversation')).toBeDefined(); expect(location.pathname).toBe(`/cast/${otherCast.hash}`);
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation();
+    expect(location.pathname + location.search).toBe('/search?q=cosmos'); expect(dialog('Conversation')).toBeUndefined();
+  });
+
+  it('rejects a different account during a scoped upgrade and preserves the original device on cancel', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [ownCast], next: {} });
+    await start(); const legacy = session(FULL_SOCIAL_SCOPES); await connect(legacy);
+    await click(container.querySelector('button[aria-label="Delete cast"]')!); await click(button('Enable deletion', dialog('Delete cast')));
+    const different = { ...session(FULL_CLIENT_SCOPES, '4'), fid: 20, user: person(20) }; wallet.next = different;
+    await click(button('Approve synthetic wallet'));
+    expect(location.pathname).toBe('/connect'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('Reconnect the current account');
+    expect(different.dispose).toHaveBeenCalledOnce(); expect(legacy.dispose).not.toHaveBeenCalled();
+    await click(button('Cancel synthetic wallet')); await settleNavigation();
+    expect(dialog('Delete cast')).toBeDefined(); expect(container.textContent).toContain('Person 10'); expect(legacy.deleteCast).not.toHaveBeenCalled();
+  });
+
+  it('resumes explicit profile editing after a successful same-account permission upgrade', async () => {
+    await start('/profile/10'); const legacy = session([1, 3, 4]); await connect(legacy);
+    await click(button('Enable profile editing')); expect(location.pathname).toBe('/connect');
+    const upgradedBase = session(FULL_SOCIAL_SCOPES, '5'); const upgraded = { ...upgradedBase, user: { ...upgradedBase.user, username: 'fid:10' } }; wallet.next = upgraded;
+    await click(button('Approve synthetic wallet')); await settleNavigation();
+    expect(location.pathname).toBe('/profile/10'); expect(dialog('Edit profile')).toBeDefined(); expect(legacy.dispose).toHaveBeenCalledOnce(); expect(upgraded.updateProfile).not.toHaveBeenCalled();
+    expect(container.querySelector('.toast')?.textContent).toContain('You’re connected to Hypersnap.'); expect(container.querySelector('.toast')?.textContent).not.toContain('@fid:');
+  });
+
   it('preserves query and result kind through profile navigation and Back/Forward', async () => {
     await start('/search?q=person&type=users');
     expect((container.querySelector('main input[type="search"]') as HTMLInputElement).value).toBe('person');
@@ -227,7 +315,7 @@ describe('isolated App feature integration', () => {
     await click(button('Enable deletion', dialog('Delete cast')));
     expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe(FULL_CLIENT_SCOPES.join(','));
     const upgraded = session(FULL_CLIENT_SCOPES, '2'); wallet.next = upgraded;
-    await click(button('Approve synthetic wallet'));
+    await click(button('Approve synthetic wallet')); await settleNavigation();
     expect(upgraded.deleteCast).not.toHaveBeenCalled();
     expect(legacy.deleteCast).not.toHaveBeenCalled();
     expect(dialog('Delete cast')).toBeDefined();
@@ -242,7 +330,7 @@ describe('isolated App feature integration', () => {
     await start(); const legacy = session(FULL_SOCIAL_SCOPES); await connect(legacy);
     await click(container.querySelector('button[aria-label="Delete cast"]')!);
     await click(button('Enable deletion', dialog('Delete cast')));
-    await click(button('Cancel synthetic wallet'));
+    await click(button('Cancel synthetic wallet')); await settleNavigation();
     expect(button('Enable deletion', dialog('Delete cast'))).toBeDefined();
     expect(legacy.dispose).not.toHaveBeenCalled();
     expect(legacy.deleteCast).not.toHaveBeenCalled();

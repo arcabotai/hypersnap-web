@@ -6,12 +6,13 @@ import ConnectAccount, { DeviceSettings } from './ConnectAccount';
 import { deleteSavedSession, getSavedSessionMethod, preparePairing, unlockSavedSession, unlockSavedSessionWithPasskey, type PendingPairing, type PendingRevocation, type WalletSession } from '../lib/auth';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
 import type { PairingApproval, PairingRequest, RevocationApproval, RevocationRequest } from '../lib/pairing';
-import type { User } from '../lib/api';
+import { getUser, type User } from '../lib/api';
 import { passkeysAvailable } from '../lib/passkey';
 
 vi.mock('../lib/auth', () => ({ deleteSavedSession: vi.fn(), getSavedSessionMethod: vi.fn(), preparePairing: vi.fn(), unlockSavedSession: vi.fn(), unlockSavedSessionWithPasskey: vi.fn() }));
 vi.mock('../lib/wallet', () => ({ approvePairingWithWallet: vi.fn(), approveRevocationWithWallet: vi.fn(), discoverInjectedWallets: vi.fn() }));
 vi.mock('../lib/passkey', () => ({ passkeysAvailable: vi.fn() }));
+vi.mock('../lib/api', async original => ({ ...await original<typeof import('../lib/api')>(), getUser: vi.fn() }));
 vi.mock('../lib/pairing', async original => ({ ...await original<typeof import('../lib/pairing')>(), validatePairingApproval: (value: unknown) => value, verifyPairingApproval: vi.fn(), hashPairingRequest: () => 'synthetic-public-checksum', validateRevocationApproval: (value: unknown) => value, verifyRevocationApproval: vi.fn(), hashRevocationRequest: () => 'synthetic-revocation-checksum' }));
 
 const user: User = { fid: 10, username: 'isolated', custody_address: `0x${'1'.repeat(40)}`, profile: { bio: { text: '' } }, follower_count: 0, following_count: 0 };
@@ -36,6 +37,7 @@ beforeEach(() => {
   walletApproval = { kind: 'arca.hypersnap.signer.approval', version: 1, requestId: request.requestId, requestHash: 'c'.repeat(64), custodyAddress: request.custodyAddress, custodySignature: 'd'.repeat(130), requestSignature: 'e'.repeat(130) };
   pending = { request, user, submitted: true, complete: vi.fn().mockResolvedValue(session), dispose: vi.fn() };
   vi.mocked(getSavedSessionMethod).mockResolvedValue(undefined);
+  vi.mocked(getUser).mockResolvedValue(user);
   vi.mocked(preparePairing).mockResolvedValue(pending);
   vi.mocked(unlockSavedSession).mockResolvedValue(session);
   vi.mocked(unlockSavedSessionWithPasskey).mockResolvedValue(session);
@@ -53,8 +55,9 @@ async function selectWallet(name: string) {
   const option = [...field.options].find(value => value.textContent?.startsWith(name))!;
   await act(async () => { field.value = option.value; field.dispatchEvent(new Event('change', { bubbles: true })); });
 }
+async function reviewAccount() { await click(button('Find my account')); await click(button('Use this account')); }
 async function approve({ remember = true } = {}) {
-  await click(button('Find my account'));
+  await reviewAccount();
   await click(button('Connect Rainbow extension & approve'));
   if (remember) await click(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
   await click(button('Submit approved device key'));
@@ -124,7 +127,7 @@ describe('explicit passkey device storage UI', () => {
     const saving = deferred<void>(); vi.mocked(session.saveToDeviceWithPasskey).mockReturnValue(saving.promise);
     await render(); await approve(); await click(button('Save with a passkey'));
     const options = vi.mocked(session.saveToDeviceWithPasskey).mock.calls[0][0]!;
-    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!);
     expect(options.signal?.aborted).toBe(true); expect(onClose).toHaveBeenCalledOnce();
     await act(async () => saving.resolve());
     expect(onConnect).not.toHaveBeenCalled(); expect(session.dispose).toHaveBeenCalled();
@@ -134,7 +137,7 @@ describe('explicit passkey device storage UI', () => {
     const unlocking = deferred<WalletSession>(); vi.mocked(getSavedSessionMethod).mockResolvedValue('passkey'); vi.mocked(unlockSavedSessionWithPasskey).mockReturnValue(unlocking.promise);
     await render(); await click(button('Unlock with a passkey'));
     const options = vi.mocked(unlockSavedSessionWithPasskey).mock.calls[0][0]!;
-    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!);
     expect(options.signal?.aborted).toBe(true);
     await act(async () => unlocking.resolve(session));
     expect(onConnect).not.toHaveBeenCalled(); expect(session.dispose).toHaveBeenCalledOnce();
@@ -176,7 +179,7 @@ describe('explicit passkey device storage UI', () => {
     await render(); await approve(); await click(button('Use a password instead'));
     await fill('new-device-password', 'new secure password'); await fill('confirm-device-password', 'new secure password'); await click(button('Save with a password'));
     const options = vi.mocked(session.saveToDevice).mock.calls[0][1]!;
-    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!);
     expect(options.signal?.aborted).toBe(true);
     await act(async () => saving.resolve());
     expect(onConnect).not.toHaveBeenCalled(); expect(session.dispose).toHaveBeenCalled();
@@ -238,6 +241,97 @@ describe('explicit passkey device storage UI', () => {
   });
 });
 
+describe('public identity review before key creation', () => {
+  it.each([
+    { input: '@isolated', lookup: { username: 'isolated' } },
+    { input: '10', lookup: { fid: 10 } },
+    { input: user.custody_address, lookup: { custodyAddress: user.custody_address } },
+  ])('shows username, FID and full custody for $input before preparing only after an explicit review', async ({ input, lookup }) => {
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />);
+    expect(container.querySelector('main.onboarding')).not.toBeNull(); expect(container.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('h1'));
+    await fill('account-identifier', input); await click(button('Find my account'));
+    expect(getUser).toHaveBeenCalledWith(lookup, expect.any(AbortSignal));
+    const summary = container.querySelector('section[aria-label="Account identity"]')!;
+    const facts = Object.fromEntries([...summary.querySelectorAll('dl > div')].map(row => [row.querySelector('dt')?.textContent, row.querySelector('dd')?.textContent]));
+    expect(facts).toEqual({ Username: '@isolated', FID: '10', 'Custody wallet': user.custody_address });
+    expect(preparePairing).not.toHaveBeenCalled(); expect(approvePairingWithWallet).not.toHaveBeenCalled(); expect(container.querySelector('.wallet-list')).toBeNull();
+    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain('Review identity');
+    expect(document.activeElement?.textContent).toBe('Is this your account?');
+    await click(button('Use this account'));
+    expect(preparePairing).toHaveBeenCalledWith({ fid: 10 }, expect.objectContaining({ requestedScopes: [1, 3, 4], signal: expect.any(AbortSignal) }));
+    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain('Approve wallet');
+    expect(document.activeElement?.textContent).toBe('Approve this device in your wallet');
+    expect(container.querySelector('details.onboarding-protocol')?.hasAttribute('open')).toBe(false);
+    expect(container.querySelector('.onboarding-permissions')?.textContent).toContain('Approve before');
+    expect(container.querySelector('.onboarding-permissions')?.textContent).toContain('Permission');
+    expect(pending.complete).not.toHaveBeenCalled();
+    await click(button('Use another account')); expect(document.activeElement?.textContent).toBe('Find your public account'); expect(button('Find my account').disabled).toBe(false);
+  });
+
+  it('keeps an unknown lookup on the public form and permits a safe retry without preparing a key', async () => {
+    vi.mocked(getUser).mockRejectedValueOnce(new Error('This account was not found on Hypersnap.'));
+    await render(); await click(button('Find my account'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('not found'); expect(button('Find my account').disabled).toBe(false);
+    expect(container.querySelector('section[aria-label="Account identity"]')).toBeNull(); expect(preparePairing).not.toHaveBeenCalled();
+    await click(button('Find my account')); expect(button('Use this account')).toBeDefined(); expect(preparePairing).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { input: '10', response: { ...user, fid: 11 } },
+    { input: user.custody_address, response: { ...user, custody_address: `0x${'2'.repeat(40)}`, verified_addresses: { eth_addresses: [user.custody_address], sol_addresses: [] } } },
+  ])('rejects a returned identity that does not match the public identifier $input', async ({ input, response }) => {
+    vi.mocked(getUser).mockResolvedValue(response);
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />); await fill('account-identifier', input); await click(button('Find my account'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('different identity'); expect(button('Use this account')).toBeUndefined();
+    expect(preparePairing).not.toHaveBeenCalled(); expect(approvePairingWithWallet).not.toHaveBeenCalled();
+  });
+
+  it('labels an account without a username truthfully while still showing its FID and full custody address', async () => {
+    vi.mocked(getUser).mockResolvedValue({ ...user, username: 'fid:10' });
+    await render(); await click(button('Find my account'));
+    const summary = container.querySelector('section[aria-label="Account identity"]')!;
+    expect(summary.textContent).toContain('Username unavailable on Hypersnap'); expect(summary.textContent).toContain('10'); expect(summary.textContent).toContain(user.custody_address); expect(summary.textContent).not.toContain('@fid:10');
+    expect(preparePairing).not.toHaveBeenCalled();
+  });
+
+  it('requires another explicit review when freshly prepared custody or username changes', async () => {
+    const address = `0x${'2'.repeat(40)}`; const changed = { ...user, username: 'updated-account', custody_address: address };
+    pending = { ...pending, user: changed, request: { ...pending.request, custodyAddress: address } };
+    vi.mocked(preparePairing).mockResolvedValue(pending);
+    await render(); await reviewAccount();
+    const summary = container.querySelector('section[aria-label="Account identity"]')!;
+    expect(summary.textContent).toContain('@updated-account'); expect(summary.textContent).toContain(address); expect(summary.textContent).not.toContain(user.custody_address);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('details changed'); expect(container.querySelector('.wallet-list')).toBeNull();
+    expect(approvePairingWithWallet).not.toHaveBeenCalled(); expect(button('Submit approved device key')).toBeUndefined();
+    expect(document.activeElement?.textContent).toBe('Review the updated account');
+    await click(button('Use updated account'));
+    expect(preparePairing).toHaveBeenCalledOnce(); expect(button('Connect Rainbow extension & approve')).toBeDefined(); expect(pending.complete).not.toHaveBeenCalled();
+  });
+
+  it('disposes a prepared key if its request does not agree with the fresh account identity', async () => {
+    pending = { ...pending, request: { ...pending.request, custodyAddress: `0x${'2'.repeat(40)}` } };
+    vi.mocked(preparePairing).mockResolvedValue(pending);
+    await render(); await reviewAccount();
+    expect(pending.dispose).toHaveBeenCalledOnce(); expect(container.querySelector('[role="alert"]')?.textContent).toContain('does not match');
+    expect(container.querySelector('.wallet-list')).toBeNull(); expect(button('Use this account').disabled).toBe(false); expect(approvePairingWithWallet).not.toHaveBeenCalled();
+  });
+
+  it('aborts a pending public lookup when leaving and ignores its late identity', async () => {
+    const lookup = deferred<User>(); vi.mocked(getUser).mockReturnValue(lookup.promise);
+    await render(); await click(button('Find my account')); const signal = vi.mocked(getUser).mock.calls[0][1]!;
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!); expect(signal.aborted).toBe(true);
+    await act(async () => lookup.resolve(user)); expect(container.querySelector('section[aria-label="Account identity"]')).toBeNull(); expect(preparePairing).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('disposes a prepared key that arrives after leaving the identity-review page', async () => {
+    const preparing = deferred<PendingPairing>(); vi.mocked(preparePairing).mockReturnValue(preparing.promise);
+    await render(); await reviewAccount(); const signal = vi.mocked(preparePairing).mock.calls[0][1].signal!;
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!); expect(signal.aborted).toBe(true);
+    await act(async () => preparing.resolve(pending)); expect(pending.dispose).toHaveBeenCalledOnce(); expect(container.querySelector('.wallet-list')).toBeNull(); expect(onConnect).not.toHaveBeenCalled();
+  });
+});
+
 describe('explicit browser-wallet approval controls', () => {
   it('requires a choice among detected wallets and recovers from the ordinary-account mismatch with an explicit retry', async () => {
     const rainbow: InjectedWallet = { id: 'rainbow', name: 'Rainbow', rdns: 'me.rainbow', provider: { request: vi.fn() } };
@@ -245,7 +339,7 @@ describe('explicit browser-wallet approval controls', () => {
     let announce!: (wallets: InjectedWallet[]) => void;
     vi.mocked(discoverInjectedWallets).mockImplementation(callback => { announce = callback; callback([rainbow]); return () => {}; });
     vi.mocked(approvePairingWithWallet).mockRejectedValueOnce(new Error('Connect the custody address shown for this identity in your wallet. A different verified wallet cannot authorize this account.'));
-    await render(); await click(button('Find my account'));
+    await render(); await reviewAccount();
     expect(button('Connect Rainbow extension & approve').disabled).toBe(false);
     await act(async () => announce([rainbow, coinbase]));
     const field = container.querySelector<HTMLSelectElement>('.wallet-list select')!;
@@ -269,7 +363,7 @@ describe('explicit browser-wallet approval controls', () => {
     const stalled = deferred<PairingApproval>();
     vi.mocked(discoverInjectedWallets).mockImplementation(callback => { callback([coinbase, rainbow]); return () => {}; });
     vi.mocked(approvePairingWithWallet).mockReturnValueOnce(stalled.promise);
-    await render(); await click(button('Find my account')); await selectWallet('Coinbase Wallet'); await click(button('Connect Coinbase Wallet & approve'));
+    await render(); await reviewAccount(); await selectWallet('Coinbase Wallet'); await click(button('Connect Coinbase Wallet & approve'));
     const old = vi.mocked(approvePairingWithWallet).mock.calls[0][2]!;
     await act(async () => old.onProgress?.('Approve the Hypersnap key request in your wallet (2 of 2)…'));
     expect(container.querySelector('.wallet-approval-feedback [role="status"]')?.textContent).toContain('(2 of 2)');
@@ -290,7 +384,7 @@ describe('explicit browser-wallet approval controls', () => {
     let announce!: (wallets: InjectedWallet[]) => void; let scans = 0;
     vi.mocked(discoverInjectedWallets).mockImplementation(callback => { announce = callback; callback(scans++ ? [replacement] : [original]); return () => {}; });
     const stalled = deferred<PairingApproval>(); vi.mocked(approvePairingWithWallet).mockReturnValueOnce(stalled.promise);
-    await render(); await click(button('Find my account')); await click(button('Connect Browser wallet & approve'));
+    await render(); await reviewAccount(); await click(button('Connect Browser wallet & approve'));
     await act(async () => announce([replacement]));
     expect(vi.mocked(approvePairingWithWallet).mock.calls[0][1]).toBe(original.provider);
     await click(button('Cancel wallet approval')); await click(button('Retry Browser wallet approval'));
@@ -306,7 +400,7 @@ describe('explicit browser-wallet approval controls', () => {
     pending = { ...pending, request: { ...pending.request, deadline: Math.floor(Date.now() / 1000) - 1609459200 + 1 } };
     vi.mocked(preparePairing).mockResolvedValue(pending);
     const stalled = deferred<PairingApproval>(); vi.mocked(approvePairingWithWallet).mockReturnValue(stalled.promise);
-    await render(); await click(button('Find my account')); await click(button('Connect Rainbow extension & approve'));
+    await render(); await reviewAccount(); await click(button('Connect Rainbow extension & approve'));
     const old = vi.mocked(approvePairingWithWallet).mock.calls[0][2]!;
     await act(async () => vi.advanceTimersByTime(2_000));
     expect(old.signal?.aborted).toBe(true); expect(button('Use another account').disabled).toBe(false);
@@ -318,9 +412,9 @@ describe('explicit browser-wallet approval controls', () => {
 
   it('aborts wallet approval when the dialog closes and ignores a provider that resolves afterwards', async () => {
     const stalled = deferred<PairingApproval>(); vi.mocked(approvePairingWithWallet).mockReturnValue(stalled.promise);
-    await render(); await click(button('Find my account')); await click(button('Connect Rainbow extension & approve'));
+    await render(); await reviewAccount(); await click(button('Connect Rainbow extension & approve'));
     const old = vi.mocked(approvePairingWithWallet).mock.calls[0][2]!;
-    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Close dialog"]')!);
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!);
     expect(old.signal?.aborted).toBe(true); expect(onClose).toHaveBeenCalledOnce();
     await act(async () => stalled.resolve(walletApproval));
     expect(onConnect).not.toHaveBeenCalled(); expect(pending.complete).not.toHaveBeenCalled(); expect(container.querySelector('.wallet-approved')).toBeNull();

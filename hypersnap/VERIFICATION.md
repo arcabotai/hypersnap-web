@@ -1,3 +1,49 @@
+# Dedicated onboarding and complete identity review · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **588 tests across 39 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. New checks cover every sign-in entrypoint, direct entry, reload, forged return/scope state, Back/Forward, cancellation and late callbacks, same-account permission upgrades, all three public lookup forms, invalid/mismatched identities, username-unavailable labels and changed-identity re-review. The real-wallet integration tests use actual discovery, EIP-712 signing/recovery and authorization code with only the node/vault boundary replaced. No dependency, signing scope or production gateway route was broadened.
+
+Sign-in now lives on `/connect` with its own main landmark and no feed, sidebar or conversation dialog underneath. Public lookup resolves username, FID or exact custody address into the same full identity summary before key generation. Preparation uses the reviewed FID and compares the fresh canonical username/custody/request identity; changed details require explicit review before wallet controls appear. Name-proof aliases may resolve to a different canonical displayed name, so the returned identity is shown rather than inferred from the input. Missing and synthetic `fid:N` usernames are labeled unavailable. An address that merely verifies an account does not substitute for its custody address.
+
+Requested permissions and initial account context remain in tab memory. Only validated local return/background routes enter history; direct entry or reload cannot restore broader permissions from query parameters/history state. Existing sessions survive cancelled/failed upgrades, and an upgrade may replace them only with a confirmed key for the same FID. Unmount/cancellation invalidates pending lookup, wallet and save callbacks and disposes local key material. Returning vault unlock remains explicit; device settings still uses its existing dialog. Heading focus follows stage changes and reset to the account form.
+
+Chrome QA used a separate loopback origin, the marked synthetic wallet, and the OS-network-sandboxed Hypersnap node. It verified the full FID summary, Back/Forward resetting the form, exact custody-address lookup, no sign-in dialog, stage heading focus, and a 320-pixel layout with equal document/card client and scroll widths. Two actual synthetic signatures left submission separate; explicit submission returned to Discover. A separate node registry read confirmed exactly one new `SIGNER_SOURCE_OFFCHAIN` key for FID1234, nonce5→6, scopes CAST_ADD/REACTION_ADD/REACTION_REMOVE and TTL604800. No real installed wallet was selected, no passkey/password was saved, and no production account write was made. Username variants and custody changes are additionally covered in actual-crypto integration tests; browser viewport evidence does not establish physical mobile wallet interoperability.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   be3ffe0  ⚠ working tree dirty (6 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/components/ConnectAccount.tsx, desktop/hypersnap/src/lib/navigation.test.ts)
+            (… and 3 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # One-box cast composer · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

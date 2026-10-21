@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconCheck, IconCode, IconDeviceDesktop, IconFileCheck, IconKey, IconLock, IconRefresh, IconShieldLock, IconTrash, IconWallet } from '@tabler/icons-react';
 import { Button, Input, Modal } from './ui';
 import WalletConnectLogo from './WalletConnectLogo';
@@ -6,6 +6,9 @@ import { deleteSavedSession, getSavedSessionMethod, preparePairing, unlockSavedS
 import { PAIRING_SCOPES, hashPairingRequest, hashRevocationRequest, validatePairingScopes, validatePairingApproval, verifyPairingApproval, validateRevocationApproval, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationApproval, type RevocationRequest } from '../lib/pairing';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
 import { passkeysAvailable } from '../lib/passkey';
+import { getUser } from '../lib/api';
+import { normalizeReviewIdentity, parseAccountLookup, sameReviewIdentity, type ReviewIdentity } from '../lib/accountLookup';
+import '../onboarding.scss';
 
 const sourceUrl = 'https://github.com/arcabotai/hypersnap-web';
 const releaseTag = 'arca-signer-v0.2.0';
@@ -105,23 +108,40 @@ function WalletApproval({ request, disabled, expired = false, onApproved, onBusy
 }
 
 function AccountFacts({ request }: { request: PairingRequest }) {
-  return <dl className="pairing-facts">
-    <div><dt>Account</dt><dd>FID {request.fid}</dd></div>
-    <div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div>
-    <div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div>
-    <div><dt>Request checksum</dt><dd className="pairing-mono">{hashPairingRequest(request)}</dd></div>
+  return <><dl className="pairing-facts onboarding-permissions">
     <div><dt>Permission</dt><dd>{request.scopes.includes(2) ? 'Publish and delete your own casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : request.scopes.includes(11) ? 'Publish casts, add or remove reactions, follow or unfollow accounts, and edit profile metadata' : 'Publish casts and add or remove reactions'}</dd></div>
     <div><dt>Inactivity expiry</dt><dd>7 days, renewed by signing activity</dd></div>
     <div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div>
+  </dl><details className="onboarding-protocol"><summary>Device key and protocol details</summary><dl className="pairing-facts">
+    <div><dt>Device key fingerprint</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div>
+    <div><dt>Request checksum</dt><dd className="pairing-mono">{hashPairingRequest(request)}</dd></div>
     <div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div>
-  </dl>;
+  </dl></details></>;
 }
 
-export default function ConnectAccount({ onClose, onConnect, requestedScopes, initialFid }: { onClose(): void; onConnect(session: WalletSession): void; requestedScopes?: readonly number[]; initialFid?: number }) {
+function IdentitySummary({ identity }: { identity: ReviewIdentity }) {
+  return <section className="onboarding-identity" aria-label="Account identity"><div className="onboarding-identity__intro"><span aria-hidden="true"><IconWallet size={25} /></span><div><p>YOUR HYPERSNAP IDENTITY</p><h3>{identity.displayName || (identity.username ? `@${identity.username}` : `Account FID ${identity.fid}`)}</h3></div></div><dl>
+    <div><dt>Username</dt><dd>{identity.username ? `@${identity.username}` : 'Username unavailable on Hypersnap'}</dd></div>
+    <div><dt>FID</dt><dd>{identity.fid}</dd></div>
+    <div className="onboarding-identity__custody"><dt>Custody wallet</dt><dd><code>{identity.custodyAddress}</code></dd></div>
+  </dl></section>;
+}
+function OnboardingFrame({ presentation, title, onClose, children }: { presentation: 'page' | 'dialog'; title: string; onClose(): void; children: ReactNode }) {
+  const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (presentation === 'page') heading.current?.focus(); }, [presentation]);
+  if (presentation === 'dialog') return <Modal title={title} onClose={onClose}>{children}</Modal>;
+  return <main className="onboarding" aria-labelledby={headingId}><header className="onboarding__header"><Button variant="ghost" aria-label="Cancel sign-in" onClick={onClose}><IconArrowLeft size={18} />Back</Button><span>QUORUM <span>on Hypersnap</span></span></header><div className="onboarding__intro"><p>YOUR IDENTITY, YOUR WALLET</p><h1 ref={heading} tabIndex={-1} id={headingId}>{title}</h1><p>Bring your existing account. Keep your recovery phrase in your wallet.</p></div><div className="onboarding__card">{children}</div></main>;
+}
+export interface ConnectAccountProps { onClose(): void; onConnect(session: WalletSession): void; requestedScopes?: readonly number[]; initialFid?: number; presentation?: 'page' | 'dialog' }
+export default function ConnectAccount({ onClose, onConnect, requestedScopes, initialFid, presentation = 'page' }: ConnectAccountProps) {
   const [scopes] = useState(() => validatePairingScopes(requestedScopes ? [...requestedScopes] : [...PAIRING_SCOPES]));
   const socialApproval = scopes.includes(11);
   const deletionApproval = scopes.includes(2);
   const [identifier, setIdentifier] = useState(initialFid ? String(initialFid) : '');
+  const [identity, setIdentity] = useState<ReviewIdentity | null>(null);
+  const [identityAccepted, setIdentityAccepted] = useState(false);
+  const [identityChanged, setIdentityChanged] = useState(false);
   const [request, setRequest] = useState<PairingRequest | null>(null);
   const [approval, setApproval] = useState<PairingApproval | null>(null);
   const [approvalName, setApprovalName] = useState('');
@@ -146,6 +166,9 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
   const generation = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const fileReadGeneration = useRef(0);
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  const currentStep = connected ? 4 : request && identityAccepted ? 3 : identity ? 2 : 1;
+  const previousStage = useRef({ step: currentStep, unlock });
 
   useEffect(() => {
     let active = true;
@@ -160,12 +183,17 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
   }, [request]);
   const expired = request !== null && Math.floor(now / 1000) >= request.deadline + 1609459200;
   const passwordValid = password.length >= 12 && password === confirmation;
+  useEffect(() => {
+    const previous = previousStage.current; previousStage.current = { step: currentStep, unlock };
+    if (presentation === 'page' && (currentStep > 1 || previous.step !== currentStep || previous.unlock !== unlock)) stepHeading.current?.focus();
+  }, [currentStep, identityChanged, presentation, unlock]);
 
   function reset() {
     generation.current += 1;
     controller.current?.abort(); pending.current?.dispose(); pending.current = null;
     provisionalSession.current?.dispose(); provisionalSession.current = null;
     setRequest(null); setApproval(null); setApprovalName(''); setAttempted(false); setConnected(false);
+    setIdentity(null); setIdentityAccepted(false); setIdentityChanged(false); setRemember(false);
     setPassword(''); setConfirmation(''); setStorageMethod('passkey'); setError(''); setStage(''); setBusy(false);
   }
   function close() { reset(); onClose(); }
@@ -174,19 +202,35 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     provisionalSession.current = null;
     setPassword(''); setConfirmation(''); onConnect(session);
   }
-  async function prepare(event: FormEvent) {
+  async function findAccount(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const term = identifier.trim().replace(/^@/, '');
-    const lookup = initialFid ? { fid: initialFid } : /^0x[\da-f]{40}$/i.test(term) ? { custodyAddress: term } : /^\d+$/.test(term) ? { fid: Number(term) } : { username: term };
     const run = ++generation.current;
     controller.current = new AbortController(); setBusy(true); setError(''); setStage('Looking up your public account…');
     try {
-      const value = await preparePairing(lookup, { origin: location.origin, requestedScopes: scopes, signal: controller.current.signal, onProgress: text => { if (run === generation.current) setStage(text); } });
-      if (run !== generation.current) { value.dispose(); return; }
-      pending.current = value; setRequest(value.request); setNow(Date.now());
+      const lookup = parseAccountLookup(identifier, initialFid);
+      const user = await getUser(lookup, controller.current.signal);
+      if (run !== generation.current) return;
+      setIdentity(normalizeReviewIdentity(user, lookup)); setIdentityAccepted(false); setIdentityChanged(false);
     } catch (cause) { if (run === generation.current) setError(errorMessage(cause)); }
-    finally { if (run === generation.current) setBusy(false); }
+    finally { if (run === generation.current) { setBusy(false); setStage(''); } }
+  }
+  async function prepareReviewedAccount() {
+    if (busy || !identity || request) return;
+    const reviewed = identity;
+    const run = ++generation.current;
+    controller.current = new AbortController(); setBusy(true); setError(''); setStage('Checking the account and preparing this device’s key…');
+    let value: PendingPairing | undefined;
+    try {
+      value = await preparePairing({ fid: reviewed.fid }, { origin: location.origin, requestedScopes: scopes, signal: controller.current.signal, onProgress: text => { if (run === generation.current) setStage(text); } });
+      if (run !== generation.current) { value.dispose(); return; }
+      const fresh = normalizeReviewIdentity(value.user, { fid: reviewed.fid });
+      if (value.request.fid !== fresh.fid || value.request.custodyAddress.toLowerCase() !== fresh.custodyAddress) throw new Error('The prepared authorization does not match the account’s current identity. Find the account again.');
+      const changed = !sameReviewIdentity(reviewed, fresh);
+      setIdentity(fresh); setIdentityChanged(changed); setIdentityAccepted(!changed);
+      pending.current = value; setRequest(value.request); setNow(Date.now());
+    } catch (cause) { value?.dispose(); if (run === generation.current) setError(errorMessage(cause)); }
+    finally { if (run === generation.current) { setBusy(false); setStage(''); } }
   }
   function downloadRequest() {
     if (!request) return;
@@ -212,7 +256,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
   }
   async function complete(event: FormEvent) {
     event.preventDefault();
-    if (busy || connected || !pending.current || !approval) return;
+    if (busy || connected || !identityAccepted || !pending.current || !approval) return;
     const run = generation.current;
     controller.current = new AbortController(); setBusy(true); setError(''); setAttempted(true);
     try {
@@ -266,10 +310,11 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     finally { if (run === generation.current) setBusy(false); }
   }
 
-  return <Modal title={deletionApproval ? 'Enable cast deletion' : socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Your identity. Safer sign-in.'} onClose={close}>
+  return <OnboardingFrame presentation={presentation} title={deletionApproval ? 'Enable cast deletion' : socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Connect your account'} onClose={close}>
     <div className="pairing-hero"><span className="pairing-symbol"><IconShieldLock size={27} /></span><div><strong>Your recovery phrase stays out of this website.</strong><p>Approve a separate device key in your own wallet app.</p></div></div>
     {socialApproval && <p className="pairing-copy">Approve a new device key with permission to {deletionApproval ? 'delete your own casts, ' : ''}follow and unfollow accounts and edit your profile, alongside casts and reactions. {deletionApproval && 'Cast deletion cannot be undone. '}Previous keys retain their original network permissions; switching does not revoke them. The app switches only after Hypersnap confirms the new approval.</p>}
     {unlock ? <form onSubmit={unlockDevice}>
+      <h2 ref={stepHeading} tabIndex={-1}>Unlock your saved device</h2>
       <p className="pairing-copy">{savedMethod === 'passkey' ? 'Your posting key is encrypted in this browser. Use your passkey and device verification to unlock it.' : 'Your posting key is encrypted on this device. Unlock it to reconnect; your custody wallet is not needed.'}</p>
       {savedMethod === 'passkey' ? <p className="fine-print">Your saved encrypted key must still be present in this browser. A synced passkey alone does not copy it to another device. If you cleared browser data, reconnect with your custody wallet.</p> : <><label className="field-label" htmlFor="device-password">Device vault password</label><Input id="device-password" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" disabled={busy} required /></>}
       {error && <p className="error" role="alert">{error}</p>}
@@ -277,17 +322,21 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
       <div className="pairing-actions"><Button variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(false); }}>Connect another account</Button><Button variant="ghost" disabled={busy} onClick={() => void forget()}><IconTrash size={15} />Forget saved key</Button></div>
       <p className="fine-print">Forgetting deletes this browser’s encrypted key. It does not revoke its network authorization. Unlock first to revoke this device.</p>
     </form> : <>
-      <ol className="pairing-steps" aria-label="Connection steps"><li className={!request ? 'active' : 'complete'}><span>{request ? <IconCheck size={13} /> : '1'}</span>Find account</li><li className={request && !approval ? 'active' : approval ? 'complete' : ''}><span>{approval ? <IconCheck size={13} /> : '2'}</span>Approve key</li><li className={approval ? 'active' : ''}><span>3</span>Connect</li></ol>
-      {!request ? <form onSubmit={prepare}>
-        <p className="pairing-copy">Connect your existing wallet app from this browser, or use a compatible wallet extension. Find your public account to create this browser’s separate posting key.</p>
+      <ol className="onboarding-steps" aria-label="Connection steps">{['Find account', 'Review identity', 'Approve wallet', 'Save device'].map((label, index) => <li key={label} className={currentStep === index + 1 ? 'active' : currentStep > index + 1 ? 'complete' : ''} aria-current={currentStep === index + 1 ? 'step' : undefined}><span>{currentStep > index + 1 ? <IconCheck size={14} /> : index + 1}</span><div>{label}{index === 3 && <small>Optional</small>}</div></li>)}</ol>
+      {!request ? !identity ? <form onSubmit={findAccount} className="onboarding-find">
+        <h2 ref={stepHeading} tabIndex={-1}>Find your public account</h2>
+        <p className="pairing-copy">Enter your public username, FID, or custody wallet address. We’ll show the full account details for you to review before creating a device key.</p>
         <label className="field-label" htmlFor="account-identifier">Username, FID, or custody wallet address</label>
         <Input id="account-identifier" placeholder="@username, 1234, or 0x…" value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} readOnly={initialFid !== undefined} required />
-        <p className="fine-print">Use your account’s custody wallet, which may differ from a verified wallet. Do not enter your recovery words.</p>
+        <p className="fine-print">Your FID is your account’s numeric ID. The custody wallet controls the account and may differ from a wallet linked to your profile. Do not enter your recovery words.</p>
         {error && <p className="error" role="alert">{error}</p>}
         {storageUnreadable && <div className="pairing-storage"><p className="fine-print">Forgetting removes this browser’s unreadable encrypted vault. It does not revoke any network authorization. Reconnect with your custody wallet to create or save another device key.</p><Button variant="secondary" disabled={busy} onClick={() => void forget()}><IconTrash size={15} />Forget unreadable saved key</Button></div>}
         <Button type="submit" className="full-width" disabled={busy || !identifier.trim()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Find my account <IconArrowUpRight size={17} /></>}</Button>
         {saved && !socialApproval && <Button className="full-width pairing-back" variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(true); }}><IconLock size={16} />Unlock saved device instead</Button>}
-      </form> : <>
+      </form> : <section className="onboarding-review" aria-label="Review account identity"><h2 ref={stepHeading} tabIndex={-1}>Is this your account?</h2><IdentitySummary identity={identity} /><p className="pairing-copy">Check the username, FID, and full custody address. This is the account your wallet will authorize; a different verified wallet address does not grant access.</p>{error && <p className="error" role="alert">{error}</p>}<Button className="full-width" disabled={busy} onClick={() => void prepareReviewedAccount()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Use this account <IconArrowUpRight size={17} /></>}</Button><Button variant="ghost" className="pairing-back" disabled={busy} onClick={reset}><IconArrowLeft size={16} />Use another account</Button></section> : <>
+        <h2 ref={stepHeading} tabIndex={-1} className="onboarding-section-title">{!identityAccepted ? 'Review the updated account' : connected ? 'Choose how to keep this device connected' : 'Approve this device in your wallet'}</h2>
+        {identity && <IdentitySummary identity={identity} />}
+        {!identityAccepted ? <section className="onboarding-review" aria-label="Review updated account identity">{identityChanged && <p className="onboarding-change" role="alert">The account details changed while preparing this device. Review the updated username, FID, and custody wallet above before continuing.</p>}<AccountFacts request={request} /><Button className="full-width" disabled={busy || expired} onClick={() => { setIdentityAccepted(true); setIdentityChanged(false); setError(''); }}>Use updated account <IconArrowUpRight size={17} /></Button></section> : <>
         <AccountFacts request={request} />
         {!attempted && <WalletApproval request={request} disabled={busy || expired} expired={expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validatePairingApproval(value)); setApprovalName(name); }} />}
         {approval && <div className="wallet-approved" role="status"><IconCheck size={18} /><span>Posting key approved{approvalName ? ` · ${approvalName}` : ''}. Submit below to register it on Hypersnap.</span></div>}
@@ -313,12 +362,14 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
           {!connected && <Button type="submit" formNoValidate={attempted} className="full-width pairing-submit" disabled={busy || !approval || (expired && !attempted)}>{busy ? <><IconRefresh size={17} className="spin" />{stage || 'Checking authorization…'}</> : attempted ? 'Check authorization status' : <>Submit approved device key <IconArrowUpRight size={17} /></>}</Button>}
           {connected && !busy && <Button variant="ghost" className="full-width pairing-back" onClick={() => { const value = provisionalSession.current; if (value) acceptSession(value, generation.current); }}>Continue for this tab without saving</Button>}
         </form>
-        <p className="pairing-release">Closing this dialog erases this tab’s pending key. A network authorization already submitted may remain active.</p>
+        </>}
+        {expired && !identityAccepted && <p className="error" role="alert">This request expired. Start again for a fresh device key and approval.</p>}
+        <p className="pairing-release">{presentation === 'page' ? 'Leaving this page' : 'Closing this dialog'} erases this tab’s pending key. A network authorization already submitted may remain active.</p>
         <Button variant="ghost" className="pairing-back" disabled={busy} onClick={reset}><IconArrowLeft size={15} />{attempted ? 'Discard local key and start again' : 'Use another account'}</Button>
       </>}
     </>}
     <a className="source-note" href={`${sourceUrl}/blob/main/hypersnap/SIGNER.md`} target="_blank" rel="noopener noreferrer"><IconCode size={15} /> How signing, storage, and revocation work <IconArrowUpRight size={13} /></a>
-  </Modal>;
+  </OnboardingFrame>;
 }
 
 export function DeviceSettings({ session, onClose, onLock, notify }: { session: WalletSession; onClose(): void; onLock(revoked?: boolean): void; notify(text: string): void }) {

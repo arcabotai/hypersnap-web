@@ -3,7 +3,7 @@ import { IconSettings, IconKeyboard, IconBell, IconQuote, IconDots, IconTrash, I
 import { Button, Input, Modal } from './components/ui';
 import { getFeed, getProfileFeed, hasImageEmbed, getCast, getChannels, getChannel, getUser, getInfo, getConversation, type Channel, type Cast, type User, type ConversationNode } from './lib/api';
 import type { WalletSession } from './lib/auth';
-import { castPath, parseRoute, parseLocalPath, routePath, searchPath, profilePath, publicUrl, type AppRoute } from './lib/navigation';
+import { castPath, parseRoute, parseLocalPath, routePath, searchPath, profilePath, publicUrl, connectReturnPath, type AppRoute } from './lib/navigation';
 import { ShareCastDialog } from './components/ShareCast';
 import FollowButton from './components/FollowButton';
 import FollowListDialog from './components/FollowListDialog';
@@ -36,12 +36,13 @@ const DevLog = lazy(() => import('./components/DevLog'));
 const ConnectAccount = lazy(() => import('./components/ConnectAccount'));
 const DeviceSettings = lazy(() => import('./components/ConnectAccount').then(module => ({ default: module.DeviceSettings })));
 
-type FeedRoute = Exclude<AppRoute, { kind: 'cast' }>;
+type FeedRoute = Exclude<AppRoute, { kind: 'cast' | 'connect' }>;
+type ConnectFlow = { returnPath: string; backgroundPath: string; thread: boolean; scopes?: readonly number[]; initialFid?: number; action: 'edit' | 'follow' | null; quote: Cast | null; deletion: Cast | null };
 function backgroundLocation(): FeedRoute {
   const path: unknown = history.state?.quorumBackground;
   if (typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')) {
     const parsed = parseLocalPath(path);
-    if (parsed.kind !== 'cast' && parsed.kind !== 'not-found') return parsed;
+    if (parsed.kind !== 'cast' && parsed.kind !== 'connect' && parsed.kind !== 'not-found') return parsed;
   }
   return { kind: 'discover' };
 }
@@ -128,9 +129,10 @@ export default function App() {
   const [background, setBackground] = useState<FeedRoute>(() => backgroundLocation());
   const base = route.kind === 'cast' ? background : route;
   const view = base.kind;
+  const signIn = route.kind === 'connect';
   const channel = base.kind === 'channel' ? base.channel : '';
   const profileTab = base.kind === 'profile' ? base.tab ?? 'casts' : 'casts';
-  const featureView = view === 'search' || view === 'notifications' || view === 'channels' || view === 'devlog' || view === 'settings';
+  const featureView = view === 'search' || view === 'notifications' || view === 'channels' || view === 'devlog' || view === 'settings' || view === 'connect';
   const [channels, setChannels] = useState<Channel[]>([]);
   const [savedChannels, setSavedChannels] = useState<Channel[]>(readChannelPins);
   const [channelInfo, setChannelInfo] = useState<Channel | null>(null);
@@ -138,8 +140,11 @@ export default function App() {
   const channelCache = useRef(new Map<string, Channel>());
   const profileIdentifier = base.kind === 'profile' ? base.identifier : undefined;
   const [session, setSession] = useState<WalletSession | null>(null);
-  const [signIn, setSignIn] = useState(false);
-  const [signInScopes, setSignInScopes] = useState<readonly number[] | undefined>();
+  const connectFlow = useRef<ConnectFlow | null>(null);
+  const connectGeneration = useRef(0);
+  const connectReturning = useRef(false);
+  const afterConnectReturn = useRef<{ fid: number; action: 'edit' | 'follow' | null } | null>(null);
+  const [connectError, setConnectError] = useState('');
   const [editProfile, setEditProfile] = useState(false);
   const [followList, setFollowList] = useState<'followers' | 'following' | null>(null);
   const [followingProfile, setFollowingProfile] = useState<boolean | null>(null);
@@ -210,16 +215,18 @@ export default function App() {
   const navigate = useCallback((path: string, replace = false) => {
     const next = parseLocalPath(path);
     const previous = currentRoute.current;
+    if (previous.kind === 'connect' && next.kind !== 'connect') { connectGeneration.current += 1; connectFlow.current = null; afterSocialConnect.current = null; }
     const isThread = next.kind === 'cast';
-    const state = isThread ? { quorumThread: previous.kind !== 'cast' || !!history.state?.quorumThread, quorumBackground: routePath(currentBase.current) } : null;
+    const threadBackground: FeedRoute = currentBase.current.kind === 'connect' ? { kind: 'discover' } : currentBase.current;
+    const state = isThread ? { quorumThread: previous.kind !== 'cast' || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
     if (path !== location.pathname + location.search) {
       if (replace || (isThread && previous.kind === 'cast')) history.replaceState(state, '', path);
       else history.pushState(state, '', path);
     }
     currentRoute.current = next;
     setRoute(next); setSharedCast(null); setSharedProfile(null); setImageViewer(null); setCastOptions(null); setCastQuotes(null); setReactionPeople(null); setShortcutHelp(false); setRevealState(current => ({ ...current, hashes: new Set() })); setChannelPeople(null); quoteGeneration.current += 1; setQuotedCast(null); setDeletedCast(null); setFollowList(null); setEditProfile(false);
-    if (next.kind === 'cast') setBackground(currentBase.current);
-    else { setBackground(next); setThread(null); }
+    if (next.kind === 'cast') setBackground(threadBackground);
+    else if (next.kind !== 'connect') { setBackground(next); setThread(null); }
   }, []);
   const openProfile = useCallback((user: User) => {
     profileCache.current.set(String(user.fid), user);
@@ -234,7 +241,35 @@ export default function App() {
     if (history.state?.quorumThread) history.back();
     else navigate(routePath(currentBase.current), true);
   }, [navigate]);
-  function requestSignIn(scopes?: readonly number[]) { setSignInScopes(scopes); setSignIn(true); }
+  function requestSignIn(scopes?: readonly number[]) {
+    if (currentRoute.current.kind === 'connect') return;
+    const returnPath = connectReturnPath(routePath(currentRoute.current));
+    const backgroundPath = connectReturnPath(routePath(currentBase.current));
+    connectGeneration.current += 1;
+    connectReturning.current = false; afterConnectReturn.current = null;
+    setConnectError('');
+    connectFlow.current = { returnPath, backgroundPath, thread: Boolean(history.state?.quorumThread), scopes, initialFid: currentSession.current?.fid, action: afterSocialConnect.current, quote: quotedCast, deletion: deletedCast };
+    history.pushState({ quorumConnectReturn: returnPath, quorumConnectBackground: backgroundPath }, '', '/connect');
+    currentRoute.current = { kind: 'connect' }; setRoute({ kind: 'connect' });
+  }
+  function returnFromConnect() {
+    const flow = connectFlow.current;
+    if (connectReturning.current) return flow;
+    // A launch made by this mounted app has a known previous local entry. Go
+    // back to it so closing a restored conversation does not hit a duplicate.
+    if (flow) { connectReturning.current = true; history.back(); return flow; }
+    const returnPath = connectReturnPath(history.state?.quorumConnectReturn);
+    const backgroundPath = connectReturnPath(history.state?.quorumConnectBackground);
+    navigate(returnPath, true);
+    if (parseLocalPath(returnPath).kind === 'cast') {
+      const parsed = parseLocalPath(backgroundPath);
+      const background: FeedRoute = parsed.kind === 'cast' || parsed.kind === 'connect' ? { kind: 'discover' } : parsed;
+      setBackground(background); currentBase.current = background;
+      history.replaceState({ quorumThread: false, quorumBackground: routePath(background) }, '', returnPath);
+    }
+    setQuotedCast(null); setDeletedCast(null);
+    return flow;
+  }
   function enableSocialFeatures(action: 'edit' | 'follow') {
     afterSocialConnect.current = action;
     requestSignIn(FULL_SOCIAL_SCOPES);
@@ -254,7 +289,7 @@ export default function App() {
     } catch (error) { if (stillCurrent()) { setFollowError(message(error)); setFollowingProfile(null); } else notify(message(error)); }
     finally { setFollowBusy(false); }
   }
-  const activeTitle = view === 'profile' ? profile?.display_name || profile?.username || 'Profile' : view === 'channel' ? channelInfo?.name || channel : view === 'following' ? 'Following' : view === 'bookmarks' ? 'Bookmarks' : view === 'not-found' ? 'Page not found' : view === 'notifications' ? 'Notifications' : view === 'search' ? 'Search' : view === 'channels' ? 'Channels' : view === 'devlog' ? 'Dev log' : view === 'settings' ? 'Settings' : 'Discover';
+  const activeTitle = view === 'profile' ? profile?.display_name || profile?.username || 'Profile' : view === 'channel' ? channelInfo?.name || channel : view === 'following' ? 'Following' : view === 'bookmarks' ? 'Bookmarks' : view === 'not-found' ? 'Page not found' : view === 'notifications' ? 'Notifications' : view === 'search' ? 'Search' : view === 'channels' ? 'Channels' : view === 'devlog' ? 'Dev log' : view === 'settings' ? 'Settings' : view === 'connect' ? 'Connect your identity' : 'Discover';
 
   useEffect(() => {
     setFollowingProfile(null); setFollowError('');
@@ -267,16 +302,23 @@ export default function App() {
   }, [view, profile?.fid, session?.fid, followRefresh, refresh]);
   useEffect(() => {
     const pop = () => {
-      const next = parseRoute(location); currentRoute.current = next; setRoute(next); setSharedCast(null); setSharedProfile(null); setImageViewer(null); setCastOptions(null); setCastQuotes(null); setReactionPeople(null); setShortcutHelp(false); setRevealState(current => ({ ...current, hashes: new Set() })); setChannelPeople(null); quoteGeneration.current += 1; setQuotedCast(null); setDeletedCast(null); setFollowList(null); setEditProfile(false);
+      const next = parseRoute(location);
+      const restored = currentRoute.current.kind === 'connect' && connectFlow.current?.returnPath === routePath(next) ? connectFlow.current : null;
+      const editAfterReturn = Boolean(restored && afterConnectReturn.current?.action === 'edit' && afterConnectReturn.current.fid === currentSession.current?.fid);
+      if (currentRoute.current.kind === 'connect' || next.kind === 'connect') { connectGeneration.current += 1; connectFlow.current = null; afterSocialConnect.current = null; setConnectError(''); }
+      connectReturning.current = false; afterConnectReturn.current = null;
+      currentRoute.current = next; setRoute(next); setSharedCast(null); setSharedProfile(null); setImageViewer(null); setCastOptions(null); setCastQuotes(null); setReactionPeople(null); setShortcutHelp(false); setRevealState(current => ({ ...current, hashes: new Set() })); setChannelPeople(null); quoteGeneration.current += 1; setQuotedCast(restored?.quote ?? null); setDeletedCast(restored?.deletion ?? null); setFollowList(null); setEditProfile(editAfterReturn);
       if (next.kind === 'cast') setBackground(backgroundLocation());
-      else { setBackground(next); setThread(null); }
+      else if (next.kind !== 'connect') { setBackground(next); setThread(null); }
     };
     window.addEventListener('popstate', pop);
     const initial = parseRoute(location);
     if (initial.kind === 'cast' && location.search) history.replaceState(history.state, '', castPath(initial.hash));
+    if (initial.kind === 'connect') history.replaceState({ quorumConnectReturn: connectReturnPath(history.state?.quorumConnectReturn), quorumConnectBackground: connectReturnPath(history.state?.quorumConnectBackground) }, '', '/connect');
     return () => window.removeEventListener('popstate', pop);
   }, []);
   useEffect(() => {
+    if (view === 'connect') return;
     if (view !== 'profile') { setProfile(null); setProfileError(''); return; }
     const controller = new AbortController(); profileRead.current = controller; setProfileError('');
     if (!profileIdentifier && !session) { setProfile(null); setProfileLoading(false); return; }
@@ -292,6 +334,7 @@ export default function App() {
     // read or reset the feed. Reads follow identity changes or explicit refresh.
   }, [view, profileIdentifier, session?.fid, session?.publicKey, refresh]);
   useEffect(() => {
+    if (signIn) return;
     const controller = new AbortController();
     getChannels({ kind: 'trending', limit: 25, signal: controller.signal }).then(data => {
       if (controller.signal.aborted) return;
@@ -299,7 +342,7 @@ export default function App() {
       setChannels(data.channels.slice(0, 5));
     }).catch(() => {});
     return () => controller.abort();
-  }, [refresh]);
+  }, [refresh, signIn]);
   useEffect(() => {
     setChannelError('');
     if (view !== 'channel') { setChannelInfo(null); return; }
@@ -315,10 +358,11 @@ export default function App() {
   useEffect(() => () => currentSession.current?.dispose(), []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, channel, profile?.fid, profileTab]);
   useEffect(() => {
+    if (signIn) return;
     const controller = new AbortController();
     getInfo(controller.signal).then(data => { setInfo(data as Record<string, unknown>); setNetworkError(false); }).catch(() => { if (!controller.signal.aborted) setNetworkError(true); });
     return () => controller.abort();
-  }, [refresh]);
+  }, [refresh, signIn]);
   useEffect(() => {
     const controller = new AbortController();
     feedGeneration.current += 1; feedMoreRead.current?.abort();
@@ -386,7 +430,22 @@ export default function App() {
     if (!persisted) notify('Content controls will last for this tab. Browser storage is unavailable.');
     return persisted;
   }
-  useNavigationShortcuts({ onSearch() { navigate('/search'); setSearchFocus(value => value + 1); }, onHelp() { setShortcutHelp(true); } });
+  useNavigationShortcuts({ onSearch() { if (!signIn) { navigate('/search'); setSearchFocus(value => value + 1); } }, onHelp() { if (!signIn) setShortcutHelp(true); } });
+  const connectVersion = connectGeneration.current;
+  if (signIn) return <Suspense fallback={<main className="onboarding-loading"><p role="status">Loading device sign-in…</p><Button variant="ghost" onClick={returnFromConnect}>Cancel</Button></main>}>
+    {connectError && <p className="error" role="alert">{connectError}</p>}
+    <ConnectAccount key={connectVersion} presentation="page" requestedScopes={connectFlow.current?.scopes} initialFid={connectFlow.current?.initialFid} onClose={returnFromConnect} onConnect={value => {
+      if (currentRoute.current.kind !== 'connect' || connectReturning.current || connectVersion !== connectGeneration.current) { if (value !== currentSession.current) value.dispose(); return; }
+      const flow = connectFlow.current;
+      if (flow?.scopes && flow.initialFid !== undefined && value.fid !== flow.initialFid) { value.dispose(); setConnectError('Reconnect the current account to update its device permissions.'); return; }
+      const previous = currentSession.current;
+      setSession(value); currentSession.current = value;
+      if (previous && previous !== value) previous.dispose();
+      afterConnectReturn.current = flow ? { fid: value.fid, action: flow.action } : null;
+      returnFromConnect();
+      notify('You’re connected to Hypersnap.');
+    }} />
+  </Suspense>;
   const card = (cast: Cast) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
@@ -464,7 +523,6 @@ export default function App() {
     </aside>
     <nav className="mobile-nav" aria-label="Mobile navigation"><Button variant="ghost" aria-label="Discover" onClick={() => navigate('/')}><IconCompass /></Button><Button variant="ghost" aria-label="Following" onClick={() => navigate('/following')}><IconUsers /></Button><Button variant="ghost" aria-label="Bookmarks" onClick={() => navigate('/bookmarks')}><IconBookmark /></Button><Button variant="ghost" aria-label="Search" onClick={() => navigate('/search')}><IconSearch /></Button><Button variant="ghost" aria-label="Notifications" onClick={() => navigate('/notifications')}><IconBell /></Button><Button variant="ghost" aria-label="Channels" onClick={() => navigate('/channels')}><IconHash /></Button><Button variant="ghost" aria-label="Account" onClick={() => session ? navigate('/profile') : requestSignIn()}><IconKey /></Button></nav>
     {toast && <div className="toast" role="status"><span>{toast}</span><Button variant="ghost" aria-label="Dismiss notification" onClick={() => setToast('')}><IconX size={17} /></Button></div>}
-    {signIn && <Suspense fallback={<Modal title="Connect your identity" onClose={() => setSignIn(false)}><p className="pairing-copy" role="status">Loading device sign-in…</p></Modal>}><ConnectAccount requestedScopes={signInScopes} initialFid={session?.fid} onClose={() => { setSignIn(false); setSignInScopes(undefined); afterSocialConnect.current = null; }} onConnect={value => { session?.dispose(); setSession(value); setSignIn(false); setSignInScopes(undefined); if (afterSocialConnect.current === 'edit' && profile?.fid === value.fid) setEditProfile(true); afterSocialConnect.current = null; notify(`Welcome, @${value.user.username || value.fid}. You’re connected to Hypersnap.`); }} /></Suspense>}
     {deviceSettings && session && <Suspense fallback={<Modal title="This device’s access" onClose={() => setDeviceSettings(false)}><p role="status">Loading device settings…</p></Modal>}><DeviceSettings session={session} onClose={() => setDeviceSettings(false)} onLock={revoked => lockSession(session, revoked)} notify={notify} /></Suspense>}
     {route.kind === 'cast' && <Modal title="Conversation" onClose={closeThread} wide>{thread && card(thread)}{threadError ? <div className="empty"><p className="error">{threadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : conversation && thread ? <><Composer key={`${session?.publicKey ?? 'guest'}:${thread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={thread} notify={notify} />{conversation.replies.length ? <ConversationReplies nodes={conversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</Modal>}
     {followList && profile && <FollowListDialog key={`${profile.fid}:${followList}`} user={profile} kind={followList} loadPage={getFollows} onProfile={openProfile} onClose={() => setFollowList(null)} />}
