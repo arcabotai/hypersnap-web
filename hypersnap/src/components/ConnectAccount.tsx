@@ -6,7 +6,7 @@ import { deleteSavedSession, getSavedSessionMethod, preparePairing, unlockSavedS
 import { PAIRING_SCOPES, hashPairingRequest, hashRevocationRequest, validatePairingScopes, validatePairingApproval, verifyPairingApproval, validateRevocationApproval, verifyRevocationApproval, type PairingApproval, type PairingRequest, type RevocationApproval, type RevocationRequest } from '../lib/pairing';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
 import { passkeysAvailable } from '../lib/passkey';
-import { getUser } from '../lib/api';
+import { ApiError, getUser } from '../lib/api';
 import { normalizeReviewIdentity, parseAccountLookup, sameReviewIdentity, type ReviewIdentity } from '../lib/accountLookup';
 import '../onboarding.scss';
 
@@ -119,8 +119,9 @@ function AccountFacts({ request }: { request: PairingRequest }) {
   </dl></details></>;
 }
 
-function IdentitySummary({ identity }: { identity: ReviewIdentity }) {
+function IdentitySummary({ identity, ensName }: { identity: ReviewIdentity; ensName?: string }) {
   return <section className="onboarding-identity" aria-label="Account identity"><div className="onboarding-identity__intro"><span aria-hidden="true"><IconWallet size={25} /></span><div><p>YOUR HYPERSNAP IDENTITY</p><h3>{identity.displayName || (identity.username ? `@${identity.username}` : `Account FID ${identity.fid}`)}</h3></div></div><dl>
+    {ensName && <div><dt>ENS name used for lookup</dt><dd><span>{ensName}</span><small className="onboarding-identity__note">Lookup label only. The custody wallet below controls this account.</small></dd></div>}
     <div><dt>Username</dt><dd>{identity.username ? `@${identity.username}` : 'Username unavailable on Hypersnap'}</dd></div>
     <div><dt>FID</dt><dd>{identity.fid}</dd></div>
     <div className="onboarding-identity__custody"><dt>Custody wallet</dt><dd><code>{identity.custodyAddress}</code></dd></div>
@@ -139,6 +140,8 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
   const socialApproval = scopes.includes(11);
   const deletionApproval = scopes.includes(2);
   const [identifier, setIdentifier] = useState(initialFid ? String(initialFid) : '');
+  const [lookupEnsName, setLookupEnsName] = useState('');
+  const [ensNotFound, setEnsNotFound] = useState(false);
   const [identity, setIdentity] = useState<ReviewIdentity | null>(null);
   const [identityAccepted, setIdentityAccepted] = useState(false);
   const [identityChanged, setIdentityChanged] = useState(false);
@@ -193,7 +196,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     controller.current?.abort(); pending.current?.dispose(); pending.current = null;
     provisionalSession.current?.dispose(); provisionalSession.current = null;
     setRequest(null); setApproval(null); setApprovalName(''); setAttempted(false); setConnected(false);
-    setIdentity(null); setIdentityAccepted(false); setIdentityChanged(false); setRemember(false);
+    setIdentity(null); setIdentityAccepted(false); setIdentityChanged(false); setRemember(false); setLookupEnsName(''); setEnsNotFound(false);
     setPassword(''); setConfirmation(''); setStorageMethod('passkey'); setError(''); setStage(''); setBusy(false);
   }
   function close() { reset(); onClose(); }
@@ -206,13 +209,20 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     event.preventDefault();
     if (busy) return;
     const run = ++generation.current;
-    controller.current = new AbortController(); setBusy(true); setError(''); setStage('Looking up your public account…');
+    controller.current = new AbortController(); setBusy(true); setError(''); setLookupEnsName(''); setEnsNotFound(false); setStage('Looking up your public account…');
+    let ensName = '';
     try {
       const lookup = parseAccountLookup(identifier, initialFid);
+      if ('ensName' in lookup && typeof lookup.ensName === 'string') ensName = lookup.ensName;
       const user = await getUser(lookup, controller.current.signal);
       if (run !== generation.current) return;
-      setIdentity(normalizeReviewIdentity(user, lookup)); setIdentityAccepted(false); setIdentityChanged(false);
-    } catch (cause) { if (run === generation.current) setError(errorMessage(cause)); }
+      setIdentity(normalizeReviewIdentity(user, lookup)); setLookupEnsName(ensName); setIdentityAccepted(false); setIdentityChanged(false);
+    } catch (cause) {
+      if (run === generation.current) {
+        const missingName = Boolean(ensName && cause instanceof ApiError && cause.status === 404 && cause.code === 'ens_name_not_found');
+        setEnsNotFound(missingName); setError(missingName ? 'No account is linked to this ENS or Base name in this Hypersnap node.' : errorMessage(cause));
+      }
+    }
     finally { if (run === generation.current) { setBusy(false); setStage(''); } }
   }
   async function prepareReviewedAccount() {
@@ -227,7 +237,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
       const fresh = normalizeReviewIdentity(value.user, { fid: reviewed.fid });
       if (value.request.fid !== fresh.fid || value.request.custodyAddress.toLowerCase() !== fresh.custodyAddress) throw new Error('The prepared authorization does not match the account’s current identity. Find the account again.');
       const changed = !sameReviewIdentity(reviewed, fresh);
-      setIdentity(fresh); setIdentityChanged(changed); setIdentityAccepted(!changed);
+      setIdentity(fresh); setIdentityChanged(changed); setIdentityAccepted(!changed); setLookupEnsName('');
       pending.current = value; setRequest(value.request); setNow(Date.now());
     } catch (cause) { value?.dispose(); if (run === generation.current) setError(errorMessage(cause)); }
     finally { if (run === generation.current) { setBusy(false); setStage(''); } }
@@ -325,15 +335,17 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
       <ol className="onboarding-steps" aria-label="Connection steps">{['Find account', 'Review identity', 'Approve wallet', 'Save device'].map((label, index) => <li key={label} className={currentStep === index + 1 ? 'active' : currentStep > index + 1 ? 'complete' : ''} aria-current={currentStep === index + 1 ? 'step' : undefined}><span>{currentStep > index + 1 ? <IconCheck size={14} /> : index + 1}</span><div>{label}{index === 3 && <small>Optional</small>}</div></li>)}</ol>
       {!request ? !identity ? <form onSubmit={findAccount} className="onboarding-find">
         <h2 ref={stepHeading} tabIndex={-1}>Find your public account</h2>
-        <p className="pairing-copy">Enter your public username, FID, or custody wallet address. We’ll show the full account details for you to review before creating a device key.</p>
-        <label className="field-label" htmlFor="account-identifier">Username, FID, or custody wallet address</label>
-        <Input id="account-identifier" placeholder="@username, 1234, or 0x…" value={identifier} onChange={event => setIdentifier(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} readOnly={initialFid !== undefined} required />
+        <p className="pairing-copy">Enter your public username, ENS name, FID, or custody wallet address. We’ll show the full account details for you to review before creating a device key.</p>
+        <label className="field-label" htmlFor="account-identifier">Username, ENS name, FID, or custody wallet address</label>
+        <Input id="account-identifier" placeholder="@username, name.eth, 1234, or 0x…" value={identifier} onChange={event => { setIdentifier(event.target.value); setLookupEnsName(''); setEnsNotFound(false); setError(''); }} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} disabled={busy} readOnly={initialFid !== undefined} required />
         <p className="fine-print">Your FID is your account’s numeric ID. The custody wallet controls the account and may differ from a wallet linked to your profile. Do not enter your recovery words.</p>
+        <p className="fine-print">ENS and Base names (.eth or .base.eth) must already be linked to an account and indexed on Hypersnap. This lookup does not register names or use an Ethereum wallet address record.</p>
         {error && <p className="error" role="alert">{error}</p>}
+        {ensNotFound && <p className="fine-print onboarding-lookup-recovery">Try your account’s FID or exact custody wallet address. A name’s Ethereum address record alone does not link it to a Hypersnap account.</p>}
         {storageUnreadable && <div className="pairing-storage"><p className="fine-print">Forgetting removes this browser’s unreadable encrypted vault. It does not revoke any network authorization. Reconnect with your custody wallet to create or save another device key.</p><Button variant="secondary" disabled={busy} onClick={() => void forget()}><IconTrash size={15} />Forget unreadable saved key</Button></div>}
         <Button type="submit" className="full-width" disabled={busy || !identifier.trim()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Find my account <IconArrowUpRight size={17} /></>}</Button>
         {saved && !socialApproval && <Button className="full-width pairing-back" variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(true); }}><IconLock size={16} />Unlock saved device instead</Button>}
-      </form> : <section className="onboarding-review" aria-label="Review account identity"><h2 ref={stepHeading} tabIndex={-1}>Is this your account?</h2><IdentitySummary identity={identity} /><p className="pairing-copy">Check the username, FID, and full custody address. This is the account your wallet will authorize; a different verified wallet address does not grant access.</p>{error && <p className="error" role="alert">{error}</p>}<Button className="full-width" disabled={busy} onClick={() => void prepareReviewedAccount()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Use this account <IconArrowUpRight size={17} /></>}</Button><Button variant="ghost" className="pairing-back" disabled={busy} onClick={reset}><IconArrowLeft size={16} />Use another account</Button></section> : <>
+      </form> : <section className="onboarding-review" aria-label="Review account identity"><h2 ref={stepHeading} tabIndex={-1}>Is this your account?</h2><IdentitySummary identity={identity} ensName={lookupEnsName} /><p className="pairing-copy">Check the username, FID, and full custody address. This is the account your wallet will authorize; a different verified wallet address does not grant access.</p>{error && <p className="error" role="alert">{error}</p>}<Button className="full-width" disabled={busy} onClick={() => void prepareReviewedAccount()}>{busy ? <><IconRefresh size={17} className="spin" />{stage}</> : <>Use this account <IconArrowUpRight size={17} /></>}</Button><Button variant="ghost" className="pairing-back" disabled={busy} onClick={reset}><IconArrowLeft size={16} />Use another account</Button></section> : <>
         <h2 ref={stepHeading} tabIndex={-1} className="onboarding-section-title">{!identityAccepted ? 'Review the updated account' : connected ? 'Choose how to keep this device connected' : 'Approve this device in your wallet'}</h2>
         {identity && <IdentitySummary identity={identity} />}
         {!identityAccepted ? <section className="onboarding-review" aria-label="Review updated account identity">{identityChanged && <p className="onboarding-change" role="alert">The account details changed while preparing this device. Review the updated username, FID, and custody wallet above before continuing.</p>}<AccountFacts request={request} /><Button className="full-width" disabled={busy || expired} onClick={() => { setIdentityAccepted(true); setIdentityChanged(false); setError(''); }}>Use updated account <IconArrowUpRight size={17} /></Button></section> : <>

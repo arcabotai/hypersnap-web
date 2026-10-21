@@ -40,6 +40,7 @@
 .onboarding-identity dl > div { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: .5rem; padding: .8rem 1rem; border-top: .0625rem solid var(--border); }
 .onboarding-identity dt { font-size: .76rem; line-height: 1.7; color: var(--color-text-muted); }
 .onboarding-identity dd { min-width: 0; margin: 0; font-size: .9rem; line-height: 1.65; color: var(--color-text-strong); overflow-wrap: anywhere; }
+.onboarding-identity__note { display: block; margin-top: .25rem; font-size: .72rem; line-height: 1.75; color: var(--color-text-muted); }
 .onboarding-identity code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.9; overflow-wrap: anywhere; word-break: break-word; }
 .onboarding-identity__custody { background: var(--soft-accent); }
 .onboarding-change { margin: .8rem 0; padding: .8rem 1rem; border: .0625rem solid rgb(var(--accent-rgb) / .35); border-radius: .6rem; background: var(--soft-accent); color: var(--color-text-strong); font-size: .85rem; line-height: 1.8; }

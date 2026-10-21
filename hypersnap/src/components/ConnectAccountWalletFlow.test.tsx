@@ -120,6 +120,8 @@ afterEach(async () => { await act(async () => root.unmount()); connected?.dispos
 describe('isolated browser-wallet sign-in across the real UI and protocol adapter', () => {
   it.each([
     { label: 'username', input: '@isolated-wallet', lookup: { username: 'isolated-wallet' } },
+    { label: 'ENS name', input: '@ALICE.ETH', lookup: { ensName: 'alice.eth' } },
+    { label: 'Basename', input: '@alice.base.eth', lookup: { ensName: 'alice.base.eth' } },
     { label: 'FID', input: '1234', lookup: { fid: 1234 } },
     { label: 'custody wallet', input: custody, lookup: { custodyAddress: custody } },
   ])('finds a $label publicly, reviews the same identity, then registers only after two signatures and explicit submission', async ({ input, lookup }) => {
@@ -127,6 +129,7 @@ describe('isolated browser-wallet sign-in across the real UI and protocol adapte
     await findAccount(cb, input, false);
     expect(getUser).toHaveBeenCalledExactlyOnceWith(lookup, expect.any(AbortSignal));
     expect(container.querySelector('[aria-label="Review account identity"]')?.textContent).toContain(user.username);
+    if ('ensName' in lookup) expect(container.querySelector('[aria-label="Review account identity"]')?.textContent).toContain(lookup.ensName);
     expect(container.textContent).toContain(String(user.fid)); expect(container.textContent).toContain(custody);
     expect(random).not.toHaveBeenCalled(); expect(getSigners).not.toHaveBeenCalled(); expect(cb.request).not.toHaveBeenCalled(); expect(submitMessage).not.toHaveBeenCalled();
     await click(button('Use this account'));
@@ -134,6 +137,22 @@ describe('isolated browser-wallet sign-in across the real UI and protocol adapte
     await selectCoinbase(); await click(button('Connect Coinbase Wallet (legacy) & approve'));
     await waitFor(() => expect(button('Submit approved device key').disabled).toBe(false));
     expect(cb.payloads.map(value => value.primaryType)).toEqual(['KeyAdd', 'SignedKeyRequest']); expect(submitMessage).not.toHaveBeenCalled();
+    await click(button('Submit approved device key')); await waitFor(() => expect(onConnect).toHaveBeenCalledOnce());
+    expect(connected?.fid).toBe(user.fid); expect(connected?.custodyAddress).toBe(custody); expect(submitMessage).toHaveBeenCalledOnce(); assertReadOnlyWalletMethods(cb.request);
+  });
+
+  it('keeps the account custody wallet authoritative when an ENS-linked verified address belongs to another wallet', async () => {
+    const cb = wallet(); cb.setAccounts([unrelated]);
+    vi.mocked(getUser).mockImplementation(async () => structuredClone({ ...user, verified_addresses: { eth_addresses: [unrelated], sol_addresses: [] } }));
+    await findAccount(cb, 'linked-owner.eth', false);
+    expect(getUser).toHaveBeenCalledExactlyOnceWith({ ensName: 'linked-owner.eth' }, expect.any(AbortSignal));
+    expect(container.querySelector('[aria-label="Review account identity"]')?.textContent).toContain(custody);
+    expect(cb.request).not.toHaveBeenCalled(); expect(getSigners).not.toHaveBeenCalled();
+    await click(button('Use this account')); await selectCoinbase(); await click(button('Connect Coinbase Wallet (legacy) & approve'));
+    await waitFor(() => expect(container.textContent).toContain('A different verified wallet cannot authorize'));
+    expect(cb.payloads).toHaveLength(0); expect(submitMessage).not.toHaveBeenCalled();
+    cb.setAccounts([custody]); await click(button('Retry Coinbase Wallet (legacy) approval'));
+    await waitFor(() => expect(button('Submit approved device key').disabled).toBe(false));
     await click(button('Submit approved device key')); await waitFor(() => expect(onConnect).toHaveBeenCalledOnce());
     expect(connected?.fid).toBe(user.fid); expect(connected?.custodyAddress).toBe(custody); expect(submitMessage).toHaveBeenCalledOnce(); assertReadOnlyWalletMethods(cb.request);
   });

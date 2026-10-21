@@ -1,3 +1,49 @@
+# Native ENS and Base name lookup · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **671 tests across 40 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. New checks cover native name normalization and limits, name/type pairing in the gateway, exact missing-proof classification, proof-to-FID hydration, mismatched/invalid FIDs, one shared 25-second deadline, caller cancellation before and between reads, late results, canonical aliases and unchanged custody authorization. Actual-crypto UI integration tests cover ENS/Base names and refusing a merely linked wallet until the true custody account is selected. No dependency or signing scope was added.
+
+ENS names now use Hypersnap's `/v1/fidByName` with explicit `ens` or `basename` type, followed by a public profile read for that exact positive uint32 FID. Existing `.eth` profile/username lookups take the same route, fixing a live gap in the v2 username endpoint. Onboarding recognizes names before `0x` address classification, shows the historical name used for lookup separately from the canonical username/FID/custody identity, and clears that label before fresh device preparation. Only an exact native missing-proof response maps to `404 ens_name_not_found`; storage, validation and transport failures remain errors. Missing-name guidance offers a username, FID or custody-address lookup without implying a name can authorize access.
+
+The reviewed node revision remains `2e8733d044141ad3ba0e0592a4d5873c1dc6ce9c`. Its `core/validations/message.rs` and `network/http_server.rs` define the current native subset: `name.eth` or `name.base.eth`, one 1–16 character ASCII alphanumeric/hyphen label beginning with an alphanumeric character. Case and an optional leading @ normalize within that subset; Unicode is rejected before case folding. This is an indexed name-proof lookup, not generic ENS normalization, reverse resolution, registration or live Ethereum address ownership verification. No external RPC or Farcaster-operated service is contacted. The name proof's owner or resolved wallet may differ from the current custody wallet, which remains the authorization authority.
+
+Public reads of the live upstream confirmed `dwr.eth`→FID3, `vitalik.eth`→FID5650 and `jesse.base.eth`→FID99 through the native endpoint. The old v2 by-username route returned not found for those examples. An obviously nonexistent supported-format name returned the exact native NotFound wrapper now recognized by the gateway. These were public lookups only; no production key, signature, account, media or cast write was made. Physical wallet interoperability and an independent security audit remain outside these checks.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   b05a340  ⚠ working tree dirty (9 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/components/ConnectAccount.tsx, desktop/hypersnap/src/lib/accountLookup.ts, desktop/hypersnap/worker/index.test.ts)
+            (… and 3 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Dedicated onboarding and complete identity review · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

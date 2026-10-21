@@ -13,6 +13,58 @@ afterEach(() => {
 });
 
 describe('the fixed Hypersnap gateway', () => {
+  it('forwards only canonical native ENS/Basename name-to-FID reads to the fixed node without credentials', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ fid: 3 })); vi.stubGlobal('fetch', fetch);
+    for (const [name, type] of [['dwr.eth', 'ens'], ['jesse.base.eth', 'basename'], [`${'a'.repeat(16)}.eth`, 'ens'], [`${'a'.repeat(16)}.base.eth`, 'basename']]) {
+      const response = await handleRequest(new Request(`${BASE}/api/v1/fidByName?name=${name}&type=${type}`, { headers: { Authorization: 'Bearer never-forward', Cookie: 'wallet=never-forward', Origin: BASE } }), env);
+      expect(response.status).toBe(200); expect(await response.json()).toEqual({ fid: 3 });
+      const [url, init] = fetch.mock.calls.at(-1)!;
+      expect(url).toBe(`https://haatz.quilibrium.com/v1/fidByName?name=${name}&type=${type}`);
+      expect(init.method).toBe('GET'); expect(init.credentials).toBe('omit'); expect(init.redirect).toBe('manual');
+      expect(init.headers.get('Authorization')).toBeNull(); expect(init.headers.get('Cookie')).toBeNull();
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+    }
+  });
+
+  it('rejects noncanonical names, unsupported forms, mismatched types and extra ENS query fields before any upstream read', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    for (const query of [
+      'name=dwr.eth', 'type=ens', 'name=&type=ens', 'name=dwr.eth&type=fname',
+      'name=dwr.eth&type=basename', 'name=jesse.base.eth&type=ens',
+      'name=DWR.eth&type=ens', 'name=%40dwr.eth&type=ens', 'name=dwr.eth.&type=ens',
+      'name=sub.dwr.eth&type=ens', 'name=sub.jesse.base.eth&type=basename', 'name=vitalik.com&type=ens',
+      'name=%F0%9F%98%80.eth&type=ens', 'name=-dwr.eth&type=ens', 'name=d_wr.eth&type=ens',
+      `name=${'a'.repeat(17)}.eth&type=ens`, 'name=dwr.eth&type=ens&type=ens',
+      'name=dwr.eth&name=vitalik.eth&type=ens', 'name=dwr.eth&type=ens&rpc=https://example.com',
+    ]) expect((await handleRequest(new Request(`${BASE}/api/v1/fidByName?${query}`), env)).status, query).toBe(400);
+    expect((await handleRequest(new Request(`${BASE}/api/v1/fidByName?name=dwr.eth&type=ens`, { method: 'POST' }), env)).status).toBe(405);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('maps only the verified native missing-name proof error to a helpful unlinked-name result', async () => {
+    for (const metadata of ['', ', metadata: MetadataMap { headers: {} }']) {
+      const fetch = vi.fn().mockResolvedValue(jsonResponse({ error: 'Failed to get fid by name', error_detail: `status: NotFound, message: "username proof not found", details: []${metadata}` }, 400)); vi.stubGlobal('fetch', fetch);
+      const response = await handleRequest(new Request(`${BASE}/api/v1/fidByName?name=arca-no-ens-404.eth&type=ens`), env);
+      expect(response.status).toBe(404); expect(await response.json()).toEqual({ code: 'ens_name_not_found', message: 'This ENS name is not linked to an account on this Hypersnap node. Try your username or FID.' });
+    }
+  });
+
+  it('does not classify storage, unrelated NotFound, malformed input or transport failures as an unlinked ENS name', async () => {
+    for (const error of [
+      { error: 'Failed to get fid by name', error_detail: 'status: Internal, message: "store error", details: []' },
+      { error: 'Failed to get fid by name', error_detail: 'status: NotFound, message: "stores not found for fid", details: []' },
+      { error: 'Failed to get username proof', error_detail: 'status: NotFound, message: "username proof not found", details: []' },
+      { error: 'Name is required' },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(error, 400)));
+      const response = await handleRequest(new Request(`${BASE}/api/v1/fidByName?name=dwr.eth&type=ens`), env);
+      expect(response.status).toBe(400); expect((await response.json() as { code: string }).code).toBe('upstream_error');
+    }
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Connection lost')));
+    const unavailable = await handleRequest(new Request(`${BASE}/api/v1/fidByName?name=dwr.eth&type=ens`), env);
+    expect(unavailable.status).toBe(502); expect((await unavailable.json() as { code: string }).code).toBe('upstream_unavailable');
+  });
+
   it('allows only exact paginated cast-actor reads and strips request credentials', async () => {
     const fetch = vi.fn().mockImplementation(async () => jsonResponse({ messages: [] })); vi.stubGlobal('fetch', fetch);
     const path = `/v1/reactionsByCast?target_fid=3&target_hash=${'a'.repeat(40)}&reaction_type=Like&pageSize=25&reverse=true&pageToken=dG9rZW4%3D`;

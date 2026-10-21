@@ -2,6 +2,7 @@
  * this worker accepts public queries or signed wire bytes.
  */
 import { handleMediaRequest, type MediaEnv } from './media';
+import { normalizeHypersnapEnsName } from '../src/lib/ensName';
 export { MediaUploadQuota } from './media';
 export interface Env extends MediaEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -50,6 +51,7 @@ const fid = integer(Number.MAX_SAFE_INTEGER);
 const address: Rule = value => /^0x[a-fA-F0-9]{40}$/.test(value);
 const hash: Rule = value => /^(?:0x)?[a-fA-F0-9]{40}$/.test(value);
 const username: Rule = value => /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
+const ensName: Rule = value => { try { return normalizeHypersnapEnsName(value).name === value; } catch { return false; } };
 const channel: Rule = value => /^[a-zA-Z0-9_-]{1,64}$/.test(value);
 const searchQuery: Rule = value => !!value.trim() && new TextEncoder().encode(value).length <= 256 && !/[\u0000-\u001f\u007f]/.test(value);
 const cursor: Rule = value => /^[a-zA-Z0-9_+/=:-]{1,2048}$/.test(value);
@@ -58,9 +60,10 @@ const followPagination: QueryRules = { limit: integer(100), cursor: value => /^\
 const reactionType: Rule = value => value === 'Like' || value === 'Recast';
 const reactionPageToken: Rule = value => value.length > 0 && value.length <= 2048 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
 
-interface Endpoint { required?: string[]; query: QueryRules }
+interface Endpoint { required?: string[]; query: QueryRules; validate?: (params: URLSearchParams) => boolean }
 const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v1/info': { query: {} },
+  '/v1/fidByName': { required: ['name', 'type'], query: { name: ensName, type: value => value === 'ens' || value === 'basename' }, validate: params => normalizeHypersnapEnsName(params.get('name')!).type === params.get('type') },
   '/v1/signersByFid': { required: ['fid'], query: { fid, pageSize: integer(1000), pageToken: cursor, 'requesterFids[0]': fid } },
   '/v1/onChainIdRegistryEventByAddress': { required: ['address'], query: { address } },
   '/v1/linkById': { required: ['fid', 'link_type', 'target_fid'], query: { fid, link_type: value => value === 'follow', target_fid: fid } },
@@ -97,7 +100,7 @@ function validQuery(params: URLSearchParams, endpoint: Endpoint): boolean {
     if (seen.has(name) || !rule || !rule(value)) return false;
     seen.add(name);
   }
-  return (endpoint.required ?? []).every(name => seen.has(name));
+  return (endpoint.required ?? []).every(name => seen.has(name)) && (!endpoint.validate || endpoint.validate(params));
 }
 
 class SizeLimitError extends Error {}
@@ -200,6 +203,17 @@ async function proxy(request: Request, url: URL): Promise<Response> {
           && 'error_detail' in value && typeof value.error_detail === 'string'
           && /^status: InvalidArgument, message: "bad_request\.rate_limited\/rate limit exceeded for FID \d+",/.test(value.error_detail)) {
           return failure(429, 'rate_limited', 'Hypersnap is limiting new approvals or messages. Wait at least one minute before trying again.');
+        }
+      }
+      // A missing indexed ENS/Basename proof has this exact native v1 shape.
+      // Storage, validation and transport failures do not mean an unlinked name.
+      if (path === '/v1/fidByName' && upstream.status === 400 && upstream.headers.get('Content-Type')?.includes('application/json')) {
+        const bytes = await readLimited(upstream.body, 4096);
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (value && typeof value === 'object' && 'error' in value && value.error === 'Failed to get fid by name'
+          && 'error_detail' in value && typeof value.error_detail === 'string'
+          && /^status: NotFound, message: "username proof not found", details: \[\](?:, metadata: MetadataMap \{ headers: \{\} \})?$/.test(value.error_detail)) {
+          return failure(404, 'ens_name_not_found', 'This ENS name is not linked to an account on this Hypersnap node. Try your username or FID.');
         }
       }
       // Hypersnap's v1 HTTP adapter reports every gRPC error as HTTP 400.

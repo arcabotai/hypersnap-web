@@ -2,6 +2,8 @@
  * Field names follow the node's wire format (src/api/types.rs upstream).
  * Mobile clients can reuse this module; it has no dependency on the Quorum relay.
  */
+import { normalizeHypersnapEnsName } from './ensName';
+
 export interface User {
   fid: number;
   username: string;
@@ -691,8 +693,41 @@ export async function getNotifications(options: { fid: number; cursor?: string |
   return { notifications, next: { cursor: nextCursor(response.next?.cursor, options.cursor) } };
 }
 
-export async function getUser(lookup: { fid?: number; username?: string; custodyAddress?: string }, signal?: AbortSignal): Promise<User> {
+/** Resolve only Hypersnap's stored name proof, then hydrate its stable FID.
+ * The two public reads share a deadline and never query an Ethereum RPC.
+ */
+async function getUserByEnsName(input: string, signal?: AbortSignal): Promise<User> {
+  const { name, type } = normalizeHypersnapEnsName(input);
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Account lookup cancelled.', 'AbortError');
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(new DOMException('Account name lookup timed out', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+  try {
+    const proof = await requestJson<{ fid?: unknown }>('/v1/fidByName', new URLSearchParams({ name, type }), controller.signal);
+    if (controller.signal.aborted) throw controller.signal.reason ?? new DOMException('Account lookup cancelled.', 'AbortError');
+    if (!Number.isSafeInteger(proof.fid) || Number(proof.fid) < 1 || Number(proof.fid) > 0xffffffff) throw new ApiError('The node returned an invalid account name proof.', 502, 'invalid_response');
+    const fid = proof.fid as number;
+    const user = await getUser({ fid }, controller.signal);
+    if (controller.signal.aborted) throw controller.signal.reason ?? new DOMException('Account lookup cancelled.', 'AbortError');
+    if (user.fid !== fid) throw new ApiError('The node returned a different account for this name proof.', 502, 'invalid_response');
+    return user;
+  } catch (error) {
+    const timedOut = controller.signal.aborted && !signal?.aborted && controller.signal.reason instanceof DOMException && controller.signal.reason.name === 'TimeoutError';
+    if (timedOut) throw new ApiError('Account name lookup took too long to respond. Try again.', 504, 'timeout');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
+export async function getUser(lookup: { fid?: number; username?: string; custodyAddress?: string; ensName?: string }, signal?: AbortSignal): Promise<User> {
   if (Object.values(lookup).filter(value => value !== undefined).length !== 1) throw new Error('Use one profile identifier.');
+  if (lookup.ensName !== undefined) return getUserByEnsName(lookup.ensName, signal);
+  // Existing profile links and exact mention lookups pass names as username.
+  // Preserve other legacy usernames while routing .eth proofs natively too.
+  if (lookup.username !== undefined && /\.eth$/i.test(lookup.username.replace(/^@/, ''))) return getUserByEnsName(lookup.username, signal);
   let path = '/v2/farcaster/user';
   const params = new URLSearchParams();
   if (lookup.custodyAddress !== undefined) {

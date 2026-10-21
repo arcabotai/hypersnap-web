@@ -6,7 +6,7 @@ import ConnectAccount, { DeviceSettings } from './ConnectAccount';
 import { deleteSavedSession, getSavedSessionMethod, preparePairing, unlockSavedSession, unlockSavedSessionWithPasskey, type PendingPairing, type PendingRevocation, type WalletSession } from '../lib/auth';
 import { approvePairingWithWallet, approveRevocationWithWallet, discoverInjectedWallets, type InjectedWallet } from '../lib/wallet';
 import type { PairingApproval, PairingRequest, RevocationApproval, RevocationRequest } from '../lib/pairing';
-import { getUser, type User } from '../lib/api';
+import { ApiError, getUser, type User } from '../lib/api';
 import { passkeysAvailable } from '../lib/passkey';
 
 vi.mock('../lib/auth', () => ({ deleteSavedSession: vi.fn(), getSavedSessionMethod: vi.fn(), preparePairing: vi.fn(), unlockSavedSession: vi.fn(), unlockSavedSessionWithPasskey: vi.fn() }));
@@ -329,6 +329,66 @@ describe('public identity review before key creation', () => {
     await render(); await reviewAccount(); const signal = vi.mocked(preparePairing).mock.calls[0][1].signal!;
     await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!); expect(signal.aborted).toBe(true);
     await act(async () => preparing.resolve(pending)); expect(pending.dispose).toHaveBeenCalledOnce(); expect(container.querySelector('.wallet-list')).toBeNull(); expect(onConnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('ENS onboarding identity review', () => {
+  it.each([
+    { input: '@ALICE.ETH', name: 'alice.eth' },
+    { input: '@Jesse.Base.ETH', name: 'jesse.base.eth' },
+    { input: '0xarca.eth', name: '0xarca.eth' },
+  ])('reviews $input as a lookup label alongside the canonical account, then prepares only its FID', async ({ input, name }) => {
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />);
+    expect(container.querySelector('label[for="account-identifier"]')?.textContent).toBe('Username, ENS name, FID, or custody wallet address');
+    expect(container.querySelector<HTMLInputElement>('#account-identifier')?.placeholder).toContain('name.eth');
+    expect(container.textContent).toContain('must already be linked to an account and indexed on Hypersnap'); expect(container.textContent).toContain('does not register names');
+    await fill('account-identifier', input); await click(button('Find my account'));
+    expect(getUser).toHaveBeenCalledWith({ ensName: name }, expect.any(AbortSignal));
+    const summary = container.querySelector('section[aria-label="Account identity"]')!;
+    const nameRow = [...summary.querySelectorAll('dl > div')].find(row => row.querySelector('dt')?.textContent === 'ENS name used for lookup')!;
+    expect(nameRow.querySelector('dd > span')?.textContent).toBe(name); expect(nameRow.textContent).toContain('Lookup label only');
+    expect(summary.textContent).toContain('@isolated'); expect(summary.textContent).toContain(user.custody_address); expect(summary.textContent).toContain('FID10');
+    expect(preparePairing).not.toHaveBeenCalled(); expect(approvePairingWithWallet).not.toHaveBeenCalled();
+    await click(button('Use this account'));
+    expect(preparePairing).toHaveBeenCalledWith({ fid: 10 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(container.textContent).not.toContain('ENS name used for lookup');
+    await click(button('Use another account')); await fill('account-identifier', '10'); await click(button('Find my account'));
+    expect(container.querySelector('section[aria-label="Account identity"]')?.textContent).not.toContain('ENS name used for lookup');
+  });
+
+  it.each(['sub.alice.eth', 'mañana.eth', `${'a'.repeat(17)}.eth`, 'arca.com'])('rejects unsupported name %s before any account request or key preparation', async input => {
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />); await fill('account-identifier', input); await click(button('Find my account'));
+    expect(container.querySelector('[role="alert"]')).not.toBeNull(); expect(getUser).not.toHaveBeenCalled(); expect(preparePairing).not.toHaveBeenCalled(); expect(button('Use this account')).toBeUndefined();
+  });
+
+  it('distinguishes a missing indexed name from an unavailable node and keeps both failures before key creation', async () => {
+    vi.mocked(getUser).mockRejectedValueOnce(new ApiError('Missing name proof.', 404, 'ens_name_not_found')).mockRejectedValueOnce(new ApiError('Hypersnap name lookup is temporarily unavailable.', 503, 'upstream_error'));
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />); await fill('account-identifier', 'missing.eth'); await click(button('Find my account'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('No account is linked');
+    expect(container.querySelector('.onboarding-lookup-recovery')?.textContent).toContain('FID or exact custody wallet address');
+    expect(preparePairing).not.toHaveBeenCalled();
+    await click(button('Find my account'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('temporarily unavailable'); expect(container.querySelector('[role="alert"]')?.textContent).not.toContain('No account is linked');
+    expect(container.querySelector('.onboarding-lookup-recovery')).toBeNull(); expect(preparePairing).not.toHaveBeenCalled(); expect(approvePairingWithWallet).not.toHaveBeenCalled();
+  });
+
+  it('removes the historical ENS label when a fresh account change requires another review', async () => {
+    pending = { ...pending, user: { ...user, username: 'fresh-account' } }; vi.mocked(preparePairing).mockResolvedValue(pending);
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />); await fill('account-identifier', 'alias.eth'); await click(button('Find my account'));
+    expect(container.textContent).toContain('ENS name used for lookup');
+    await click(button('Use this account'));
+    expect(container.textContent).not.toContain('ENS name used for lookup'); expect(container.querySelector('section[aria-label="Account identity"]')?.textContent).toContain('@fresh-account');
+    expect(button('Use updated account')).toBeDefined(); expect(container.querySelector('.wallet-list')).toBeNull(); expect(approvePairingWithWallet).not.toHaveBeenCalled();
+  });
+
+  it('aborts a cancelled ENS lookup and never lets its late result label a subsequent FID review', async () => {
+    const lookup = deferred<User>(); vi.mocked(getUser).mockReturnValueOnce(lookup.promise);
+    await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />); await fill('account-identifier', 'alice.eth'); await click(button('Find my account'));
+    expect(getUser).toHaveBeenCalledWith({ ensName: 'alice.eth' }, expect.any(AbortSignal)); const signal = vi.mocked(getUser).mock.calls[0][1]!;
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Cancel sign-in"]')!); expect(signal.aborted).toBe(true);
+    await fill('account-identifier', '10'); await click(button('Find my account')); await act(async () => lookup.resolve(user));
+    const summary = container.querySelector('section[aria-label="Account identity"]')!;
+    expect(summary.textContent).toContain('@isolated'); expect(summary.textContent).not.toContain('ENS name used for lookup'); expect(preparePairing).not.toHaveBeenCalled(); expect(onConnect).not.toHaveBeenCalled();
   });
 });
 

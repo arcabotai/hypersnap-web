@@ -1,10 +1,12 @@
 import type { User } from './api';
+import { normalizeHypersnapEnsName } from './ensName';
 
 // Platform-independent migration candidate for a future shared Hypersnap client.
 /** Public lookup only: these identifiers never authenticate an account. */
-export type AccountLookup = { fid: number; username?: never; custodyAddress?: never }
-  | { fid?: never; username: string; custodyAddress?: never }
-  | { fid?: never; username?: never; custodyAddress: string };
+export type AccountLookup = { fid: number; username?: never; custodyAddress?: never; ensName?: never }
+  | { fid?: never; username: string; custodyAddress?: never; ensName?: never }
+  | { fid?: never; username?: never; custodyAddress: string; ensName?: never }
+  | { fid?: never; username?: never; custodyAddress?: never; ensName: string };
 
 export interface ReviewIdentity {
   fid: number;
@@ -27,7 +29,10 @@ export function parseAccountLookup(input: string, initialFid?: number): AccountL
     return { fid: initialFid };
   }
   const term = input.trim();
-  if (!term) throw new Error('Enter a username, FID, or custody wallet address.');
+  if (!term) throw new Error('Enter a username, ENS name, FID, or custody wallet address.');
+  // Name proofs must be classified before 0x-prefixed wallet addresses. Other
+  // dotted inputs get the native name limits rather than an ambiguous lookup.
+  if (term.includes('.')) return { ensName: normalizeHypersnapEnsName(term).name };
   if (/^(?:0x)?(?:[a-f0-9]{64}|[a-f0-9]{128})$/i.test(term.replace(/^@/, ''))) throw new Error('Do not enter a private key. Use your public username, FID, or custody wallet address.');
   if (/^0x/i.test(term)) {
     if (!ADDRESS.test(term)) throw new Error('Enter the complete custody wallet address: 0x followed by 40 hexadecimal characters.');

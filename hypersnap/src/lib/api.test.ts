@@ -264,6 +264,87 @@ describe('browser API client', () => {
     expect(fetch.mock.calls[0][0]).toBe(`/api/v2/farcaster/user/custody-address?custody_address=0x${'a'.repeat(40)}`);
   });
 
+  it.each([
+    { lookup: { ensName: ' @DWR.ETH ' }, name: 'dwr.eth', type: 'ens' },
+    { lookup: { ensName: 'JESSE.BASE.ETH' }, name: 'jesse.base.eth', type: 'basename' },
+    { lookup: { username: '@DWR.ETH' }, name: 'dwr.eth', type: 'ens' },
+    { lookup: { username: 'jesse.base.eth' }, name: 'jesse.base.eth', type: 'basename' },
+  ])('resolves indexed name proof $name and hydrates only its exact FID', async ({ lookup, name, type }) => {
+    const canonical = user(3);
+    const fetch = vi.fn().mockResolvedValueOnce(response({ fid: 3 })).mockResolvedValueOnce(response({ user: canonical })); vi.stubGlobal('fetch', fetch);
+    expect(await getUser(lookup)).toEqual(canonical);
+    expect(fetch.mock.calls.map(call => call[0])).toEqual([`/api/v1/fidByName?name=${name}&type=${type}`, '/api/v2/farcaster/user?fid=3']);
+    for (const [, options] of fetch.mock.calls) expect(options).toMatchObject({ method: 'GET', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' });
+  });
+
+  it('preserves existing non-ENS username API lookups', async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ user: user(3) })); vi.stubGlobal('fetch', fetch);
+    await getUser({ username: 'legacy.name' });
+    expect(fetch.mock.calls[0][0]).toBe('/api/v2/farcaster/user/by-username?username=legacy.name');
+  });
+
+  it.each(['sub.alice.eth', 'álîce.eth', 'Key.eth', `${'a'.repeat(17)}.eth`, 'alice.com', 'alice.eth.', 'https://alice.eth'])('rejects an unsupported explicit ENS name before fetching: %j', async ensName => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    await expect(getUser({ ensName })).rejects.toThrow('1–16 character ASCII'); expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('requires exactly one public identifier even for name-proof lookups', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    await expect(getUser({ ensName: 'alice.eth', fid: 3 })).rejects.toThrow('one profile identifier'); expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 0, -1, 1.5, '3', 0x1_0000_0000])('rejects an invalid name-proof FID without hydrating another account: %j', async fid => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ fid })); vi.stubGlobal('fetch', fetch);
+    await expect(getUser({ ensName: 'alice.eth' })).rejects.toMatchObject({ code: 'invalid_response' }); expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('rejects hydration that disagrees with the resolved name-proof FID', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ fid: 3 })).mockResolvedValueOnce(response({ user: user(4) })); vi.stubGlobal('fetch', fetch);
+    await expect(getUser({ ensName: 'alice.eth' })).rejects.toMatchObject({ code: 'invalid_response' }); expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { status: 404, code: 'ens_name_not_found' }, { status: 400, code: 'upstream_error' }, { status: 503, code: 'upstream_error' },
+  ])('preserves missing-proof and service failure distinctions without another lookup: %j', async error => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: error.code, message: 'Isolated lookup failure' }), { status: error.status })); vi.stubGlobal('fetch', fetch);
+    await expect(getUser({ ensName: 'alice.eth' })).rejects.toMatchObject(error); expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('makes no request for an ENS lookup that was already cancelled', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch); const controller = new AbortController(); controller.abort();
+    await expect(getUser({ ensName: 'alice.eth' }, controller.signal)).rejects.toMatchObject({ name: 'AbortError' }); expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not start hydration when an ignored-abort name proof arrives after cancellation', async () => {
+    let resolve!: (value: Response) => void;
+    const fetch = vi.fn().mockReturnValue(new Promise<Response>(value => { resolve = value; })); vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController(); const pending = getUser({ ensName: 'alice.eth' }, controller.signal);
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' }); controller.abort(); resolve(response({ fid: 3 }));
+    await assertion; expect(fetch).toHaveBeenCalledOnce(); expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it('cancels FID hydration and does not expose its late account after the caller leaves', async () => {
+    let resolve!: (value: Response) => void;
+    const fetch = vi.fn().mockResolvedValueOnce(response({ fid: 3 })).mockImplementationOnce(() => new Promise<Response>(value => { resolve = value; })); vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController(); const pending = getUser({ ensName: 'alice.eth' }, controller.signal);
+    const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2)); controller.abort(); resolve(response({ user: user(3) }));
+    await assertion; expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+  });
+
+  it('bounds proof resolution and FID hydration together to one 25-second deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+        if (fetch.mock.calls.length === 1) { await new Promise(resolve => setTimeout(resolve, 20_000)); return response({ fid: 3 }); }
+        return new Promise((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      }); vi.stubGlobal('fetch', fetch);
+      const pending = getUser({ ensName: 'alice.eth' }); const assertion = expect(pending).rejects.toMatchObject({ status: 504, code: 'timeout' });
+      await vi.advanceTimersByTimeAsync(20_001); expect(fetch).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5_000); await assertion; expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('normalizes the real nested conversation wire shape', async () => {
     const root = { hash: 'a'.repeat(40), text: 'root' } as Cast;
     const reply = { hash: 'b'.repeat(40), text: 'reply' } as Cast;
