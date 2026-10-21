@@ -27,7 +27,7 @@ function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason:
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); wallet.next = null;
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); wallet.next = null;
   history.replaceState(null, '', '/');
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.mocked(searchUsers).mockResolvedValue({ users: [person(42)] });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function start(path = '/') { history.replaceState(null, '', path); await act(async () => root.render(<App />)); }
 async function click(element: Element) { await act(async () => { element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); }
 function button(label: string, scope: ParentNode = container) { return [...scope.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!; }
@@ -124,6 +124,41 @@ describe('isolated App feature integration', () => {
     expect(connected.cast).toHaveBeenCalledWith('An isolated channel cast', undefined, expect.objectContaining({ parentUrl: channel.parent_url }));
   });
 
+  it('keeps the compact composer’s explicitly saved drafts separate when navigating between home and a channel', async () => {
+    const channel = { id: 'isolated', name: 'Isolated channel', url: 'https://example.com/channel/alias', parent_url: 'https://example.com/real-namespace/isolated' };
+    vi.mocked(getChannels).mockResolvedValue({ channels: [channel], next: {} });
+    vi.mocked(getChannel).mockResolvedValue(channel);
+    await start(); const connected = session(FULL_CLIENT_SCOPES); await connect(connected);
+    const main = container.querySelector('main')!;
+    const editor = () => main.querySelector<HTMLTextAreaElement>('textarea[aria-label="Write a cast"]')!;
+    const edit = async (text: string) => {
+      const field = editor(); const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      await act(async () => { setter.call(field, text); field.dispatchEvent(new Event('input', { bubbles: true })); });
+    };
+    const openDrafts = () => click(main.querySelector('button[aria-label="Drafts"]')!);
+    const openChannel = () => click(button('Isolated channel', container.querySelector('nav[aria-label="Channels"]')!));
+
+    expect(main.querySelectorAll('textarea')).toHaveLength(1);
+    const tools = main.querySelector('[role="group"][aria-label="Composer tools"]'); expect(tools).not.toBeNull();
+    for (const label of ['Add image', 'Mention a person', 'Insert emoji', 'Drafts']) expect(tools!.querySelectorAll(`button[aria-label="${label}"]`)).toHaveLength(1);
+    expect(main.querySelector('input[aria-label="Mention a username or FID"]')).toBeNull();
+    expect(button('Save draft', main)).toBeUndefined();
+    await edit('An explicitly saved home draft'); await openDrafts(); await click(button('Save draft', main));
+
+    await openChannel(); expect(location.pathname).toBe('/channel/isolated');
+    expect(main.querySelectorAll('textarea')).toHaveLength(1); expect(editor().value).toBe('');
+    expect(main.textContent).toContain('Public channel cast');
+    await edit('An explicitly saved channel draft'); await openDrafts(); expect(button('Restore saved draft', main)).toBeUndefined();
+    await click(button('Save draft', main));
+
+    await click(button('Discover', container.querySelector('nav[aria-label="Main navigation"]')!));
+    expect(editor().value).toBe(''); await openDrafts(); await click(button('Restore saved draft', main));
+    expect(editor().value).toBe('An explicitly saved home draft');
+    await openChannel(); expect(editor().value).toBe(''); await openDrafts(); await click(button('Restore saved draft', main));
+    expect(editor().value).toBe('An explicitly saved channel draft');
+    expect(connected.cast).not.toHaveBeenCalled(); expect(uploadMedia).not.toHaveBeenCalled();
+  });
+
   it('reserves one of the two embed slots for a quote and allows only one attached image', async () => {
     vi.mocked(getFeed).mockResolvedValue({ casts: [otherCast], next: {} });
     const connected = session(FULL_CLIENT_SCOPES);
@@ -135,7 +170,7 @@ describe('isolated App feature integration', () => {
     const field = quote.querySelector<HTMLInputElement>('input[type="file"]')!;
     Object.defineProperty(field, 'files', { configurable: true, value: [new File([new Uint8Array([1, 2, 3])], 'isolated.png', { type: 'image/png' })] });
     await act(async () => { field.dispatchEvent(new Event('change', { bubbles: true })); });
-    expect(button('Add image', quote).disabled).toBe(true); expect(quote.textContent).toContain('1/1 images');
+    expect(quote.querySelector<HTMLButtonElement>('button[aria-label="Add image"]')?.disabled).toBe(true); expect(quote.textContent).toContain('1/1 images');
     await click(button('Quote', quote));
     expect(connected.cast).toHaveBeenCalledWith('', undefined, expect.objectContaining({ embeds: [{ url: `https://quorum.arca.computer/media/${'e'.repeat(64)}` }, { castId: { fid: otherCast.author.fid, hash: otherCast.hash } }] }));
     expect(dialog('Quote cast')).toBeUndefined();

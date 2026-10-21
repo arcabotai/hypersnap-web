@@ -179,8 +179,9 @@ describe('custody wallet approval without seed import', () => {
   it('explicitly signs with the custody account even when a wallet exposes its ordinary account first', async () => {
     const w = wallet(); const original = w.request.getMockImplementation()!;
     w.request.mockImplementation(args => args.method === 'eth_requestAccounts' || args.method === 'eth_accounts' ? Promise.resolve([other, custody]) : original(args));
-    const approval = await approvePairingWithWallet(fixture(), w.provider);
-    expect(() => verifyPairingApproval(fixture(), approval)).not.toThrow();
+    const request = fixture();
+    const approval = await approvePairingWithWallet(request, w.provider);
+    expect(() => verifyPairingApproval(request, approval)).not.toThrow();
     expect(w.request.mock.calls.filter(([args]) => args.method === 'eth_signTypedData_v4').every(([args]) => (args.params as readonly unknown[])[0] === custody)).toBe(true);
     expect(w.request.mock.calls.every(([args]) => ['eth_requestAccounts', 'eth_accounts', 'eth_chainId', 'eth_signTypedData_v4'].includes(args.method))).toBe(true);
   });
@@ -209,8 +210,9 @@ describe('custody wallet approval without seed import', () => {
 
   it('holds the chosen request capability through the whole approval instead of following replacement globals or methods', async () => {
     const w = wallet(); const replacement = vi.fn(async () => [other]);
-    const approval = await approvePairingWithWallet(fixture(), w.provider, { onProgress: () => { w.provider.request = replacement; } });
-    expect(() => verifyPairingApproval(fixture(), approval)).not.toThrow();
+    const request = fixture();
+    const approval = await approvePairingWithWallet(request, w.provider, { onProgress: () => { w.provider.request = replacement; } });
+    expect(() => verifyPairingApproval(request, approval)).not.toThrow();
     expect(replacement).not.toHaveBeenCalled();
     expect(w.payloads).toHaveLength(2);
   });

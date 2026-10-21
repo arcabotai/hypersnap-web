@@ -10,6 +10,20 @@ const app = await fs.readFile(appPath, 'utf8');
 const transformed = replaceTestMediaGuards(replaceTestOrigins(app, origin), appPath, origin);
 
 describe('isolated media harness URL transformations', () => {
+  it('keeps saved image drafts restricted to the configured loopback media origin only in the harness', async () => {
+    const draftPath = fileURLToPath(new URL('../src/lib/composerDraft.ts', import.meta.url));
+    const source = await fs.readFile(draftPath, 'utf8');
+    const changed = replaceTestMediaGuards(replaceTestOrigins(source, origin), draftPath, origin);
+    const regex = value => value.match(/value\.images\.every[\s\S]*?&& (\/\^[^\n]+?\/)\.test\(url\)/)?.[1];
+    expect(regex(changed)).toBeTruthy();
+    const accepted = new Function('value', `return ${regex(changed)}.test(value);`);
+    expect(accepted(media)).toBe(true);
+    for (const rejected of [`${media}/extra`, `${media}?query=1`, `${origin}/media/${'a'.repeat(63)}`, `http://127x0x0x1:5187/media/${'a'.repeat(64)}`, `http://127.0.0.1:5188/media/${'a'.repeat(64)}`, `http://user@127.0.0.1:5187/media/${'a'.repeat(64)}`]) expect(accepted(rejected)).toBe(false);
+    const production = new Function('value', `return ${regex(source)}.test(value);`);
+    expect(production(media)).toBe(false);
+    expect(production(`https://quorum.arca.computer/media/${'a'.repeat(64)}`)).toBe(true);
+    expect(replaceTestMediaGuards(source, draftPath, 'https://quorum.arca.computer')).toBe(source);
+  });
   it('keeps casting URL validation strict while accepting only the isolated upload path', async () => {
     const authPath = fileURLToPath(new URL('../src/lib/auth.ts', import.meta.url));
     const source = await fs.readFile(authPath, 'utf8');

@@ -28,7 +28,9 @@ The app exchanges public account data, signatures, and signed protocol messages;
 
 For a submission timeout, network inclusion is unknown: inspect the profile or signer state before manually retrying. The app never retries writes automatically. Profile fields are separate signed messages: successful fields are retained after a partial save, and uncertain fields remain blocked until their attempted values appear on the public profile. Uncertain follow changes likewise require a status check. Successful submissions are acknowledged by the node, not independently proven finalized.
 
-Image uploads use a constrained, short-lived authorization signed by the existing device key, not another wallet approval. A cast can attach up to two embeds: images and quoted cast references share that limit. Uploaded images are public and persistent, and their original photo metadata, including EXIF, is retained. Removing an image from a draft does not delete its upload; no end-user media deletion flow is included. See [MEDIA.md](MEDIA.md).
+The composer uses one expanding text box with compact photo/GIF-file, mention, emoji and draft tools. Exact username/FID lookup, saved-draft recovery and help open only when requested; inline @ suggestions and Cmd/Ctrl+Enter remain available. Emoji insert Unicode locally, and pasted links stay cast text. Draft saves remain explicit, scoped to the account and destination, and stored only in this browser tab for up to 24 hours. No hosted GIF catalog, video processor, poll or scheduling service is connected.
+
+Image uploads use a constrained, short-lived authorization signed by the existing device key, not another wallet approval. The current client allows up to two embeds: images and quoted cast references share that limit. Uploaded images are public and persistent, and their original photo metadata, including EXIF, is retained. A short notice stays visible before upload; Media info explains formats, limits and persistence. Removing an image from a draft does not delete its upload; no end-user media deletion flow is included. See [MEDIA.md](MEDIA.md).
 
 ## Component licenses
 
