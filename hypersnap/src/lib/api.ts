@@ -217,17 +217,23 @@ async function requestJson<T>(path: string, params?: URLSearchParams, signal?: A
   }
 }
 
+export type TrendingTimeWindow = '1h' | '6h' | '12h' | '24h' | '7d';
 export interface FeedOptions {
   kind: 'trending' | 'following' | 'channel' | 'user';
   fid?: number;
   channel?: string;
   cursor?: string | null;
   limit?: number;
+  timeWindow?: TrendingTimeWindow;
   signal?: AbortSignal;
 }
 
 export async function getFeed(options: FeedOptions): Promise<FeedResponse> {
   const params = pageParams(options.cursor, options.limit);
+  if (options.timeWindow !== undefined) {
+    if (options.kind !== 'trending' || !['1h', '6h', '12h', '24h', '7d'].includes(options.timeWindow)) throw new Error('Select a supported trending time window.');
+    params.set('time_window', options.timeWindow);
+  }
   let path: string;
   switch (options.kind) {
     case 'following':
@@ -322,6 +328,57 @@ function validateReaction(value: unknown, viewerFid: number, type: ReactionKind)
       || typeof body.targetCastId.hash !== 'string' || !HASH.test(body.targetCastId.hash) || body.targetUrl) throw new ApiError('The node returned an invalid reaction target.', 502, 'invalid_response');
   } else if (typeof body.targetUrl !== 'string' || !body.targetUrl) throw new ApiError('The node returned an invalid reaction target.', 502, 'invalid_response');
   return value as unknown as ReactionMessage;
+}
+
+export type CastReactionPeopleType = 'likes' | 'recasts';
+/** One node page, not a complete archive or a globally ordered ranking. The
+ * node applies pageSize per shard and can repeat exhausted shards on later
+ * pages. Keep the entire bounded page before advancing its opaque token. */
+export async function getCastReactionPeople(options: { target: ReactionTarget; type: CastReactionPeopleType; cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<FollowsResponse> {
+  const targetFid = fidValue(options.target.fid);
+  const targetHash = hashValue(options.target.hash);
+  if (options.type !== 'likes' && options.type !== 'recasts') throw new Error('Invalid cast reaction list.');
+  const type = options.type === 'likes' ? 'like' : 'recast';
+  const limit = options.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw new Error('Request up to 25 reactions per shard.');
+  if (options.cursor) reactionCursor(options.cursor);
+  options.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(new DOMException('Reaction people timed out', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+  try {
+    const params = new URLSearchParams({ target_fid: targetFid, target_hash: targetHash, reaction_type: reactionKind(type), pageSize: String(limit), reverse: 'true' });
+    if (options.cursor) params.set('pageToken', options.cursor);
+    const response = await requestJson<{ messages: unknown[]; nextPageToken?: string }>('/v1/reactionsByCast', params, controller.signal);
+    // Independent of the per-shard request limit. Never silently truncate a
+    // response and then retain its continuation, which would lose people.
+    if (!Array.isArray(response.messages) || response.messages.length > 1000) throw new ApiError('The node returned an invalid cast reaction list.', 502, 'invalid_response');
+    const actorFids = new Set<number>();
+    for (const value of response.messages) {
+      if (!isObject(value) || !isObject(value.data) || !Number.isSafeInteger(value.data.fid) || Number(value.data.fid) < 1) throw new ApiError('The node returned an invalid reaction actor.', 502, 'invalid_response');
+      const message = validateReaction(value, Number(value.data.fid), type);
+      const target = message.data.reactionBody.targetCastId;
+      if (!target || String(target.fid) !== targetFid || hashValue(target.hash) !== targetHash) throw new ApiError('The node returned a different reaction target.', 502, 'invalid_response');
+      actorFids.add(message.data.fid);
+    }
+    const cursor = reactionCursor(response.nextPageToken, options.cursor);
+    const users = await mapPublicReads([...actorFids], async (fid, signal) => {
+      const user = await getUser({ fid }, signal);
+      if (!publicUser(user) || user.fid !== fid) throw new ApiError('The node returned an invalid reaction profile.', 502, 'invalid_response');
+      return user;
+    }, controller.signal);
+    controller.signal.throwIfAborted();
+    return { users, next: { cursor } };
+  } catch (error) {
+    const timedOut = controller.signal.aborted && !options.signal?.aborted && controller.signal.reason instanceof DOMException && controller.signal.reason.name === 'TimeoutError';
+    controller.abort(error);
+    if (timedOut) throw new ApiError('Cast reaction profiles took too long to load. Try again.', 504, 'timeout');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
+  }
 }
 
 /** Hypersnap does not populate cast.viewer_context. Resolve the actual current

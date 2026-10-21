@@ -13,6 +13,25 @@ afterEach(() => {
 });
 
 describe('the fixed Hypersnap gateway', () => {
+  it('allows only exact paginated cast-actor reads and strips request credentials', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ messages: [] })); vi.stubGlobal('fetch', fetch);
+    const path = `/v1/reactionsByCast?target_fid=3&target_hash=${'a'.repeat(40)}&reaction_type=Like&pageSize=25&reverse=true&pageToken=dG9rZW4%3D`;
+    expect((await handleRequest(new Request(`${BASE}/api${path}`, { headers: { Cookie: 'private', Authorization: 'private' } }), env)).status).toBe(200);
+    expect(fetch.mock.calls[0][0]).toBe(`https://haatz.quilibrium.com${path}`);
+    expect(fetch.mock.calls[0][1].headers.get('Cookie')).toBeNull(); expect(fetch.mock.calls[0][1].headers.get('Authorization')).toBeNull();
+    const prefix = `/v1/reactionsByCast?target_fid=3&target_hash=${'a'.repeat(40)}&reaction_type=Like&pageSize=25&reverse=true`;
+    for (const invalid of [prefix.replace('target_fid=3', 'target_fid=0'), prefix.replace('target_hash=' + 'a'.repeat(40), 'target_hash=bad'), prefix.replace('reaction_type=Like', 'reaction_type=1'), prefix.replace('pageSize=25', 'pageSize=26'), prefix.replace('reverse=true', 'reverse=false'), prefix.replace('&reverse=true', ''), prefix + '&pageToken=a===', prefix + '&pageToken=', prefix + '&target_fid=4', prefix + '&target_url=https://evil.test', prefix + '&upstream=https://evil.test']) expect((await handleRequest(new Request(`${BASE}/api${invalid}`), env)).status).toBe(400);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it('permits known trending windows only on the trending feed', async () => {
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ casts: [], next: {} })); vi.stubGlobal('fetch', fetch);
+    for (const timeWindow of ['1h', '6h', '12h', '24h', '7d']) {
+      expect((await handleRequest(new Request(`${BASE}/api/v2/farcaster/feed/trending?time_window=${timeWindow}&limit=20`), env)).status).toBe(200);
+      expect(fetch.mock.lastCall?.[0]).toBe(`https://haatz.quilibrium.com/v2/farcaster/feed/trending?time_window=${timeWindow}&limit=20`);
+    }
+    for (const path of ['/feed/trending?time_window=30d', '/feed/trending?time_window=1h&time_window=7d', '/feed/following?fid=3&time_window=1h', '/feed/user/casts?fid=3&time_window=1h', '/feed/channels?channel_ids=art&time_window=1h']) expect((await handleRequest(new Request(`${BASE}/api/v2/farcaster${path}`), env)).status).toBe(400);
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
   it('forwards feature reads only to Hypersnap with bounded explicit parameters', async () => {
     const fetch = vi.fn().mockImplementation(async () => jsonResponse({}));
     vi.stubGlobal('fetch', fetch);

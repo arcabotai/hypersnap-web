@@ -1,0 +1,17 @@
+.cast-reaction-people {
+  padding: 0 1.25rem 1.25rem;
+  &__tabs, &__actions, &__status { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  &__tabs { margin-bottom: .75rem; }
+  &__note, &__status { color: var(--color-text-subtle); font-size: .875rem; line-height: 1.5; }
+  &__actions { justify-content: flex-end; margin-top: 1rem; }
+  &__list { list-style: none; margin: 0; padding: 0; max-height: min(48vh, 30rem); overflow: auto; }
+  &__list li + li { border-top: 1px solid var(--border); }
+  &__list a { display: flex; align-items: center; gap: .75rem; padding: .875rem 0; color: inherit; text-decoration: none; }
+  &__list a:focus-visible { outline: 2px solid var(--accent-300); outline-offset: -2px; border-radius: .5rem; }
+  &__list img, &__avatar { flex: 0 0 2.5rem; width: 2.5rem; height: 2.5rem; border-radius: 50%; object-fit: cover; }
+  &__avatar { display: grid; place-items: center; background: var(--surface-2); }
+  &__identity { display: grid; gap: .15rem; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+  &__identity > span, &__identity small { color: var(--color-text-subtle); }
+  &__identity small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  &__error { color: var(--color-text-danger); font-size: .875rem; }
+}

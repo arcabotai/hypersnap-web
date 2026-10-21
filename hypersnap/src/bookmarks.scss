@@ -1,0 +1,17 @@
+.bookmark-tools { padding: 1.2rem 1.75rem; border-bottom: .0625rem solid var(--border); background: var(--surface-0); }
+.bookmark-tools__intro { display: flex; align-items: flex-start; gap: .65rem; margin-bottom: 1rem; color: var(--accent-300); }
+.bookmark-tools__intro > svg { flex-shrink: 0; margin-top: .1rem; }
+.bookmark-tools__intro strong { font-size: .8rem; font-weight: 550; color: var(--color-text-strong); }
+.bookmark-tools__intro p { font-size: .67rem; color: var(--color-text-subtle); line-height: 1.8; margin: .35rem 0 0; }
+.bookmark-tools__search { display: flex; align-items: center; gap: .55rem; padding: 0 .7rem; border: .0625rem solid var(--surface-4); border-radius: .65rem; background: var(--surface-00); color: var(--color-text-subtle); }
+.bookmark-tools__search > .input { border: 0; border-radius: .4rem; background: transparent; padding: .7rem .15rem; flex: 1; width: 0; min-width: 0; font-size: .75rem; }
+.bookmark-tools__search > .button { flex-shrink: 0; padding: .35rem; min-height: 2rem; }
+.bookmark-tools__toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin-top: .7rem; }
+.bookmark-tools__toolbar nav { display: flex; flex-direction: row; flex-wrap: wrap; gap: .25rem; }
+.bookmark-tools__toolbar .button { font-size: .62rem; padding: .45rem .55rem; min-height: 2rem; }
+.bookmark-tools__toolbar nav .button[aria-pressed="true"] { background: var(--soft-accent); color: var(--accent-300); }
+.bookmark-tools__toolbar > span { margin-left: auto; color: var(--color-text-subtle); font-size: .6rem; }
+.bookmark-tools__confirm { padding: .8rem; margin-top: .8rem; border: .0625rem solid var(--surface-4); border-radius: .65rem; background: var(--surface-1); }
+.bookmark-tools__confirm p { margin: 0 0 .6rem; color: var(--color-text-subtle); font-size: .7rem; line-height: 1.8; }
+.bookmark-tools__confirm .button { font-size: .66rem; min-height: 2.4rem; margin-right: .4rem; }
+@media (max-width: 43.75rem) { .bookmark-tools { padding-inline: 1.2rem; }.bookmark-tools__toolbar .button { min-height: 2.5rem; }.bookmark-tools__toolbar > span { margin-left: 0; }.bookmark-tools__toolbar > .button { margin-left: auto; }.bookmark-tools__confirm .button { margin-top: .3rem; } }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getChannel, getChannels, getConversation, getFeed, getFollows, getFollowStatus, getNotifications, getProfileFeed, getReactionStatus, getReactionStatuses, getSuggestedUsers, getChannelMembers, getCastQuotes, getSigners, getUser, hasImageEmbed, searchCasts, searchUsers, submitMessage, type Cast, type User } from './api';
+import { getChannel, getChannels, getConversation, getFeed, getFollows, getFollowStatus, getNotifications, getProfileFeed, getReactionStatus, getReactionStatuses, getSuggestedUsers, getChannelMembers, getCastQuotes, getCastReactionPeople, getSigners, getUser, hasImageEmbed, searchCasts, searchUsers, submitMessage, type Cast, type User, type FeedOptions } from './api';
 
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 const user = (fid: number): User => ({ fid, username: `alice${fid}`, custody_address: '', profile: { bio: { text: '' } }, follower_count: 0, following_count: 0 });
@@ -325,6 +325,96 @@ const reaction = (letter: string, type: 'Like' | 'Recast' = 'Like', targetFid = 
     reactionBody: { type: type === 'Like' ? 'REACTION_TYPE_LIKE' : 'REACTION_TYPE_RECAST', targetCastId: { fid: targetFid, hash: `0x${letter.repeat(40)}` } } },
 });
 const absentReaction = () => new Response(JSON.stringify({ code: 'reaction_not_found', message: 'Absent' }), { status: 404 });
+
+describe('paginated cast reaction people', () => {
+  const target = { fid: 3, hash: `0x${'a'.repeat(40)}` };
+  it('keeps complete per-shard pages, deduplicates actors and preserves a base64 continuation', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a', 'Like', 3, 7), reaction('a', 'Like', 3, 8), reaction('a', 'Like', 3, 7)], nextPageToken: 'dG9rZW4=' }))
+      .mockResolvedValueOnce(response({ user: user(7) })).mockResolvedValueOnce(response({ user: user(8) }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await getCastReactionPeople({ target, type: 'likes', limit: 1 })).toEqual({ users: [user(7), user(8)], next: { cursor: 'dG9rZW4=' } });
+    expect(fetch.mock.calls[0][0]).toBe(`/api/v1/reactionsByCast?target_fid=3&target_hash=${'a'.repeat(40)}&reaction_type=Like&pageSize=1&reverse=true`);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    fetch.mockResolvedValueOnce(response({ messages: [], nextPageToken: '' }));
+    expect(await getCastReactionPeople({ target, type: 'recasts', cursor: 'dG9rZW4=' })).toEqual({ users: [], next: { cursor: null } });
+    expect(fetch.mock.calls[3][0]).toContain('reaction_type=Recast&pageSize=25&reverse=true&pageToken=dG9rZW4%3D');
+  });
+  it('rejects unrelated or malformed receipts before hydrating any profiles', async () => {
+    const valid = reaction('a');
+    const variants = [reaction('b'), reaction('a', 'Like', 4), reaction('a', 'Recast'), reaction('a', 'Like', 3, 0),
+      { ...valid, data: { ...valid.data, type: 'MESSAGE_TYPE_REACTION_REMOVE' } },
+      { ...valid, data: { ...valid.data, network: 'FARCASTER_NETWORK_TESTNET' } },
+      { ...valid, data: { ...valid.data, reactionBody: { type: 'REACTION_TYPE_LIKE', targetUrl: 'https://example.org' } } }];
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    for (const message of variants) {
+      fetch.mockResolvedValueOnce(response({ messages: [message] }));
+      await expect(getCastReactionPeople({ target, type: 'likes' })).rejects.toMatchObject({ code: 'invalid_response' });
+    }
+    expect(fetch).toHaveBeenCalledTimes(variants.length);
+  });
+  it('rejects bad continuations and oversized pages without silently dropping a page', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    for (const nextPageToken of ['invalid!', 'a===', 'dG9rZW4=']) {
+      fetch.mockResolvedValueOnce(response({ messages: [], nextPageToken }));
+      await expect(getCastReactionPeople({ target, type: 'likes', cursor: 'dG9rZW4=' })).rejects.toMatchObject({ code: 'invalid_response' });
+    }
+    fetch.mockResolvedValueOnce(response({ messages: Array(1001).fill(reaction('a')) }));
+    await expect(getCastReactionPeople({ target, type: 'likes' })).rejects.toMatchObject({ code: 'invalid_response' });
+    const count = fetch.mock.calls.length;
+    for (const options of [{ limit: 26 }, { cursor: 'a===' }, { type: 'other' }, { target: { fid: 0, hash: target.hash } }]) {
+      await expect(getCastReactionPeople({ target, type: 'likes', ...options } as Parameters<typeof getCastReactionPeople>[0])).rejects.toThrow();
+    }
+    expect(fetch).toHaveBeenCalledTimes(count);
+  });
+  it('keeps hydration outages and mismatched profiles distinct from an empty list', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ messages: [reaction('a')] })).mockResolvedValueOnce(response({ user: user(8) }))
+      .mockResolvedValueOnce(response({ messages: [reaction('a')] })).mockResolvedValueOnce(new Response(JSON.stringify({ code: 'upstream_error', message: 'Unavailable' }), { status: 502 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(getCastReactionPeople({ target, type: 'likes' })).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(getCastReactionPeople({ target, type: 'likes' })).rejects.toMatchObject({ code: 'upstream_error' });
+  });
+  it('hydrates with at most four concurrent reads and cancels all remaining work', async () => {
+    let active = 0, maximum = 0;
+    const fetch = vi.fn().mockImplementation(async (url: string, options: RequestInit) => {
+      if (url.includes('/reactionsByCast?')) return response({ messages: Array.from({ length: 8 }, (_, index) => reaction('a', 'Like', 3, index + 7)) });
+      active++; maximum = Math.max(maximum, active);
+      return new Promise((_resolve, reject) => options.signal?.addEventListener('abort', () => { active--; reject(options.signal?.reason); }, { once: true }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController();
+    const pending = expect(getCastReactionPeople({ target, type: 'likes', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
+    expect(maximum).toBe(4); controller.abort(); await pending;
+    expect(active).toBe(0); expect(fetch).toHaveBeenCalledTimes(5);
+  });
+  it('uses one 25-second deadline across receipt loading and profile hydration', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn().mockImplementation(async (url: string, options: RequestInit) => {
+        if (url.includes('/reactionsByCast?')) { await new Promise(resolve => setTimeout(resolve, 20_000)); return response({ messages: [reaction('a')] }); }
+        return new Promise((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true }));
+      });
+      vi.stubGlobal('fetch', fetch);
+      const assertion = expect(getCastReactionPeople({ target, type: 'likes' })).rejects.toMatchObject({ status: 504, code: 'timeout' });
+      await vi.advanceTimersByTimeAsync(25_001); await assertion;
+      expect(fetch).toHaveBeenCalledTimes(2); expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('Hypersnap trending windows', () => {
+  it('passes supported windows only to trending and leaves the node default when omitted', async () => {
+    const fetch = vi.fn().mockImplementation(async () => response({ casts: [], next: {} })); vi.stubGlobal('fetch', fetch);
+    for (const timeWindow of ['1h', '6h', '12h', '24h', '7d'] as const) {
+      await getFeed({ kind: 'trending', timeWindow });
+      expect(fetch.mock.lastCall?.[0]).toBe(`/api/v2/farcaster/feed/trending?limit=20&time_window=${timeWindow}`);
+    }
+    await getFeed({ kind: 'trending' }); expect(fetch.mock.lastCall?.[0]).toBe('/api/v2/farcaster/feed/trending?limit=20');
+    const count = fetch.mock.calls.length;
+    for (const options of [{ kind: 'following', fid: 3, timeWindow: '1h' }, { kind: 'user', fid: 3, timeWindow: '1h' }, { kind: 'channel', channel: 'art', timeWindow: '1h' }, { kind: 'trending', timeWindow: '30d' }]) await expect(getFeed(options as FeedOptions)).rejects.toThrow('trending time window');
+    expect(fetch).toHaveBeenCalledTimes(count);
+  });
+});
 
 describe('authoritative public reaction reads', () => {
   it('resolves actual viewer state and accepts only its exact normalized absence code', async () => {

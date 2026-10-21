@@ -53,7 +53,7 @@ CI validates that an entry exists and its source is real; release review still c
 
 Implemented:
 
-- Public trending and following home tabs, shareable profile Casts/Replies/Photos/Likes/Recasts tabs, indexed channel discovery/search/detail/feeds and channel posting, bookmarks, dark/light theme, responsive navigation, and session locking.
+- Public trending feeds with 1-hour to 7-day windows and following home tabs, shareable profile Casts/Replies/Photos/Likes/Recasts tabs, indexed channel discovery/search/detail/feeds and channel posting, bookmarks, dark/light theme, responsive navigation, and session locking.
 - Search public casts or people at `/search`; shareable queries and profile tabs survive Back/Forward and direct loads. Cast search is a bounded ranked result set; people search uses the node’s prefix index.
 - Recent notifications at `/notifications` for follows, reactions, replies and mentions, with All/Unread/type filters and per-account read state stored on this device. Hypersnap’s bounded activity scan is not a complete historical inbox; the client never calls the node’s placeholder mark-seen POST.
 - Protocol quote embeds and confirmed deletion of the connected account’s own casts. Unknown deletion submissions permit read-only reconciliation, with no automatic resubmission.
@@ -62,6 +62,9 @@ Implemented:
 - Public follower/following lists, following/unfollowing after explicit expanded permission approval, and editing display name, bio, or profile image. Banner writes are excluded because Hypersnap requires Pro status and does not reliably hydrate them in its public user response.
 - Explicit account/destination-scoped draft Save/Restore/Discard in this browser tab (24-hour TTL), inline mention suggestions with keyboard selection, Ctrl/Command+Enter publishing, pasted-image uploads, an accessible image viewer, copy-cast-text tools, and profile sharing/linked-address details. Drafts contain only text, public mention references and uploaded image URLs; they never contain signing keys or auto-submit.
 - Saved channel shortcuts labeled as browser-local, paginated channel participants (accounts that posted), bounded friends-of-friends profile suggestions, and a bounded quote-cast viewer with explicit node-index limits.
+- Per-account and guest browser-local content settings: mute accounts or literal words/phrases, hide casts, undo filters and temporarily reveal a view. Known activity previews and quoted casts honor these controls; opaque quoted text is not inferred. They do not block anyone on the network or sync across devices. Each account’s in-memory preferences remain usable if storage is denied; saved settings and temporary reveals never cross accounts.
+- Local bookmark search by text/person/channel, newest/oldest saved order and confirmed clearing, with bounded validated snapshots and legacy migration. Paginated public Likes/Recasts people lists use actual v1 receipts and cap their node-reported view at 1,000 profiles or 40 pages.
+- Search shortcuts (Cmd/Ctrl+K or slash), shortcut help (question mark), and safer literal HTTP/HTTPS link punctuation. Navigation shortcuts pause while typing or inside dialogs.
 - Authenticated public JPEG, PNG, WebP, or GIF uploads up to 5 MiB, with up to two image attachments per cast. The R2/SQLite Durable Object storage and quota boundary is documented in [MEDIA.md](MEDIA.md).
 
 Excluded: creating Farcaster accounts, paid storage/on-chain registration, seed recovery, wallet transfers, DM transport, push notifications, video uploads, end-user media deletion, and mini-app execution. Channel discovery depends on the Hypersnap node’s channel index. Channel parent URLs are protocol identifiers; the client does not contact any external service to resolve them.

@@ -9,6 +9,7 @@ export type AppRoute =
   | { kind: 'notifications' }
   | { kind: 'channels' }
   | { kind: 'devlog' }
+  | { kind: 'settings' }
   | { kind: 'search'; query: string; searchKind: SearchKind }
   | { kind: 'channel'; channel: string }
   | { kind: 'profile'; identifier?: string; tab?: ProfileTab }
@@ -56,6 +57,7 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   if (pathname === '/notifications') return { kind: 'notifications' };
   if (pathname === '/channels') return { kind: 'channels' };
   if (pathname === '/devlog') return { kind: 'devlog' };
+  if (pathname === '/settings') return { kind: 'settings' };
   if (pathname === '/search') {
     const params = new URLSearchParams(search);
     const query = params.get('q')?.trim() ?? '';

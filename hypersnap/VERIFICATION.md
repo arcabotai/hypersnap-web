@@ -1,3 +1,49 @@
+# Live client audit and familiar browsing tools · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **522 tests across 37 files**, browser/Worker/native TypeScript, production browser build and the offline signer payload build. No dependency or signing permission was added. Ten new App integration tests exercise real component wiring with synthetic account FIDs: local hide/restore, mute isolation across account changes, memory-only preference retention after failed storage, reveal isolation, limit errors, complete storage denial, legacy bookmark validation/search/sort/clear/remount, trending-window cancellation and stale pagination suppression, keyboard focus and reaction-list profile navigation. Additional helper/API/Worker/UI tests validate schema bounds, Unicode matching, whitelisted public bookmark snapshots, target/type-specific actor receipts, multi-shard pagination, deduplication, concurrency/deadline/abort behavior, retry/cancellation and dialog transitions. Literal link tests cover punctuation, balanced brackets, credentials, Unicode and long unmatched closing-bracket suffixes; trimming is linear. Focused link tests and a fresh external TypeScript/production build passed after that final implementation refinement.
+
+A separately authorized Chrome tab inspected the live Farcaster UI without submitting any account action. [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#live-farcaster-walkthrough--2026-10-21) records the major surfaces and source-backed compatibility decisions without copying private account details. The source repository HEADs were checked and remain the pinned revisions cited there. Existing Farcaster API clients, hosted account services and source dependencies were not imported.
+
+Chrome browser QA used a separate loopback origin, no connected wallet and GET-only Hypersnap API traffic. It exercised actual reaction people reads (50 profiles on the first multi-shard page, 100 deduplicated profiles after pagination), the Recasts tab, local bookmark save/search/confirmed clear, hiding and restoring a cast, literal phrase filtering and focused search with Ctrl+K. Those temporary browser preferences and snapshots were isolated from production account state. Settings and Bookmarks were checked at a 320-pixel viewport. Testing caught and fixed an inherited narrow-screen rule hiding the new Settings button and the missing mobile Bookmarks entry; the loaded settings content's scroll width equaled its available width. Chrome viewport overrides were reset afterward. These are layout/browser checks, not physical iOS/Android or wallet-provider interoperability claims.
+
+Core social reads retain the fixed Hypersnap gateway. The new actor route permits only validated target/type/page parameters; the trending route accepts only the five supported windows. Muting, hiding and saving are explicit local conveniences, not network blocking/subscriptions or device synchronization. Activity filters can use only available actor/text/target metadata; opaque quoted text is not inferred. Reaction lists remain node-reported, may be incomplete and are capped at 1,000 profiles or 40 pages; per-shard continuations do not establish a global chronological order. The native signer beta is unchanged. No production cast, follow, reaction, profile, upload, wallet approval or passkey operation was used.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   9a7e0ad  ⚠ working tree dirty (29 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/components/CastOptions.tsx, desktop/hypersnap/src/components/FeaturePanels.tsx)
+            (… and 20 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       1s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Release log checks · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

@@ -111,14 +111,17 @@ function UserResult({ user, onProfile }: { user: User; onProfile(user: User): vo
 }
 
 export type SearchKind = 'casts' | 'users';
-export function SearchView({ query, kind, onSearch, onProfile, renderCast }: {
+export function SearchView({ query, kind, onSearch, onProfile, renderCast, focusRequest = 0 }: {
   query: string;
   kind: SearchKind;
   onSearch(query: string, kind: SearchKind): void;
   onProfile(user: User): void;
   renderCast(cast: Cast): ReactNode;
+  focusRequest?: number;
 }) {
   const inputId = useId();
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (focusRequest > 0) input.current?.focus(); }, [focusRequest]);
   const [draft, setDraft] = useState(query);
   const [formError, setFormError] = useState('');
   useEffect(() => { setDraft(query); setFormError(''); }, [query]);
@@ -139,7 +142,7 @@ export function SearchView({ query, kind, onSearch, onProfile, renderCast }: {
     <div className="feature-intro"><span className="feature-kicker"><IconSearch size={15} aria-hidden="true" />EXPLORE HYPERSNAP</span><h2>Find a conversation.</h2><p>Search public casts and people on Hypersnap.</p></div>
     <form className="feature-search" onSubmit={submit} role="search">
       <label className="visually-hidden" htmlFor={inputId}>Search casts or people</label>
-      <Input id={inputId} type="search" placeholder={kind === 'casts' ? 'Search casts…' : 'Name or username…'} value={draft} maxLength={256} onChange={event => setDraft(event.target.value)} aria-describedby={formError ? `${inputId}-error` : undefined} aria-invalid={Boolean(formError)} />
+      <Input ref={input} id={inputId} type="search" placeholder={kind === 'casts' ? 'Search casts…' : 'Name or username…'} value={draft} maxLength={256} onChange={event => setDraft(event.target.value)} aria-describedby={formError ? `${inputId}-error` : undefined} aria-invalid={Boolean(formError)} />
       <Button type="submit"><IconSearch size={17} aria-hidden="true" /><span>Search</span></Button>
     </form>
     {formError && <p id={`${inputId}-error`} className="feature-form-error" role="alert">{formError}</p>}
@@ -172,7 +175,7 @@ const activityFilters = ['all', 'unread', 'mentions', 'replies', 'reactions', 'f
 type ActivityFilter = typeof activityFilters[number];
 const activityFilterLabels: Record<ActivityFilter, string> = { all: 'All', unread: 'Unread', mentions: 'Mentions', replies: 'Replies', reactions: 'Reactions', follows: 'Follows' };
 
-export function NotificationsView({ fid, onConnect, onProfile, onCast }: { fid?: number; onConnect(): void; onProfile(user: User): void; onCast(hash: string): void }) {
+export function NotificationsView({ fid, onConnect, onProfile, onCast, isActivityFiltered }: { fid?: number; onConnect(): void; onProfile(user: User): void; onCast(hash: string): void; isActivityFiltered?(item: ActivityItem): boolean }) {
   const [readAt, setReadAt] = useState(() => readTimestamp(fid));
   const [readStatus, setReadStatus] = useState('');
   const [filter, setFilter] = useState<ActivityFilter>('all');
@@ -180,8 +183,9 @@ export function NotificationsView({ fid, onConnect, onProfile, onCast }: { fid?:
   const result = useFeaturePages<ActivityItem>(String(fid), Boolean(fid), async options => {
     const page = await getNotifications({ fid: fid!, ...options }); return { items: page.notifications, next: page.next };
   }, item => item.id);
-  const unread = result.items.filter(item => timestamp(item.timestamp) > readAt).length;
-  const visible = result.items.filter(item => filter === 'all' || (filter === 'unread' ? timestamp(item.timestamp) > readAt : item.type === filter));
+  const activity = result.items.filter(item => !isActivityFiltered?.(item));
+  const unread = activity.filter(item => timestamp(item.timestamp) > readAt).length;
+  const visible = activity.filter(item => filter === 'all' || (filter === 'unread' ? timestamp(item.timestamp) > readAt : item.type === filter));
   function markRead() {
     const latest = Math.max(readAt, ...result.items.map(item => timestamp(item.timestamp)));
     setReadAt(latest);
@@ -194,6 +198,7 @@ export function NotificationsView({ fid, onConnect, onProfile, onCast }: { fid?:
       <div className="feature-toolbar"><span>{!result.loaded ? result.error ? 'Activity unavailable' : 'Checking recent activity…' : unread ? `${unread} unread in this view` : 'You’re up to date in this view'}</span><div><Button variant="ghost" disabled={result.busy} onClick={result.refresh} aria-label="Refresh activity"><IconRefresh size={17} aria-hidden="true" /></Button><Button variant="secondary" disabled={!unread} onClick={markRead}>Mark read</Button></div></div>
       <nav className="feature-tabs feature-activity-filters" aria-label="Activity filters">{activityFilters.map(value => <Button key={value} variant="ghost" className={filter === value ? 'feature-tab--active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{activityFilterLabels[value]}</Button>)}</nav>
       <p className="feature-note feature-note--inset">Filters apply to loaded activity. Mark read applies across filters. Read status stays on this browser.</p>
+      {activity.length < result.items.length && <p className="feature-note feature-note--inset" role="status">Content preferences hide {result.items.length - activity.length} loaded activity {result.items.length - activity.length === 1 ? 'item' : 'items'} on this browser.</p>}
       {readStatus && <p className="feature-note feature-note--inset" role="status">{readStatus}</p>}
       <div aria-busy={result.busy}>
         {visible.length > 0 && <ul className="feature-activity">{visible.map(item => {

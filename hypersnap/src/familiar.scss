@@ -1,0 +1,22 @@
+.trending-window { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; padding: .85rem 1.75rem; border-bottom: .0625rem solid var(--border); font-size: .7rem; color: var(--color-text-subtle); }
+.trending-window select { font: inherit; color: var(--color-text-strong); background: var(--surface-1); border: .0625rem solid var(--surface-4); padding: .55rem .65rem; border-radius: .5rem; min-height: 2.5rem; }
+.trending-window > span { margin-left: auto; font-size: .62rem; }
+.content-filter-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .9rem 1.75rem; background: var(--surface-1); color: var(--color-text-subtle); font-size: .68rem; border-bottom: .0625rem solid var(--border); }
+.content-filter-summary .button { font-size: .65rem; min-height: 2.4rem; }
+.filtered-cast { padding: 1rem 1.4rem; border: .0625rem solid var(--border); border-radius: .7rem; margin: .7rem; color: var(--color-text-subtle); font-size: .75rem; overflow-wrap: anywhere; }
+.filtered-cast p { margin: 0 0 .65rem; line-height: 1.7; }
+.filtered-cast .button { font-size: .65rem; margin-right: .35rem; }
+.cast-options__local { padding-block: .8rem; border-block: .0625rem solid var(--border); margin-block: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+.cast-options__local p { color: var(--color-text-subtle); font-size: .7rem; line-height: 1.7; margin: 0 0 .2rem; }
+.cast-options__local .button { white-space: normal; text-align: left; justify-content: flex-start; }
+.settings-shortcuts { padding: 1.5rem 1.75rem; border-top: .0625rem solid var(--border); }
+.settings-shortcuts h2 { font-size: 1.1rem; margin: 0 0 .8rem; }
+.settings-shortcuts p { color: var(--color-text-subtle); font-size: .75rem; line-height: 2; }
+.settings-shortcuts .button { font-size: .7rem; }
+kbd { display: inline-block; font-family: inherit; font-size: .8em; border: .0625rem solid var(--surface-4); background: var(--surface-1); color: var(--color-text-strong); padding: .1rem .35rem; border-radius: .25rem; white-space: nowrap; }
+.shortcut-list { margin: 0; }
+.shortcut-list > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: .8rem 0; border-bottom: .0625rem solid var(--border); font-size: .8rem; }
+.shortcut-list dd { margin: 0; }
+@media (max-width: 43.75rem) { .trending-window, .content-filter-summary, .settings-shortcuts { padding-inline: 1.2rem; }.trending-window > span { margin-left: 0; }.filtered-cast { margin-inline: .4rem; padding: .8rem; } }
+
+@media (max-width: 26.25rem) { .page-header { flex-wrap: wrap; }.header-actions { margin-left: auto; }.header-actions > .button--ghost.header-content-settings { display: inline-flex; min-height: 2.5rem; min-width: 2.5rem; } }
