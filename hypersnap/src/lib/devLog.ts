@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'one-box-cast-composer',
+    date: '2026-10-21',
+    title: 'One box for your next cast',
+    summary: 'A look at Farcaster and X informed a simpler writing experience: one expanding text box, a compact toolbar and a clear Cast button, built for Hypersnap.',
+    changes: [
+      'Grouped photo/GIF uploads, verified mentions, local emoji and drafts into compact tools beside the publish action.',
+      'Moved exact username/FID lookup, saved-draft recovery and detailed help into panels that open when requested.',
+      'Kept image and quote previews, public reply/channel context, the byte limit and keyboard publishing available without a stack of permanent forms.',
+      'Kept the public-upload and retained-photo-metadata notice visible before choosing or pasting an image. Upload and attachment limits are unchanged.',
+      'Preserved explicit local draft saving and replacement confirmation, upload cancellation and protection against late responses from another account or destination.',
+      'Improved narrow-screen controls and local Escape handling so closing a tool keeps the surrounding composer open.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/a08075af81bb8bdb8664dea0178347ccf49ae5d8',
+    tag: 'Social',
+  },
+  {
     id: 'injected-wallet-choice-and-approval-recovery',
     date: '2026-10-21',
     title: 'Choose your browser wallet and recover a stuck approval',
