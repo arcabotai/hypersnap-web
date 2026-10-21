@@ -175,6 +175,45 @@ describe('custody wallet approval without seed import', () => {
     expect(w.request.mock.calls.filter(([arg]) => arg.method === 'eth_signTypedData_v4')).toHaveLength(1);
     expect(w.request.mock.calls.at(-1)?.[0].method).toBe('eth_signTypedData_v4');
   });
+
+  it('explicitly signs with the custody account even when a wallet exposes its ordinary account first', async () => {
+    const w = wallet(); const original = w.request.getMockImplementation()!;
+    w.request.mockImplementation(args => args.method === 'eth_requestAccounts' || args.method === 'eth_accounts' ? Promise.resolve([other, custody]) : original(args));
+    const approval = await approvePairingWithWallet(fixture(), w.provider);
+    expect(() => verifyPairingApproval(fixture(), approval)).not.toThrow();
+    expect(w.request.mock.calls.filter(([args]) => args.method === 'eth_signTypedData_v4').every(([args]) => (args.params as readonly unknown[])[0] === custody)).toBe(true);
+    expect(w.request.mock.calls.every(([args]) => ['eth_requestAccounts', 'eth_accounts', 'eth_chainId', 'eth_signTypedData_v4'].includes(args.method))).toBe(true);
+  });
+
+  it('provides a recoverable pending-request error without repeating or downgrading the wallet request', async () => {
+    const w = wallet();
+    w.request.mockRejectedValueOnce({ code: -32002, message: 'untrusted account or signature data' });
+    await expect(approvePairingWithWallet(fixture(), w.provider)).rejects.toThrow('Open the wallet extension and approve or reject');
+    expect(w.request).toHaveBeenCalledOnce();
+    expect(w.request.mock.calls[0][0].method).toBe('eth_requestAccounts');
+  });
+
+  it('isolates hostile wallet error/account getters and settles the UI promise without waiting for timeout', async () => {
+    vi.useFakeTimers();
+    const hostileError = Object.defineProperty({}, 'code', { get: () => { throw new Error('must never surface secret diagnostics'); } });
+    const w = wallet(); w.request.mockRejectedValueOnce(hostileError);
+    await expect(approvePairingWithWallet(fixture(), w.provider)).rejects.toThrow('could not complete');
+    expect(vi.getTimerCount()).toBe(0);
+    const accounts = [custody];
+    Object.defineProperty(accounts, 0, { get: () => { throw new Error('private wallet response'); } });
+    const invalid = wallet(); invalid.request.mockResolvedValueOnce(accounts);
+    await expect(approvePairingWithWallet(fixture(), invalid.provider)).rejects.toThrow('invalid connected accounts');
+    expect(invalid.request).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('holds the chosen request capability through the whole approval instead of following replacement globals or methods', async () => {
+    const w = wallet(); const replacement = vi.fn(async () => [other]);
+    const approval = await approvePairingWithWallet(fixture(), w.provider, { onProgress: () => { w.provider.request = replacement; } });
+    expect(() => verifyPairingApproval(fixture(), approval)).not.toThrow();
+    expect(replacement).not.toHaveBeenCalled();
+    expect(w.payloads).toHaveLength(2);
+  });
 });
 
 describe('injected wallet discovery', () => {
@@ -202,7 +241,7 @@ describe('injected wallet discovery', () => {
     expect(seen).toHaveLength(count);
   });
 
-  it('falls back to legacy injected wallets only when discovery fails and prefers a later named announcement', async () => {
+  it('keeps a legacy provider identity stable when its later EIP-6963 metadata arrives', async () => {
     vi.useFakeTimers();
     const win = target(); const provider = wallet().provider;
     Object.assign(win, { ethereum: provider });
@@ -211,9 +250,12 @@ describe('injected wallet discovery', () => {
     expect(latest).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(301);
     expect(latest[0].id).toBe('injected-fallback');
+    const original = latest[0];
     announce(win, provider);
     expect(latest).toHaveLength(1);
     expect(latest[0].name).toBe('Test Wallet');
+    expect(latest[0].id).toBe(original.id);
+    expect(latest[0].provider).toBe(original.provider);
     cleanup();
   });
 
@@ -247,7 +289,7 @@ describe('injected wallet discovery', () => {
     const rainbow = wallet().provider;
     announce(win, rainbow, undefined, 'Rainbow Wallet', 'ME.RAINBOW');
     expect(latest).toHaveLength(1);
-    expect(latest[0]).toEqual({ id: '12345678-1234-4234-8234-123456789abc', name: 'Rainbow', rdns: 'me.rainbow', provider: rainbow });
+    expect(latest[0]).toEqual({ id: '12345678-1234-4234-8234-123456789abc', name: 'Rainbow Wallet', rdns: 'me.rainbow', provider: rainbow });
     expect(Object.isFrozen(latest[0])).toBe(true);
     for (const rdns of ['https://rainbow.me', 'me.rainbow\u202e', 'x'.repeat(254), { toString: () => 'me.rainbow' }]) {
       const id = `${String(latest.length).padStart(8, '0')}-1234-4234-8234-123456789abc`;
@@ -268,14 +310,14 @@ describe('injected wallet discovery', () => {
     await vi.advanceTimersByTimeAsync(301);
     expect(latest).toHaveLength(2);
     const choice = latest.find(item => item.rdns === 'me.rainbow');
-    expect(choice).toMatchObject({ id: 'rainbow-legacy', name: 'Rainbow' });
+    expect(choice).toMatchObject({ id: 'rainbow-legacy', name: 'Rainbow (legacy)' });
     expect(choice?.provider).toBe(rainbow);
     expect(choice?.provider).not.toBe(competing);
     expect((rainbow.request as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
     cleanup();
   });
 
-  it('replaces a legacy Rainbow entry with its later EIP-6963 copy without changing a captured provider', async () => {
+  it('never replaces a provider capability just because a different object claims the same wallet brand', async () => {
     vi.useFakeTimers();
     const win = target(); const rainbow = Object.assign(wallet().provider, { isRainbow: true });
     Object.assign(win, { rainbow, ethereum: wallet().provider });
@@ -285,14 +327,14 @@ describe('injected wallet discovery', () => {
     const captured = latest[0];
     const announcedCopy = Object.assign(wallet().provider, { isRainbow: true, isMetaMask: false });
     announce(win, announcedCopy, undefined, 'Rainbow', 'me.rainbow');
-    expect(latest).toHaveLength(1);
-    expect(latest[0].provider).toBe(announcedCopy);
-    expect(latest[0].id).not.toBe(captured.id);
+    expect(latest).toHaveLength(3); // legacy Rainbow, generic default, and the distinct EIP provider
+    expect(latest.find(item => item.provider === announcedCopy)?.id).not.toBe(captured.id);
+    expect(latest.find(item => item.id === captured.id)).toBe(captured);
     expect(captured.provider).toBe(rainbow);
-    expect(captured.name).toBe('Rainbow');
+    expect(captured.name).toBe('Rainbow (legacy)');
     await vi.advanceTimersByTimeAsync(500);
     win.dispatchEvent(new Event('ethereum#initialized'));
-    expect(latest).toHaveLength(1);
+    expect(latest).toHaveLength(3);
     cleanup();
   });
 
@@ -308,8 +350,8 @@ describe('injected wallet discovery', () => {
     Object.assign(provider, { isRainbow: true });
     win.dispatchEvent(new Event('ethereum#initialized'));
     expect(latest).toHaveLength(1);
-    expect(latest[0]).toEqual({ id: 'rainbow-legacy', name: 'Rainbow', rdns: 'me.rainbow', provider });
-    expect(generic).toEqual({ id: 'injected-fallback', name: 'Browser wallet', provider });
+    expect(latest[0]).toEqual({ id: generic.id, name: 'Rainbow (legacy)', rdns: 'me.rainbow', provider });
+    expect(generic).toEqual({ id: 'injected-fallback', name: 'Browser wallet (default provider)', provider });
     cleanup();
   });
 
@@ -341,13 +383,13 @@ describe('injected wallet discovery', () => {
     let latest: InjectedWallet[] = [];
     const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
     await vi.advanceTimersByTimeAsync(301);
-    expect(latest).toHaveLength(1);
+    expect(latest).toHaveLength(2);
     expect(latest[0].provider).toBe(rainbow);
     expect(distant).not.toHaveBeenCalled();
     cleanup();
   });
 
-  it('ignores throwing or truthy Rainbow flags without losing the generic legacy fallback', async () => {
+  it('labels documented namespaces without trusting truthy flags on other generic providers', async () => {
     vi.useFakeTimers();
     const win = target();
     const generic = wallet().provider;
@@ -357,8 +399,132 @@ describe('injected wallet discovery', () => {
     let latest: InjectedWallet[] = [];
     const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
     await vi.advanceTimersByTimeAsync(301);
-    expect(latest).toHaveLength(1);
-    expect(latest[0]).toEqual({ id: 'injected-fallback', name: 'Browser wallet', provider: generic });
+    expect(latest).toHaveLength(3);
+    expect(latest.find(item => item.provider === generic)).toMatchObject({ name: 'Browser wallet (default provider)' });
+    expect(latest.find(item => item.provider === throwing)?.rdns).toBeUndefined();
+    expect(latest.find(item => item.provider === impostor)).toMatchObject({ name: 'Rainbow (legacy)', rdns: 'me.rainbow' });
+    cleanup();
+  });
+
+  it('discovers Coinbase’s direct extension provider without flags beside a different EIP-6963 wallet', async () => {
+    vi.useFakeTimers();
+    const win = target(); const coinbase = wallet(); const metamask = wallet();
+    // A compatibility flag must not relabel the documented Coinbase namespace.
+    Object.assign(coinbase.provider, { isMetaMask: true });
+    Object.assign(win, { coinbaseWalletExtension: coinbase.provider, ethereum: metamask.provider });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    announce(win, metamask.provider, undefined, 'MetaMask', 'io.metamask');
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(2);
+    const selected = latest.find(item => item.rdns === 'com.coinbase.wallet')!;
+    expect(selected.name).toBe('Coinbase Wallet (legacy)');
+    expect(selected.provider).toBe(coinbase.provider);
+    expect(coinbase.request).not.toHaveBeenCalled(); expect(metamask.request).not.toHaveBeenCalled();
+    await approvePairingWithWallet(fixture(), selected.provider);
+    expect(coinbase.payloads).toHaveLength(2); expect(metamask.request).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('finds Coinbase, Rainbow and MetaMask from a generic provider array without any EIP announcement', async () => {
+    vi.useFakeTimers();
+    const win = target();
+    const coinbase = Object.assign(wallet().provider, { isCoinbaseWallet: true, isMetaMask: true });
+    const rainbow = Object.assign(wallet().provider, { isRainbow: true, isMetaMask: true });
+    const metamask = Object.assign(wallet().provider, { isMetaMask: true, providers: [coinbase, rainbow, coinbase] });
+    Object.assign(win, { ethereum: metamask });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(3);
+    expect(latest.map(item => item.name)).toEqual(['Coinbase Wallet (legacy)', 'Rainbow (legacy)', 'MetaMask (legacy)']);
+    expect(new Set(latest.map(item => item.provider)).size).toBe(3);
+    for (const choice of latest) expect(choice.provider.request).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('preserves Coinbase and other extensions routed behind Rainbow instead of only finding Rainbow', async () => {
+    vi.useFakeTimers();
+    const win = target();
+    const rainbow = Object.assign(wallet().provider, { isRainbow: true });
+    const coinbase = Object.assign(wallet().provider, { isCoinbaseWallet: true });
+    const otherWallet = wallet().provider;
+    Object.assign(win, { ethereum: rainbow, rainbow, rnbwWalletRouter: { providers: [rainbow, coinbase, otherWallet], currentProvider: rainbow, lastInjectedProvider: coinbase, rainbowProvider: rainbow } });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(3);
+    expect(latest.find(item => item.provider === coinbase)?.name).toBe('Coinbase Wallet (legacy)');
+    expect(latest.find(item => item.provider === otherWallet)?.name).toMatch(/^Browser wallet/);
+    cleanup();
+  });
+
+  it('deduplicates aliases by provider identity while preserving different providers that share a brand', async () => {
+    vi.useFakeTimers();
+    const win = target();
+    const first = Object.assign(wallet().provider, { isCoinbaseWallet: true });
+    const second = Object.assign(wallet().provider, { isCoinbaseWallet: true });
+    Object.assign(win, { coinbaseWalletExtension: first, walletLinkExtension: first, ethereum: Object.assign(first, { providers: [first, second, first] }) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    const original = [...latest];
+    expect(latest).toHaveLength(2);
+    expect(new Set(latest.map(item => item.id)).size).toBe(2);
+    win.dispatchEvent(new Event('ethereum#initialized'));
+    expect(latest).toEqual(original);
+    announce(win, first, undefined, 'Coinbase Wallet', 'com.coinbase.wallet');
+    expect(latest).toHaveLength(2);
+    expect(latest.find(item => item.provider === first)?.id).toBe(original[0].id);
+    expect(original[0].provider).toBe(first);
+    cleanup();
+  });
+
+  it('detects delayed Coinbase injection beside named wallets and rescan cleanup leaves no old callbacks', async () => {
+    vi.useFakeTimers();
+    const win = target(); const metamask = wallet().provider; const coinbase = wallet().provider;
+    const seen = vi.fn(); let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; seen(); });
+    announce(win, metamask, undefined, 'MetaMask', 'io.metamask');
+    await vi.advanceTimersByTimeAsync(20_000);
+    Object.assign(win, { coinbaseWalletExtension: coinbase });
+    win.dispatchEvent(new Event('ethereum#initialized'));
+    expect(latest).toHaveLength(2);
+    expect(latest.find(item => item.provider === coinbase)).toBeDefined();
+    cleanup(); const count = seen.mock.calls.length;
+    win.dispatchEvent(new Event('ethereum#initialized'));
+    expect(seen).toHaveBeenCalledTimes(count);
+    const nextCleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest.find(item => item.provider === coinbase)).toBeDefined();
+    expect(seen).toHaveBeenCalledTimes(count);
+    nextCleanup();
+  });
+
+  it('recognizes only request-capable EVM providers in documented direct namespaces', async () => {
+    vi.useFakeTimers();
+    const win = target(); const brave = wallet().provider; const phantom = wallet().provider; const trust = wallet().provider; const okx = wallet().provider;
+    Object.assign(win, { braveEthereum: brave, phantom: { ethereum: phantom }, trustwallet: { ethereum: trust }, okxwallet: okx, coinbaseWalletExtension: { signMessage: vi.fn() } });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest.map(item => item.name)).toEqual(['Brave Wallet (legacy)', 'Phantom (legacy)', 'Trust Wallet (legacy)', 'OKX Wallet (legacy)']);
+    cleanup();
+  });
+
+  it('isolates revoked proxies and hostile getters across namespaces, provider arrays, and announcement metadata', async () => {
+    vi.useFakeTimers();
+    const win = target(); const valid = wallet().provider;
+    const badProvider = Proxy.revocable({ request: vi.fn() }, {}); badProvider.revoke();
+    const badArray = Proxy.revocable([], {}); badArray.revoke();
+    Object.defineProperty(win, 'coinbaseWalletExtension', { get: () => { throw new Error('private diagnostics'); } });
+    Object.assign(win, { walletLinkExtension: badProvider.proxy, rainbow: badProvider.proxy, ethereum: Object.assign(valid, { providers: badArray.proxy }) });
+    let latest: InjectedWallet[] = [];
+    const cleanup = discoverInjectedWallets(wallets => { latest = wallets; });
+    win.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: { info: Object.defineProperty({}, 'uuid', { get: () => { throw new Error('private announcement'); } }), provider: valid } }));
+    await vi.advanceTimersByTimeAsync(301);
+    expect(latest).toHaveLength(1); expect(latest[0].provider).toBe(valid);
+    expect(valid.request).not.toHaveBeenCalled();
     cleanup();
   });
 });

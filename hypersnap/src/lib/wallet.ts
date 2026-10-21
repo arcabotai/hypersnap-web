@@ -19,87 +19,134 @@ export interface WalletApprovalOptions { signal?: AbortSignal; onProgress?: (sta
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RDNS = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-const RAINBOW_RDNS = 'me.rainbow';
 const MAX_WALLETS = 16;
+const MAX_LEGACY_PROVIDERS = 32;
 const ACCOUNT_TIMEOUT_MS = 30_000;
 const SIGN_TIMEOUT_MS = 120_000;
 
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function isProvider(value: unknown): value is WalletProvider {
-  try { return object(value) && typeof value.request === 'function'; } catch { return false; }
+  try { return value !== null && (typeof value === 'object' || typeof value === 'function') && !Array.isArray(value) && typeof property(value, 'request') === 'function'; } catch { return false; }
 }
 function property(value: unknown, key: string | number): unknown {
   try { return value !== null && (typeof value === 'object' || typeof value === 'function') ? (value as Record<string | number, unknown>)[key] : undefined; } catch { return undefined; }
 }
-function legacyRainbowProvider(): WalletProvider | undefined {
-  // Rainbow publishes a direct window.rainbow provider even when another wallet
-  // owns window.ethereum. Its EIP-6963 announcement may use a different object.
-  // Source: rainbow-me/browser-extension, src/entries/inpage/index.ts.
-  const direct = property(window, 'rainbow');
-  if (isProvider(direct) && property(direct, 'isRainbow') === true) return direct;
-  const ethereum = property(window, 'ethereum');
-  if (isProvider(ethereum) && property(ethereum, 'isRainbow') === true) return ethereum;
-  const providers = property(ethereum, 'providers');
+interface LegacyLabel { name: string; rdns?: string; id: string }
+const LEGACY_LABELS = {
+  coinbase: { name: 'Coinbase Wallet', rdns: 'com.coinbase.wallet', id: 'coinbase-legacy' },
+  rainbow: { name: 'Rainbow', rdns: 'me.rainbow', id: 'rainbow-legacy' },
+  rabby: { name: 'Rabby', rdns: 'io.rabby', id: 'rabby-legacy' },
+  brave: { name: 'Brave Wallet', rdns: 'com.brave.wallet', id: 'brave-legacy' },
+  phantom: { name: 'Phantom', rdns: 'app.phantom', id: 'phantom-legacy' },
+  trust: { name: 'Trust Wallet', rdns: 'com.trustwallet.app', id: 'trust-legacy' },
+  okx: { name: 'OKX Wallet', rdns: 'com.okex.wallet', id: 'okx-legacy' },
+  metamask: { name: 'MetaMask', rdns: 'io.metamask', id: 'metamask-legacy' },
+} satisfies Record<string, LegacyLabel>;
+
+function legacyLabel(provider: WalletProvider): LegacyLabel | undefined {
+  // Many competing wallets also set isMetaMask for compatibility. Their more
+  // specific flags must take precedence. Every label remains self-asserted.
+  if (property(provider, 'isCoinbaseWallet') === true || property(provider, 'isCoinbaseBrowser') === true) return LEGACY_LABELS.coinbase;
+  if (property(provider, 'isRainbow') === true) return LEGACY_LABELS.rainbow;
+  if (property(provider, 'isRabby') === true) return LEGACY_LABELS.rabby;
+  if (property(provider, 'isBraveWallet') === true) return LEGACY_LABELS.brave;
+  if (property(provider, 'isPhantom') === true) return LEGACY_LABELS.phantom;
+  if (property(provider, 'isTrust') === true || property(provider, 'isTrustWallet') === true) return LEGACY_LABELS.trust;
+  if (property(provider, 'isOkxWallet') === true || property(provider, 'isOKExWallet') === true) return LEGACY_LABELS.okx;
+  if (property(provider, 'isMetaMask') === true) return LEGACY_LABELS.metamask;
+}
+function boundedProviders(value: unknown): unknown[] {
   try {
-    if (Array.isArray(providers)) {
-      const count = property(providers, 'length');
-      if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) {
-        for (let i = 0; i < Math.min(count, MAX_WALLETS); i++) {
-          const provider = property(providers, i);
-          if (isProvider(provider) && property(provider, 'isRainbow') === true) return provider;
-        }
-      }
-    }
-  } catch { /* A revoked proxy must not prevent discovery of other wallets. */ }
+    if (!Array.isArray(value)) return [];
+    const length = property(value, 'length');
+    if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0) return [];
+    const result: unknown[] = [];
+    for (let index = 0; index < Math.min(length, MAX_LEGACY_PROVIDERS); index++) result.push(property(value, index));
+    return result;
+  } catch { return []; }
 }
 
 /** Names, rdns and legacy flags are self-asserted labels, never authentication. */
 export function discoverInjectedWallets(onWallets: (wallets: InjectedWallet[]) => void): () => void {
   if (typeof window === 'undefined') { onWallets([]); return () => {}; }
   const discovered = new Map<string, InjectedWallet>();
+  const providerIds = new WeakMap<WalletProvider, string>();
+  const uuidOwners = new Map<string, WalletProvider>();
+  const ranks = new Map<string, number>();
   let closed = false;
   const publish = () => { if (!closed) onWallets([...discovered.values()]); };
+  const add = (provider: WalletProvider, preferredId: string, name: string, rdns: string | undefined, rank: number) => {
+    if (closed) return;
+    const existingId = providerIds.get(provider);
+    if (existingId) {
+      if ((ranks.get(existingId) ?? 0) > rank) return;
+      const existing = discovered.get(existingId)!;
+      if (existing.name === name && existing.rdns === rdns) return;
+      // Metadata may improve; the ID and provider capability never change.
+      discovered.set(existingId, Object.freeze({ id: existingId, name, provider, ...(rdns ? { rdns } : {}) }));
+      ranks.set(existingId, rank); publish(); return;
+    }
+    if (discovered.size >= MAX_WALLETS) return;
+    let id = preferredId;
+    for (let suffix = 2; discovered.has(id); suffix++) id = `${preferredId}-${suffix}`;
+    providerIds.set(provider, id);
+    discovered.set(id, Object.freeze({ id, name, provider, ...(rdns ? { rdns } : {}) }));
+    ranks.set(id, rank); publish();
+  };
   const announce = (event: Event) => {
     try {
       const detail: unknown = (event as CustomEvent<unknown>).detail;
       if (!object(detail)) return;
-      const info = detail.info; const provider = detail.provider;
+      const info = property(detail, 'info'); const provider = property(detail, 'provider');
       if (!object(info) || !isProvider(provider)) return;
-      const { uuid, name } = info;
+      const uuid = property(info, 'uuid'); const name = property(info, 'name');
       if (typeof uuid !== 'string' || !UUID.test(uuid) || typeof name !== 'string' || name.length < 1 || name.length > 80 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(name)) return;
       const rdnsValue = property(info, 'rdns');
       const rdns = typeof rdnsValue === 'string' && rdnsValue.length <= 253 && RDNS.test(rdnsValue.toLowerCase()) ? rdnsValue.toLowerCase() : undefined;
       const id = uuid.toLowerCase();
       // A conflicting UUID must never replace an already selected provider.
-      if (discovered.has(id)) return;
-      const duplicates = [...discovered.entries()].filter(([walletId, wallet]) => wallet.provider === provider || (walletId === 'rainbow-legacy' && rdns === RAINBOW_RDNS));
-      if (duplicates.some(([walletId]) => walletId !== 'injected-fallback' && walletId !== 'rainbow-legacy')) return;
-      if (discovered.size - duplicates.length >= MAX_WALLETS) return;
-      for (const [walletId] of duplicates) discovered.delete(walletId);
-      discovered.set(id, Object.freeze({ id, name: rdns === RAINBOW_RDNS ? 'Rainbow' : name.trim() || 'Browser wallet', provider, ...(rdns ? { rdns } : {}) }));
-      publish();
+      const owner = uuidOwners.get(id);
+      if (owner && owner !== provider) return;
+      const existingId = providerIds.get(provider);
+      if (existingId && (ranks.get(existingId) ?? 0) === 3) return;
+      add(provider, id, name.trim() || 'Browser wallet', rdns, 3);
+      // At most one UUID is retained per displayed provider, keeping this map
+      // bounded even when a page dispatches repeated announcement aliases.
+      if (providerIds.has(provider)) uuidOwners.set(id, provider);
     } catch { /* An announcement is untrusted extension/page input. */ }
   };
   const fallback = () => {
     if (closed) return;
-    const rainbow = legacyRainbowProvider();
-    if (rainbow && ![...discovered.entries()].some(([id, wallet]) => wallet.rdns === RAINBOW_RDNS || (id !== 'injected-fallback' && wallet.provider === rainbow))) {
-      const generic = discovered.get('injected-fallback');
-      if (generic?.provider === rainbow) discovered.delete('injected-fallback');
-      if (discovered.size < MAX_WALLETS) {
-        discovered.set('rainbow-legacy', Object.freeze({ id: 'rainbow-legacy', name: 'Rainbow', rdns: RAINBOW_RDNS, provider: rainbow }));
-        publish();
-      }
+    const known = (value: unknown, label: LegacyLabel) => { if (isProvider(value)) add(value, label.id, `${label.name} (legacy)`, label.rdns, 2); };
+    // Public extension namespaces keep wallets available when a different
+    // extension owns window.ethereum. No wallet methods are invoked here.
+    known(property(window, 'coinbaseWalletExtension'), LEGACY_LABELS.coinbase);
+    known(property(window, 'walletLinkExtension'), LEGACY_LABELS.coinbase);
+    known(property(window, 'rainbow'), LEGACY_LABELS.rainbow);
+    known(property(window, 'braveEthereum'), LEGACY_LABELS.brave);
+    known(property(property(window, 'phantom'), 'ethereum'), LEGACY_LABELS.phantom);
+    known(property(property(window, 'trustwallet'), 'ethereum'), LEGACY_LABELS.trust);
+    known(property(window, 'trustwallet'), LEGACY_LABELS.trust);
+    known(property(window, 'okxwallet'), LEGACY_LABELS.okx);
+    const ethereum = property(window, 'ethereum');
+    const router = property(window, 'rnbwWalletRouter');
+    const candidates = [...boundedProviders(property(ethereum, 'providers')), ...boundedProviders(property(router, 'providers')), property(router, 'rainbowProvider'), property(router, 'lastInjectedProvider'), property(router, 'currentProvider'), ethereum];
+    for (const candidate of candidates) {
+      if (!isProvider(candidate)) continue;
+      const label = legacyLabel(candidate);
+      const existingId = providerIds.get(candidate);
+      const ordinal = existingId ? [...discovered.keys()].indexOf(existingId) + 1 : discovered.size + 1;
+      // A documented direct namespace is a better display hint than generic
+      // compatibility flags such as isMetaMask. Neither establishes trust.
+      add(candidate, label?.id ?? (candidate === ethereum ? 'injected-fallback' : 'injected-legacy'), label ? `${label.name} (legacy)` : candidate === ethereum ? 'Browser wallet (default provider)' : `Browser wallet ${ordinal} (legacy)`, label?.rdns, label ? 1 : 0);
     }
-    if (discovered.size) return;
-    const provider = property(window, 'ethereum');
-    if (isProvider(provider)) { discovered.set('injected-fallback', Object.freeze({ id: 'injected-fallback', name: 'Browser wallet', provider })); publish(); }
   };
   window.addEventListener('eip6963:announceProvider', announce);
   window.addEventListener('ethereum#initialized', fallback);
   publish();
   window.dispatchEvent(new Event('eip6963:requestProvider'));
-  // Prefer EIP-6963; preserve explicit legacy Rainbow beside other named wallets.
+  // Keep legacy providers beside EIP-6963 choices instead of letting one named
+  // wallet suppress all other extensions. Refreshing the UI repeats this scan.
   const timer = setTimeout(fallback, 300);
   return () => { closed = true; clearTimeout(timer); window.removeEventListener('eip6963:announceProvider', announce); window.removeEventListener('ethereum#initialized', fallback); discovered.clear(); };
 }
@@ -108,17 +155,22 @@ function assertActive(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Wallet approval cancelled.', 'AbortError');
 }
 function rpcError(error: unknown): Error {
-  const code = object(error) ? error.code : undefined;
+  const code = property(error, 'code');
   if (code === 4001) return new Error('You declined the wallet request. No authorization was submitted.');
-  if (code === 4100) return new Error('Allow this website to connect to the custody account in your wallet.');
+  if (code === 4100) return new Error('Allow this site to use the imported Farcaster custody account in your wallet’s connected-site permissions, then try again.');
   if (code === 4200 || code === -32601) return new Error('This wallet does not support the required EIP-712 typed-data signatures.');
-  if (code === -32002) return new Error('A wallet request is already open. Finish or reject it in your wallet before trying again.');
+  if (code === -32002) return new Error('A wallet request is already open or pending. Open the wallet extension and approve or reject that request before trying again.');
+  if (code === 4900 || code === 4901) return new Error('Your wallet is disconnected. Unlock the extension and connect the custody account on Ethereum Mainnet, then try again.');
   return new Error('The wallet could not complete the request. Check its connection and selected custody account.');
 }
 
 function transport(provider: WalletProvider, options: WalletApprovalOptions) {
   if (!isProvider(provider)) throw new Error('Choose an available browser wallet.');
-  const request = provider.request.bind(provider);
+  const method = property(provider, 'request');
+  if (typeof method !== 'function') throw new Error('This wallet provider is no longer available. Refresh wallet detection and choose it again.');
+  // Hold the selected provider and its request capability for this attempt;
+  // neither window.ethereum changes nor subsequent discovery can reroute it.
+  const request = (args: Parameters<WalletProvider['request']>[0]): unknown => Reflect.apply(method, provider, [args]);
   return async (method: string, params?: readonly unknown[], timeout = ACCOUNT_TIMEOUT_MS): Promise<unknown> => {
     assertActive(options.signal);
     return new Promise((resolve, reject) => {
@@ -141,8 +193,20 @@ function transport(provider: WalletProvider, options: WalletApprovalOptions) {
 }
 
 function requireCustodyAccount(value: unknown, custody: string): void {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 32 || !value.every(account => typeof account === 'string' && ADDRESS.test(account))) throw new Error('The wallet returned invalid connected accounts.');
-  if (!value.some(account => (account as string).toLowerCase() === custody)) throw new Error('Connect the custody address shown for this identity in your wallet. A different verified wallet cannot authorize this account.');
+  const invalid = () => new Error('The wallet returned invalid connected accounts.');
+  let length: number;
+  try {
+    const count = property(value, 'length');
+    if (!Array.isArray(value) || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 1 || count > 32) throw invalid();
+    length = count;
+  } catch { throw invalid(); }
+  let matched = false;
+  for (let index = 0; index < length; index++) {
+    const account = property(value, index);
+    if (typeof account !== 'string' || !ADDRESS.test(account)) throw invalid();
+    if (account.toLowerCase() === custody) matched = true;
+  }
+  if (!matched) throw new Error('Connect the imported Farcaster account whose custody address is shown here. If your wallet keeps returning another account, change this site’s connected accounts or disconnect and reconnect this site in the wallet. A different verified wallet cannot authorize this account.');
 }
 function requireSigningChain(value: unknown): void {
   if (typeof value !== 'string' || value.length > 66 || !/^0x(?:0|[1-9a-f][0-9a-f]*)$/i.test(value)) throw new Error('The wallet returned an invalid network ID.');

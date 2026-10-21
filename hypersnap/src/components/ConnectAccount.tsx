@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconCheck, IconCode, IconDeviceDesktop, IconFileCheck, IconKey, IconLock, IconRefresh, IconShieldLock, IconTrash, IconWallet } from '@tabler/icons-react';
 import { Button, Input, Modal } from './ui';
 import WalletConnectLogo from './WalletConnectLogo';
@@ -16,47 +16,89 @@ const fingerprint = (key: string) => key.match(/.{1,8}/g)?.join(' ') ?? key;
 
 const WalletConnectPanel = lazy(() => import('./WalletConnectPanel'));
 
-function WalletApproval({ request, disabled, onApproved, onBusy, onError }: {
+function WalletApproval({ request, disabled, expired = false, onApproved, onBusy, onError }: {
   request: PairingRequest | RevocationRequest;
   disabled: boolean;
+  expired?: boolean;
   onApproved(approval: PairingApproval | RevocationApproval, walletName: string): void;
   onBusy(value: boolean): void;
   onError(value: string): void;
 }) {
   const [wallets, setWallets] = useState<InjectedWallet[]>([]);
-  const [waiting, setWaiting] = useState('');
+  const [selection, setSelection] = useState<{ wallet: InjectedWallet; explicit: boolean } | null>(null);
+  const [waiting, setWaiting] = useState<InjectedWallet | null>(null);
   const [progress, setProgress] = useState('');
+  const [walletError, setWalletError] = useState('');
+  const [retry, setRetry] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [walletConnect, setWalletConnect] = useState(false);
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
-  const browserWallets = [...wallets].sort((first, second) => Number(second.rdns === 'me.rainbow') - Number(first.rdns === 'me.rainbow'));
-  const hasRainbow = wallets.some(wallet => wallet.rdns === 'me.rainbow');
-  useEffect(() => discoverInjectedWallets(setWallets), [refresh]);
-  useEffect(() => () => { generation.current += 1; controller.current?.abort(); }, [request.requestId]);
+  const active = useRef(false);
+  const providerOptions = useRef(new Map<InjectedWallet['provider'], string>());
+  function optionValue(wallet: InjectedWallet) {
+    let value = providerOptions.current.get(wallet.provider);
+    if (!value) { value = `wallet-${providerOptions.current.size + 1}`; providerOptions.current.set(wallet.provider, value); }
+    return value;
+  }
+  const currentRequest = useRef(request.requestId); currentRequest.current = request.requestId;
+  const isExpired = useRef(expired); isExpired.current = expired;
+  const selectId = useId();
+  // Provider references are the authority for selection. An extension can
+  // announce upgraded labels later; an ID/brand collision cannot switch it.
+  const matching = selection && wallets.find(wallet => wallet.provider === selection.wallet.provider);
+  const selected = matching || selection?.wallet;
+  const browserWallets = selection && !matching ? [...wallets, selection.wallet] : wallets;
+  useEffect(() => discoverInjectedWallets(found => {
+    setWallets(found);
+    setSelection(current => current?.explicit || active.current ? current : found.length === 1 ? { wallet: found[0], explicit: false } : null);
+  }), [refresh]);
+  useEffect(() => {
+    setWaiting(null); setProgress(''); setWalletError(''); setRetry(false);
+    return () => { generation.current += 1; controller.current?.abort(); active.current = false; };
+  }, [request.requestId]);
+  function cancel(message = 'Cancelled on this site. Reject any request still open in your wallet before retrying.') {
+    const ownedBusy = active.current || walletConnect;
+    generation.current += 1; controller.current?.abort(); controller.current = null; active.current = false;
+    setWaiting(null); setWalletConnect(false); setProgress(message); setWalletError(''); setRetry(true); if (ownedBusy) onBusy(false); onError('');
+  }
+  useEffect(() => {
+    if (expired && (active.current || walletConnect)) cancel('This approval request expired. Use another account to start again with a fresh request. Reject any request still open in your wallet.');
+  }, [expired, request.requestId]);
   async function approve(wallet: InjectedWallet) {
-    if (disabled || waiting) return;
-    setWalletConnect(false);
-    const run = ++generation.current; controller.current?.abort(); controller.current = new AbortController(); setWaiting(wallet.id); setProgress('Connecting your custody wallet…'); onBusy(true); onError('');
-    const options = { signal: controller.current.signal, onProgress: (text: string) => { if (run === generation.current) setProgress(text); } };
+    if (disabled || active.current || isExpired.current) return;
+    active.current = true; setSelection({ wallet, explicit: true }); setWalletConnect(false);
+    const run = ++generation.current; const requestId = request.requestId;
+    controller.current?.abort(); const attempt = new AbortController(); controller.current = attempt;
+    setWaiting(wallet); setWalletError(''); setProgress(`Connecting ${wallet.name} to the custody account…`); onBusy(true); onError('');
+    const current = () => run === generation.current && requestId === currentRequest.current && !attempt.signal.aborted && !isExpired.current;
+    const options = { signal: attempt.signal, onProgress: (text: string) => { if (current()) setProgress(text); } };
     try {
       const value = request.kind === 'arca.hypersnap.signer.request'
         ? await approvePairingWithWallet(request, wallet.provider, options)
         : await approveRevocationWithWallet(request, wallet.provider, options);
-      if (run === generation.current) onApproved(value, wallet.name);
-    } catch (cause) { if (run === generation.current) onError(errorMessage(cause)); }
-    finally { if (run === generation.current) { setWaiting(''); onBusy(false); } }
+      if (current()) { setProgress('Wallet signatures received. Review the approval below, then submit it to Hypersnap.'); setRetry(false); onApproved(value, wallet.name); }
+    } catch (cause) { if (current()) { const text = errorMessage(cause); setWalletError(text); setProgress(''); setRetry(true); onError(text); } }
+    finally { if (run === generation.current) { active.current = false; setWaiting(null); onBusy(false); } }
+  }
+  function refreshWallets() {
+    if (disabled || active.current) return;
+    providerOptions.current.clear(); setSelection(null); setWallets([]); setWalletError(''); setProgress('Wallet detection refreshed. Choose the wallet that contains your Farcaster custody account.'); setRetry(false); onError(''); setRefresh(value => value + 1);
   }
   return <section className="wallet-approval">
     <h3><IconWallet size={19} />Approve with your wallet</h3>
-    <p>{request.kind === 'arca.hypersnap.signer.request' ? 'Connect the wallet account that owns this identity, then approve two signature requests for this device’s posting key.' : 'Connect the custody wallet and approve the signature request to revoke this device’s posting key.'} Review the FID, key, permissions, and deadline. No transaction fee is required.</p>
+    <p>{request.kind === 'arca.hypersnap.signer.request' ? 'After connecting the account that owns this identity, approve two typed-data signatures: posting-key permissions (1 of 2), then the Hypersnap key request (2 of 2).' : 'Connect the custody wallet and approve the typed-data signature to revoke this device’s posting key.'} Review the FID, key, permissions, and deadline. These signatures do not send a transaction, mint an NFT, approve tokens or transfer assets. No transaction fee is required.</p>
+    {request.kind === 'arca.hypersnap.signer.request' && <p className="wallet-approval-next">After both signatures, return here and choose <strong>Submit approved device key</strong>. That separate step sends the authorization to Hypersnap.</p>}
     <div className="wallet-browser-heading"><strong>Browser wallet</strong><span>Connect directly with your installed extension.</span></div>
-    {!!browserWallets.length && <div className="wallet-list">{browserWallets.map(wallet => <Button key={wallet.id} variant={wallet.rdns === 'me.rainbow' ? 'primary' : 'secondary'} disabled={disabled || !!waiting} onClick={() => void approve(wallet)}>{waiting === wallet.id ? <IconRefresh size={17} className="spin" /> : <IconWallet size={17} />}<span>{waiting === wallet.id ? 'Check your wallet…' : wallet.rdns === 'me.rainbow' ? 'Connect Rainbow extension & approve' : `Connect ${wallet.name} & approve`}</span><IconArrowUpRight size={15} /></Button>)}</div>}
-    {!hasRainbow && <div className="wallet-rainbow-setup"><strong>Use the Rainbow extension</strong><p>Rainbow is not detected in this browser. Install or enable it, then open this site in that same browser and refresh wallet detection. Your recovery phrase stays in Rainbow.</p><a className="button button--secondary" href="https://rainbow.me/extension" target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><IconArrowUpRight size={16} />Get Rainbow extension</a></div>}
-    <div className="wallet-not-found">{!browserWallets.length && <p>No browser wallet detected. Browser extensions are available only in the browser where you installed them.</p>}<Button variant="secondary" disabled={disabled || !!waiting} onClick={() => setRefresh(value => value + 1)}><IconRefresh size={15} />Refresh browser wallets</Button></div>
+    {!!browserWallets.length && <div className="wallet-list"><label htmlFor={selectId}>Choose your browser wallet</label><select id={selectId} value={selected ? optionValue(selected) : ''} disabled={disabled || !!waiting} onChange={event => {
+      const wallet = browserWallets.find(value => optionValue(value) === event.target.value);
+      setSelection(wallet ? { wallet, explicit: true } : null); setWalletError(''); setProgress(''); setRetry(false); onError('');
+    }}><option value="">Select a browser wallet</option>{browserWallets.map(wallet => <option key={optionValue(wallet)} value={optionValue(wallet)}>{wallet.name}{wallet.rdns ? ` · ${wallet.rdns}` : ''}{selection && !matching && wallet === selection.wallet ? ' (previously selected)' : ''}</option>)}</select><Button disabled={disabled || !!waiting || !selected} onClick={() => { if (selected) void approve(selected); }}>{waiting ? <IconRefresh size={17} className="spin" /> : <IconWallet size={17} />}<span>{waiting ? `Check ${waiting.name}…` : !selected ? 'Choose a browser wallet' : retry ? `Retry ${selected.name} approval` : selected.rdns === 'me.rainbow' ? 'Connect Rainbow extension & approve' : `Connect ${selected.name} & approve`}</span><IconArrowUpRight size={15} /></Button></div>}
+    <div className="wallet-not-found">{!browserWallets.length && <p>No browser wallet detected. Unlock or enable your extension in this browser, allow it to access this site, then refresh detection.</p>}<Button variant="secondary" disabled={disabled || !!waiting} onClick={refreshWallets}><IconRefresh size={15} />Refresh browser wallets</Button></div>
+    {(waiting || progress || walletError) && <div className="wallet-approval-feedback">{progress && <p className="pairing-copy" role="status" aria-live="polite">{progress}</p>}{walletError && <p className="error" role="alert">{walletError}</p>}{waiting && <><Button variant="secondary" onClick={() => cancel()}>Cancel wallet approval</Button><p className="pairing-release">Open {waiting.name} from your browser toolbar to check its pending requests. Cancelling here cannot close or reject its popup.</p></>}</div>}
+    <details className="wallet-account-help"><summary>Wallet shows the wrong account?</summary><p>Use the imported Farcaster recovery account that matches the custody address below. Your everyday wallet or another verified address cannot authorize this identity.</p><p>In Coinbase Wallet or another extension, select that imported account and allow this site to connect to it using the wallet’s connected-site controls. Then retry here. If a request is already pending, finish or reject it in the wallet first. You can also refresh wallet detection or choose another wallet.</p></details>
     <div className="wallet-extension-label">Or connect a mobile wallet</div>
     {!walletConnect ? <><Button aria-label="Connect wallet app" className="full-width walletconnect-start" disabled={disabled || !!waiting} onClick={() => { onBusy(true); onError(''); setWalletConnect(true); }}><WalletConnectLogo size={27} /><span className="walletconnect-start-label"><strong>Connect wallet app</strong><small>WalletConnect</small></span><IconArrowUpRight size={16} /></Button><p className="pairing-release">WalletConnect · scan a QR code on desktop or open your wallet app on mobile. Keep using this browser.</p></> : <Suspense fallback={<div className="walletconnect-panel"><p role="status"><IconRefresh size={16} className="spin" />Loading wallet app connection…</p><Button variant="ghost" onClick={() => { setWalletConnect(false); onBusy(false); }}>Cancel</Button></div>}><WalletConnectPanel request={request} onApproved={onApproved} onBusy={onBusy} onError={onError} onClose={() => setWalletConnect(false)} /></Suspense>}
-    {waiting && <><p className="pairing-copy" role="status">{progress}</p><p className="pairing-release">If you close this dialog, reject any pending request in your wallet. This website cannot close the wallet popup.</p></>}
     <p className="pairing-release">Select Ethereum Mainnet in your wallet for signing (chain ID 1). These signatures use the historical “Farcaster KeyAdd” domain to authorize this key on Hypersnap. No Farcaster login, ETH, or wallet transaction is required.</p>
     <p className="pairing-release">The connected address must match <span className="pairing-mono">{request.custodyAddress}</span>. A verified wallet address alone does not grant account access. Wallet support depends on its provider and signing capabilities.</p>
   </section>;
@@ -247,7 +289,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
         {saved && !socialApproval && <Button className="full-width pairing-back" variant="ghost" disabled={busy} onClick={() => { reset(); setUnlock(true); }}><IconLock size={16} />Unlock saved device instead</Button>}
       </form> : <>
         <AccountFacts request={request} />
-        {!attempted && <WalletApproval request={request} disabled={busy || expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validatePairingApproval(value)); setApprovalName(name); }} />}
+        {!attempted && <WalletApproval request={request} disabled={busy || expired} expired={expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validatePairingApproval(value)); setApprovalName(name); }} />}
         {approval && <div className="wallet-approved" role="status"><IconCheck size={18} /><span>Posting key approved{approvalName ? ` · ${approvalName}` : ''}. Submit below to register it on Hypersnap.</span></div>}
         {!attempted && !socialApproval && <details className="pairing-advanced"><summary>Advanced: approve offline with Arca Signer</summary>
           <section className="pairing-offline"><h3><IconDeviceDesktop size={18} />Optional offline approval</h3><p>If you prefer a separate offline signer, download this public request and open it in Arca Signer. Compare the FID, custody address, complete device fingerprint, and request checksum. Enter your 24 words only in the downloaded signer, then import its public approval file below.</p>
@@ -391,7 +433,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
     event.preventDefault();
     if (busy || !pending.current || (!approval && !attempted) || (expired && !attempted)) return;
     const run = generation.current;
-    controller.current = new AbortController(); setBusy(true); setError('');
+    controller.current = new AbortController(); setBusy(true); setError(''); setAttempted(true);
     try {
       await pending.current.complete(approval ?? undefined, { signal: controller.current.signal, onProgress: text => { if (run === generation.current) setStage(text); } });
       // Parent compares this session's key with the active session, so a late
@@ -417,7 +459,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
       <h3><IconShieldLock size={18} />{attempted ? 'Confirm this device’s removal' : 'Approve this device’s removal'}</h3>
       {!attempted && <p className="pairing-copy">Check the <strong>Revoke device</strong> action, FID, custody wallet, and complete key fingerprint before approving removal in your wallet app.</p>}
       <dl className="pairing-facts"><div><dt>Action</dt><dd>Revoke all permissions granted to this device key</dd></div><div><dt>FID</dt><dd>{request.fid}</dd></div><div><dt>Custody wallet</dt><dd className="pairing-mono">{request.custodyAddress}</dd></div><div><dt>Key to revoke</dt><dd className="pairing-mono">{fingerprint(request.publicKey)}</dd></div><div><dt>Request checksum</dt><dd className="pairing-mono">{hashRevocationRequest(request)}</dd></div><div><dt>Approve before</dt><dd>{new Date((request.deadline + 1609459200) * 1000).toLocaleString()}</dd></div><div><dt>Website label</dt><dd className="pairing-mono">{request.origin}<small>Self-reported; this label does not authenticate the website.</small></dd></div></dl>
-      {!attempted && <WalletApproval request={request} disabled={busy || expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validateRevocationApproval(value)); setApprovalName(name); }} />}
+      {!attempted && <WalletApproval request={request} disabled={busy || expired} expired={expired} onBusy={value => { setBusy(value); setStage(value ? 'Check your wallet for approval…' : ''); if (value) { setApproval(null); setApprovalName(''); } }} onError={setError} onApproved={(value, name) => { setApproval(validateRevocationApproval(value)); setApprovalName(name); }} />}
       {approval && !attempted && <div className="wallet-approved" role="status"><IconCheck size={18} /><span>Removal approved{approvalName ? ` · ${approvalName}` : ''}. Submit below to revoke this device on Hypersnap.</span></div>}
       {!attempted && <details className="pairing-advanced"><summary>Advanced: approve revocation offline</summary>
         <p className="pairing-copy">Download the public revocation request and open it in Arca Signer. Compare its action, FID, custody address, device key, and checksum. Import the signer’s public approval below. Enter recovery words only in the downloaded signer.</p>

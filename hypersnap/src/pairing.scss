@@ -55,6 +55,16 @@
 .wallet-list { display: grid; gap: .5rem; margin: .8rem 0; }
 .wallet-list .button { justify-content: flex-start; font-size: .74rem; padding: .8rem; }
 .wallet-list .button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.wallet-list > label { font-size: .66rem; color: var(--color-text-strong); }
+.wallet-list > select { min-width: 0; width: 100%; min-height: 2.75rem; padding: .65rem .7rem; border: .0625rem solid var(--surface-4); border-radius: .55rem; background: var(--surface-0); color: var(--color-text-strong); font: inherit; font-size: .72rem; }
+.wallet-list > select:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .15rem; }
+.wallet-approval-feedback { margin-block: .8rem; padding: .8rem; border: .0625rem solid var(--surface-4); border-radius: .6rem; background: var(--surface-0); overflow-wrap: anywhere; }
+.wallet-approval-feedback > .pairing-copy { margin-top: 0; }
+.wallet-approval-feedback > .button { min-height: 2.75rem; font-size: .7rem; }
+.wallet-account-help { margin-block: .8rem; padding: .75rem; border: .0625rem solid var(--surface-4); border-radius: .6rem; }
+.wallet-account-help > summary { font-size: .69rem; cursor: pointer; color: var(--color-text-strong); }
+.wallet-account-help > summary:focus-visible { outline: .125rem solid var(--accent-300); outline-offset: .2rem; }
+.wallet-account-help > p { font-size: .65rem; line-height: 1.8; color: var(--color-text-subtle); }
 .wallet-browser-heading { display: grid; gap: .25rem; margin-top: 1rem; }
 .wallet-browser-heading strong, .wallet-rainbow-setup > strong { font-size: .74rem; font-weight: 550; color: var(--color-text-strong); }
 .wallet-browser-heading > span { font-size: .63rem; line-height: 1.7; color: var(--color-text-subtle); }
