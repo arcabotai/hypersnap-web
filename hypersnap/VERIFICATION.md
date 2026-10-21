@@ -1,3 +1,53 @@
+# One-box cast composer · 2026-10-21
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **550 tests across 38 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. Seven new Composer cases cover one primary editor, disclosed controls, exact-FID lookup, local emoji range insertion, upload cancellation/retry with a late first response, UTF-8 byte-limit blocking, local Escape handling and guest sign-in activation. One new App integration case preserves account/destination-specific draft save/restore through actual home/channel navigation. The isolated media harness now permits only its exact configured loopback hashed media URL in saved drafts, with a regression proving production validation remains HTTPS and first-party only. No dependency, signing scope, protocol attachment limit or production URL guard was broadened.
+
+Local verification exposed two pre-existing timestamp-sensitive wallet test assertions that constructed a second request for verification after asynchronous signing. They now retain and verify the original request, so a second boundary does not change its checksum. A later full run concurrent with the preview build timed out in the existing 1,000-profile rendering test at its five-second deadline; its assertions and timeout were unchanged. The full standalone gate then passed with no concurrent preview build. The final isolated browser build and a fresh external production build also passed.
+
+Separate Chrome tabs inspected empty Farcaster and X compose surfaces as requested. Only presentation and available controls were read; no reference-site text, media, post, cast, wallet prompt or account setting was submitted. [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md#composer-walkthrough-on-farcaster-and-x--2026-10-21) records the observed hierarchy and retained Hypersnap limits without account/feed details. The implementation is independent and imports neither hosted client's services.
+
+Chrome QA used a clearly marked synthetic-wallet harness at a loopback origin and the existing OS-network-sandboxed Hypersnap node. It exercised two signature approval and explicit local-node submission, the editor, emoji insertion, exact FID1235 mention selection, signed image upload, explicit draft save and confirmed replacement restoring exact text and image, and explicit publication. The accepted cast appeared in synthetic FID1234's profile. A separate node read of public hash `0x6b39e6476bed8a756b01a13ddcc854faf80b25db` confirmed the emoji, text URL, one embed and mentioned FID1235. The saved revision was cleared after success. Discover remains a trending view and did not promise chronological inclusion of the new cast.
+
+At 320- and 390-pixel Chrome viewports the composer's client and scroll widths matched, with 44-pixel toolbar targets at the narrow size. A toolbar-focused Escape closed only its tool panel and preserved the draft. These are layout checks, not physical mobile-device interoperability claims. Viewport overrides were restored and temporary reference/test tabs were closed. All writes were isolated; no production cast, upload, wallet request or saved-key operation was performed.
+
+Source release `8ed0ab285afa281c81808d57c3627309188c0e73` was deployed from the inspected fresh external asset directory as Cloudflare Worker version `8e2a3aa5-537f-4f6b-9e6e-7f7a0c80a51c`. [Main CI run 39568842596](https://github.com/arcabotai/hypersnap-web/actions/runs/39568842596) passed the release-note guard, full verification and signer payload reproducibility. A fresh production Chrome tab confirmed the single primary editor, compact tools, no extra visible text inputs and equal composer client/scroll widths. No production sign-in or upload was initiated. The live `/devlog` showed all fifteen milestones with the new composer entry and implementation link. Production checks used public reads/navigation only. All owned preview/node processes were stopped, temporary tabs closed and Chrome viewport sizing restored.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   349e4b8  ⚠ working tree dirty (10 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/scripts/e2e-media-runtime.mjs, desktop/hypersnap/scripts/e2e-media-runtime.test.mjs, desktop/hypersnap/src/App.test.tsx)
+            (… and 2 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       1s
+  desktop  harness-offline FAIL       1s
+  desktop  build          FAIL       1s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Injected wallet selection and approval recovery · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.
