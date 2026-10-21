@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'dedicated-onboarding-and-identity-review',
+    date: '2026-10-21',
+    title: 'A clearer path to connect your account',
+    summary: 'Sign-in now has its own readable page, with the same complete account summary whether you start with a username, FID or custody wallet address.',
+    changes: [
+      'Moved sign-in from a popup to /connect, with clear Find account, Review identity, wallet approval and optional device-saving steps.',
+      'Show the canonical username, numeric FID and full custody wallet together before creating a device key. Missing usernames are labeled unavailable.',
+      'Check account details again before wallet approval and ask for another review if they changed. A different linked or verified wallet cannot authorize the account.',
+      'Keep the two wallet signatures and Hypersnap submission explicit. Recovery phrases stay in the wallet, and saved device keys still use optional passkey or password encryption.',
+      'Preserve the existing account during permission upgrades, cancel pending attempts when leaving, and return to the page or conversation you started from.',
+      'Improve narrow-screen layout and keyboard focus. Reload and direct links start with ordinary casting permissions; expanded permissions are never taken from a URL.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/ce2f09a55d212febb1fc8a757a7f69c11bdc4831',
+    tag: 'Wallets',
+  },
+  {
     id: 'one-box-cast-composer',
     date: '2026-10-21',
     title: 'One box for your next cast',
