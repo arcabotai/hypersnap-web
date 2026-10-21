@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'native-ens-and-base-name-lookup',
+    date: '2026-10-21',
+    title: 'Find your account with an ENS or Base name',
+    summary: 'Use a linked name.eth or name.base.eth to find your account through Hypersnap, then review its username, FID and custody wallet before connecting.',
+    changes: [
+      'Added ENS explicitly to onboarding and fixed names beginning with 0x being mistaken for wallet addresses.',
+      'Use Hypersnap’s native name-proof endpoint and hydrate its exact FID. ENS profile links and exact username lookups use the same route.',
+      'Show the name used for lookup separately from the canonical account identity. A name’s owner or wallet address does not replace custody-wallet approval.',
+      'Added clear recovery guidance for unlinked names while keeping network failures distinct, with bounded reads and cancellation.',
+      'Support the node’s current single ASCII name label of 1–16 letters, digits or hyphens, starting with a letter or digit. Unicode, other suffixes and additional subdomains are not supported.',
+      'Keep all resolution on our fixed Hypersnap gateway: no external Ethereum RPC, name registration or reverse lookup was added.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/4cb0ca9d9e0dde5f39629da752cdd31f0ae4e4c4',
+    tag: 'Wallets',
+  },
+  {
     id: 'dedicated-onboarding-and-identity-review',
     date: '2026-10-21',
     title: 'A clearer path to connect your account',
