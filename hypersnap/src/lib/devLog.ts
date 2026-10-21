@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'familiar-browsing-and-content-controls',
+    date: '2026-10-21',
+    title: 'More ways to make Quorum feel like home',
+    summary: 'A walkthrough of the live Farcaster client informed another round of familiar tools, built independently around supported Hypersnap reads and clearly labeled local preferences.',
+    changes: [
+      'Added paginated people lists for cast likes and recasts, with node-view limits and reliable cancellation, retry and profile navigation.',
+      'Added the node’s real 1-hour, 6-hour, 12-hour, 24-hour and 7-day trending windows.',
+      'Added Settings for browser-local muted accounts, words and phrases, plus reversible hidden casts. Account preferences and temporary reveals stay separate.',
+      'Added local bookmark search, newest/oldest saved order and confirmed clearing, while safely reading earlier saved snapshots.',
+      'Added focused search shortcuts, shortcut help and better literal web-link handling.',
+      'Made Settings and Bookmarks reachable on narrow screens and kept the app usable when browser storage is unavailable.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/5bddf464c4f616a766a3bf90fc5dce5d96a496f3',
+    tag: 'Social',
+  },
+  {
     id: 'dev-log-release-checks',
     date: '2026-10-21',
     title: 'Every release gets a dev log update',
