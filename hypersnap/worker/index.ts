@@ -9,6 +9,8 @@ export interface Env extends MediaEnv {
 }
 
 const UPSTREAM = 'https://haatz.quilibrium.com';
+const CANONICAL_ORIGIN = 'https://opencaster.org';
+const LEGACY_HOST = 'quorum.arca.computer';
 const MAX_MESSAGE_BYTES = 65_536;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 20_000;
@@ -275,6 +277,21 @@ async function proxy(request: Request, url: URL): Promise<Response> {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.host === LEGACY_HOST) {
+    const destination = new URL(CANONICAL_ORIGIN);
+    destination.pathname = url.pathname; destination.search = url.search;
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      // Redirecting a signed write changes its origin and can taint the browser
+      // Origin header. Leave its body untouched and require a fresh connection.
+      return json({ code: 'site_moved', message: 'Opencaster has moved to https://opencaster.org. Reopen that site and reconnect before submitting.' }, 409, { Location: destination.href, Link: `<${CANONICAL_ORIGIN}>; rel="canonical"` });
+    }
+    const headers = new Headers({ Location: destination.href, 'Cache-Control': 'no-store' });
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+    // Public images embedded in existing casts can cross the legacy host on
+    // their way to the same content-addressed object on the canonical domain.
+    if (url.pathname.startsWith('/media/')) headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    return new Response(null, { status: 308, headers });
+  }
   if (url.pathname === '/media' || url.pathname.startsWith('/media/')) return handleMediaRequest(request, env);
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return proxy(request, url);
   if (request.method !== 'GET' && request.method !== 'HEAD') return failure(405, 'method_not_allowed', 'This method is unavailable.');

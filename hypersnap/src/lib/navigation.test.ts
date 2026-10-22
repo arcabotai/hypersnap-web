@@ -49,7 +49,7 @@ describe('public Hypersnap routes', () => {
     expect(route('/channels')).toEqual({ kind: 'channels' });
     expect(route('/devlog')).toEqual({ kind: 'devlog' });
     expect(routePath(parseLocalPath('/devlog'))).toBe('/devlog');
-    expect(publicUrl('/devlog')).toBe('https://quorum.arca.computer/devlog');
+    expect(publicUrl('/devlog')).toBe('https://opencaster.org/devlog');
     expect(route('/profile/1234', '?tab=replies')).toEqual({ kind: 'profile', identifier: '1234', tab: 'replies' });
     expect(route('/profile', '?tab=media')).toEqual({ kind: 'profile', tab: 'media' });
     expect(route('/profile/1234', '?tab=other').kind).toBe('not-found');
@@ -134,7 +134,7 @@ describe('adaptive author-scoped routes', () => {
 
   it('preserves all reserved route namespaces and static names rather than treating them as authors', () => {
     const appNames = ['following', 'bookmarks', 'notifications', 'channels', 'devlog', 'settings', 'connect', 'search', 'profile', 'channel', 'cast'];
-    const staticNames = ['api', 'assets', 'media', 'licenses', '.well-known', 'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json', 'manifest.webmanifest', 'sw.js', 'service-worker.js', 'unknown-dark.png', 'unknown-light.png', 'InterVariable.ttf', 'Sen-VariableFont_wght.ttf', 'quorum-symbol.svg', 'THIRD_PARTY_DEPENDENCY_LICENSES.txt'];
+    const staticNames = ['api', 'assets', 'media', 'licenses', '.well-known', 'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json', 'manifest.webmanifest', 'sw.js', 'service-worker.js', 'unknown-dark.png', 'unknown-light.png', 'InterVariable.ttf', 'Sen-VariableFont_wght.ttf', 'quorum-symbol.svg', 'opencaster-symbol.svg', 'THIRD_PARTY_DEPENDENCY_LICENSES.txt'];
     for (const name of [...appNames, ...staticNames]) {
       expect(route(`/${name.toUpperCase()}`)).toEqual({ kind: 'not-found' });
       expect(route(`/${name.toUpperCase()}/0xcfd6d3c3`)).toEqual({ kind: 'not-found' });
@@ -160,7 +160,7 @@ describe('adaptive author-scoped routes', () => {
     expect(routePath(alias)).toBe('/gandhionchain/0xcfd6d3c3');
     expect(connectReturnPath('/gandhionchain/0xcfd6d3c3?fid=1&scopes=11')).toBe('/gandhionchain/0xcfd6d3c3');
     expect(connectReturnPath('/alice')).toBe('/profile/alice');
-    expect(publicUrl(castPath(hash))).toBe(`https://quorum.arca.computer/cast/${hash}`);
+    expect(publicUrl(castPath(hash))).toBe(`https://opencaster.org/cast/${hash}`);
     expect(() => castPath('0xcfd6d3c3')).toThrow('Invalid cast hash');
   });
 });
@@ -169,9 +169,9 @@ describe('share link construction', () => {
   it('produces stable FID and full normalized hash paths at the canonical domain', () => {
     expect(profilePath(1234)).toBe('/profile/1234');
     expect(castPath(hash.slice(2).toUpperCase())).toBe(`/cast/${hash}`);
-    expect(publicUrl(profilePath(1234))).toBe('https://quorum.arca.computer/profile/1234');
-    expect(publicUrl(castPath(hash))).toBe(`https://quorum.arca.computer/cast/${hash}`);
-    expect(publicUrl('/profile')).toBe('https://quorum.arca.computer/profile');
+    expect(publicUrl(profilePath(1234))).toBe('https://opencaster.org/profile/1234');
+    expect(publicUrl(castPath(hash))).toBe(`https://opencaster.org/cast/${hash}`);
+    expect(publicUrl('/profile')).toBe('https://opencaster.org/profile');
   });
 
   it('does not create external, malformed, or ambiguous share destinations', () => {

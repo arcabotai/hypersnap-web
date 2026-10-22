@@ -54,7 +54,7 @@ async function files(directory) {
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const hashes = {};
 for (const path of await files(output)) hashes[relative(output, path)] = sha256(await readFile(path));
-const sourceInputs = [...await files(join(root, 'signer')), ...await files(join(root, 'src/lib/protocol')), join(root, 'src/lib/pairing.ts'), join(root, 'src/components/ui.tsx'), join(root, 'public/quorum-symbol.svg'), join(root, '../LICENSE'), join(root, 'THIRD_PARTY_NOTICES.md'), join(root, 'package.json'), join(root, 'yarn.lock'), fileURLToPath(import.meta.url), join(root, 'scripts/package-signer.mjs')].filter(path => !path.endsWith('.test.ts') && !path.endsWith('keyadd-golden.json')).sort();
+const sourceInputs = [...await files(join(root, 'signer')), ...await files(join(root, 'src/lib/protocol')), join(root, 'src/lib/pairing.ts'), join(root, 'src/lib/appOrigins.ts'), join(root, 'src/components/ui.tsx'), join(root, 'public/quorum-symbol.svg'), join(root, '../LICENSE'), join(root, 'THIRD_PARTY_NOTICES.md'), join(root, 'package.json'), join(root, 'yarn.lock'), fileURLToPath(import.meta.url), join(root, 'scripts/package-signer.mjs')].filter(path => !path.endsWith('.test.ts') && !path.endsWith('keyadd-golden.json')).sort();
 const sourceHasher = createHash('sha256');
 for (const path of sourceInputs) { sourceHasher.update(relative(root, path)); sourceHasher.update('\0'); sourceHasher.update(await readFile(path)); sourceHasher.update('\0'); }
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();

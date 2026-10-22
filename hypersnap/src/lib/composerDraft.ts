@@ -1,6 +1,8 @@
 /** Local, explicit draft storage; no signer secrets or network operations.
  * Platform-independent validation is a future mobile migration candidate.
  */
+import { isUploadedMediaUrl } from './appOrigins';
+
 export interface DraftMention { fid: number; username: string }
 export interface DraftContent { text: string; mentions: DraftMention[]; images: string[] }
 export interface SavedComposerDraft extends DraftContent { version: 1; id: string; scope: string; updatedAt: number }
@@ -29,7 +31,7 @@ export function composerDraftScope(identity: { fid: number; publicKey: string },
 function validContent(value: unknown): value is DraftContent {
   return object(value) && typeof value.text === 'string' && encoder.encode(value.text).length <= 16_384
     && Array.isArray(value.mentions) && value.mentions.length <= 10 && value.mentions.every(mention => object(mention) && validFid(mention.fid) && typeof mention.username === 'string' && (mention.username === '' || mention.username === `fid:${mention.fid}` || /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(mention.username)))
-    && Array.isArray(value.images) && value.images.length <= 2 && value.images.every(url => typeof url === 'string' && /^https:\/\/quorum\.arca\.computer\/media\/[a-f0-9]{64}$/.test(url));
+    && Array.isArray(value.images) && value.images.length <= 2 && value.images.every(isUploadedMediaUrl);
 }
 function records(storage: StoragePort, now: number): SavedComposerDraft[] {
   const raw = storage.getItem(COMPOSER_DRAFT_KEY);

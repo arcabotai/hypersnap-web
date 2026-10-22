@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleRequest, type Env } from './index';
 
-const BASE = 'https://quorum.arca.computer';
+const BASE = 'https://opencaster.org';
+const LEGACY = 'https://quorum.arca.computer';
+const WORKER = 'https://hypersnap-quorum.lf-e32.workers.dev';
 const env: Env = {
   ASSETS: { fetch: async () => new Response('<!doctype html><html></html>', { headers: { 'Content-Type': 'text/html' } }) },
 };
@@ -10,6 +12,55 @@ const jsonResponse = (value: unknown, status = 200) => new Response(JSON.stringi
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('the Opencaster domain migration', () => {
+  it.each([
+    '/', '/profile/1234?tab=likes', '/gandhionchain/0xcfd6d3c3?utm_source=share',
+    `/cast/0x${'a'.repeat(40)}`, `/media/${'b'.repeat(64)}`, '/alice%2Fbob?encoded=%2F%3F&next=https%3A%2F%2Fevil.example',
+    '//evil.example/path?return=//evil.example&scopes=1,2,11',
+  ])('redirects legacy GET links with the same path/query and a fixed destination: %s', async path => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const assets = vi.fn(); const request = new Request(`${LEGACY}${path}`);
+    const response = await handleRequest(request, { ...env, ASSETS: { fetch: assets } });
+    expect(response.status).toBe(308); const location = new URL(response.headers.get('Location')!); const source = new URL(request.url);
+    expect(location.origin).toBe(BASE); expect(location.pathname).toBe(source.pathname); expect(location.search).toBe(source.search);
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer'); expect(fetch).not.toHaveBeenCalled(); expect(assets).not.toHaveBeenCalled();
+  });
+
+  it('redirects HEAD and insecure legacy links to the HTTPS canonical origin without a body', async () => {
+    const response = await handleRequest(new Request('http://quorum.arca.computer/profile/alice?tab=media', { method: 'HEAD' }), env);
+    expect(response.status).toBe(308); expect(response.headers.get('Location')).toBe(`${BASE}/profile/alice?tab=media`); expect(await response.text()).toBe('');
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])('requires reopening the new site for legacy %s requests without consuming or forwarding them', async method => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch); const assets = vi.fn();
+    const request = new Request(`${LEGACY}/api/v1/submitMessage?return=https://evil.example`, { method, headers: { Origin: LEGACY, 'Content-Type': 'application/octet-stream' }, ...(method === 'OPTIONS' ? {} : { body: new Uint8Array([8, 1]) }) });
+    const response = await handleRequest(request, { ...env, ASSETS: { fetch: assets } });
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ code: 'site_moved', message: expect.stringContaining('https://opencaster.org') });
+    expect(response.headers.get('Location')).toBe(`${BASE}/api/v1/submitMessage?return=https://evil.example`);
+    expect(response.headers.get('Link')).toBe(`<${BASE}>; rel="canonical"`); expect(request.bodyUsed).toBe(false);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull(); expect(fetch).not.toHaveBeenCalled(); expect(assets).not.toHaveBeenCalled();
+  });
+
+  it.each([BASE, WORKER, 'https://quorum.arca.computer.evil.example', 'https://quorum.arca.computer.', 'https://www.opencaster.org'])('does not redirect unrelated or operational hosts: %s', async origin => {
+    const response = await handleRequest(new Request(`${origin}/profile/alice`), env);
+    expect(response.status).toBe(200); expect(response.headers.get('Location')).toBeNull();
+  });
+
+  it.each([LEGACY, WORKER, 'null', 'https://evil.example'])('rejects cross-origin signatures and preflight on the canonical site: %s', async origin => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const submitted = await handleRequest(new Request(`${BASE}/api/v1/submitMessage`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/octet-stream' }, body: new Uint8Array([8, 1]) }), env);
+    expect(submitted.status).toBe(403); expect(submitted.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    const preflight = await handleRequest(new Request(`${BASE}/api/v1/submitMessage`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } }), env);
+    expect(preflight.status).toBe(405); expect(preflight.headers.get('Access-Control-Allow-Origin')).toBeNull(); expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stable worker hostname operational with its own-origin requests', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ version: 'isolated' })); vi.stubGlobal('fetch', fetch);
+    const response = await handleRequest(new Request(`${WORKER}/api/v1/info`, { headers: { Origin: WORKER } }), env);
+    expect(response.status).toBe(200); expect(fetch.mock.calls[0][0]).toBe('https://haatz.quilibrium.com/v1/info'); expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
 });
 
 describe('the fixed Hypersnap gateway', () => {

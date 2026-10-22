@@ -3,9 +3,17 @@ import { COMPOSER_DRAFT_KEY, DRAFT_TTL_MS, composerDraftScope, inlineMentionQuer
 
 const identity = { fid: 1234, publicKey: 'a'.repeat(64) };
 function storage() { const values = new Map<string, string>(); return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } }; }
-const content = { text: 'A private draft, not posted yet.', mentions: [{ fid: 42, username: 'alice' }], images: [`https://quorum.arca.computer/media/${'b'.repeat(64)}`] };
+const content = { text: 'A private draft, not posted yet.', mentions: [{ fid: 42, username: 'alice' }], images: [`https://opencaster.org/media/${'b'.repeat(64)}`] };
 
 describe('explicit local composer drafts', () => {
+  it('round-trips canonical and historic uploaded image URLs without rewriting published content', () => {
+    for (const origin of ['https://opencaster.org', 'https://quorum.arca.computer']) {
+      const store = storage(); const scope = composerDraftScope(identity);
+      const images = [`${origin}/media/${'b'.repeat(64)}`];
+      saveComposerDraft(scope, { ...content, images }, store, 1000);
+      expect(readComposerDraft(scope, store, 1000)?.images).toEqual(images);
+    }
+  });
   it('isolates accounts and exact destinations while allowing the same account to reconnect with a new device key', () => {
     const scopes = [composerDraftScope(identity), composerDraftScope({ ...identity, fid: 1235 }), composerDraftScope(identity, { parentUrl: 'https://example.com/one' }), composerDraftScope(identity, { parentUrl: 'https://example.com/two' }), composerDraftScope(identity, { parent: { fid: 42, hash: 'c'.repeat(40) } }), composerDraftScope(identity, { quote: { fid: 42, hash: 'c'.repeat(40) } })];
     expect(new Set(scopes).size).toBe(scopes.length);

@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
   vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
   session = makeSession(); onConnect = vi.fn(); onClose = vi.fn();
-  const request: PairingRequest = { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://quorum.arca.computer', requestId: 'b'.repeat(64), createdAt: Math.floor(Date.now() / 1000), fid: user.fid, custodyAddress: user.custody_address, publicKey: session.publicKey, scopes: [1, 3, 4], ttl: 604800, nonce: 1, deadline: Math.floor(Date.now() / 1000) - 1609459200 + 900 };
+  const request: PairingRequest = { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://opencaster.org', requestId: 'b'.repeat(64), createdAt: Math.floor(Date.now() / 1000), fid: user.fid, custodyAddress: user.custody_address, publicKey: session.publicKey, scopes: [1, 3, 4], ttl: 604800, nonce: 1, deadline: Math.floor(Date.now() / 1000) - 1609459200 + 900 };
   walletApproval = { kind: 'arca.hypersnap.signer.approval', version: 1, requestId: request.requestId, requestHash: 'c'.repeat(64), custodyAddress: request.custodyAddress, custodySignature: 'd'.repeat(130), requestSignature: 'e'.repeat(130) };
   pending = { request, user, submitted: true, complete: vi.fn().mockResolvedValue(session), dispose: vi.fn() };
   vi.mocked(getSavedSessionMethod).mockResolvedValue(undefined);
@@ -249,6 +249,9 @@ describe('public identity review before key creation', () => {
   ])('shows username, FID and full custody for $input before preparing only after an explicit review', async ({ input, lookup }) => {
     await render(<ConnectAccount onConnect={onConnect} onClose={onClose} />);
     expect(container.querySelector('main.onboarding')).not.toBeNull(); expect(container.querySelector('dialog')).toBeNull();
+    expect(container.querySelector('.onboarding-domain-notice')?.textContent).toContain('Saved device keys and passkeys from quorum.arca.computer do not transfer here automatically.');
+    expect(container.querySelector('.onboarding-domain-notice')?.textContent).toContain('Reconnect your existing custody wallet');
+    expect(preparePairing).not.toHaveBeenCalled(); expect(approvePairingWithWallet).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(container.querySelector('h1'));
     await fill('account-identifier', input); await click(button('Find my account'));
     expect(getUser).toHaveBeenCalledWith(lookup, expect.any(AbortSignal));

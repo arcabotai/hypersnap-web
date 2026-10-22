@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { bytesToHex } from './protocol/signedKeyRequest';
-import { createMediaUploadGrant, MAX_MEDIA_BYTES, MEDIA_UPLOAD_HEADER, sha256Hex, uploadMedia, type MediaUploadInput } from './media';
+import { createMediaUploadGrant, isMediaOrigin, MAX_MEDIA_BYTES, MEDIA_UPLOAD_HEADER, sha256Hex, uploadMedia, type MediaUploadInput } from './media';
+import { isUploadedMediaUrl } from './appOrigins';
 
-const BASE = 'https://quorum.arca.computer';
+const BASE = 'https://opencaster.org';
 const bytes = new Uint8Array([137,80,78,71]);
 const file = () => new File([new Uint8Array(bytes).buffer], 'public-image.png', { type: 'image/png' });
 const key = new Uint8Array(32).fill(32);
@@ -12,6 +13,16 @@ const authorize = (input: MediaUploadInput) => createMediaUploadGrant(input, ide
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the browser media upload boundary', () => {
+  it('retains exact historical media URLs and origin labels without treating lookalikes as trusted', async () => {
+    for (const origin of [BASE, 'https://quorum.arca.computer', 'https://hypersnap-quorum.lf-e32.workers.dev']) {
+      expect(isMediaOrigin(origin)).toBe(true);
+      expect((await authorize({ origin, sha256: 'ab'.repeat(32), size: bytes.length, contentType: 'image/png' })).origin).toBe(origin);
+    }
+    for (const origin of [BASE, 'https://quorum.arca.computer']) expect(isUploadedMediaUrl(`${origin}/media/${'ab'.repeat(32)}`)).toBe(true);
+    for (const value of ['https://opencaster.org.evil.test', 'https://user@opencaster.org', 'https://opencaster.org:443', 'null', undefined]) expect(isMediaOrigin(value)).toBe(false);
+    for (const value of [`https://opencaster.org/media/${'ab'.repeat(32)}?token=private`, `https://quorum.arca.computer.evil.test/media/${'ab'.repeat(32)}`, `https://hypersnap-quorum.lf-e32.workers.dev/media/${'ab'.repeat(32)}`]) expect(isUploadedMediaUrl(value)).toBe(false);
+  });
+
   it('sends one signed binary request with no credentials and accepts only its exact content-addressed link', async () => {
     vi.stubGlobal('location', { origin: BASE });
     const expected = `${BASE}/media/${await sha256Hex(bytes)}`;
@@ -33,7 +44,7 @@ describe('the browser media upload boundary', () => {
       await expect(uploadMedia(bad, sign)).rejects.toThrow('5 MiB');
     }
     vi.stubGlobal('location', { origin: 'https://attacker.example' });
-    await expect(uploadMedia(file(), sign)).rejects.toThrow('quorum.arca.computer');
+    await expect(uploadMedia(file(), sign)).rejects.toThrow('opencaster.org');
     expect(sign).not.toHaveBeenCalled();
   });
 
@@ -66,7 +77,7 @@ describe('the browser media upload boundary', () => {
   it('refuses external, malformed and unrelated image links in the response', async () => {
     vi.stubGlobal('location', { origin: BASE });
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    for (const url of ['https://attacker.example/image.png', `${BASE}/media/${'f'.repeat(64)}`, 'javascript:alert(1)']) {
+    for (const url of ['https://attacker.example/image.png', `${BASE}/media/${'f'.repeat(64)}`, `https://quorum.arca.computer/media/${await sha256Hex(bytes)}`, 'javascript:alert(1)']) {
       fetch.mockResolvedValueOnce(new Response(JSON.stringify({ url })));
       await expect(uploadMedia(file(), authorize)).rejects.toThrow('invalid image link');
     }

@@ -13,7 +13,7 @@ const PAIRING = 'cd'.repeat(32);
 const URI = `wc:${PAIRING}@2?relay-protocol=irn&symKey=${'ef'.repeat(32)}`;
 function request(): PairingRequest {
   const createdAt = Math.floor(Date.now() / 1000);
-  return { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://quorum.arca.computer', requestId: '23'.repeat(32), createdAt, fid: 1234, custodyAddress: custody, publicKey: '34'.repeat(32), scopes: [1, 3, 4], ttl: 604800, nonce: 9, deadline: createdAt - 1609459200 + 900 };
+  return { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://opencaster.org', requestId: '23'.repeat(32), createdAt, fid: 1234, custodyAddress: custody, publicKey: '34'.repeat(32), scopes: [1, 3, 4], ttl: 604800, nonce: 9, deadline: createdAt - 1609459200 + 900 };
 }
 function harness() {
   let connected = false;
@@ -66,6 +66,7 @@ describe('temporary signature-only WalletConnect sessions', () => {
     expect(h.close).toHaveBeenCalledOnce(); expect(h.stop).toHaveBeenCalledOnce(); expect(h.clear).toHaveBeenCalledOnce();
     expect(h.listeners.size).toBe(0);
     const config = h.configuration();
+    expect(config.metadata).toEqual({ name: 'Opencaster', description: 'Approve one Hypersnap posting-key operation. No wallet transaction.', url: req.origin, icons: [`${req.origin}/opencaster-symbol.svg`] });
     expect(config.telemetryEnabled).toBe(false); expect(config.logger).toBe('silent');
     expect(config.customStoragePrefix).toMatch(/^arca-/);
     expect(await config.storage.getKeys()).toEqual([]);

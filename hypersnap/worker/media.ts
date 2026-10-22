@@ -173,7 +173,7 @@ export async function handleMediaRequest(request: Request, env: MediaEnv): Promi
       httpMetadata: { contentType: grant.contentType, cacheControl: 'public, max-age=31536000, immutable' },
       onlyIf: { etagDoesNotMatch: '*' },
     });
-    return success({ url: `https://quorum.arca.computer/media/${grant.sha256}` });
+    return success({ url: `https://opencaster.org/media/${grant.sha256}` });
   } catch { return failure(503, 'media_unavailable', 'The upload status could not be confirmed.'); }
 }
 

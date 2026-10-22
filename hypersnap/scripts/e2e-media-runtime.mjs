@@ -11,8 +11,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PRIMARY_ORIGIN = 'https://quorum.arca.computer';
-const PREVIEW_ORIGIN = 'https://hypersnap-quorum.lf-e32.workers.dev';
+// Read only the public literal constants; never import the production module
+// into this Node test runtime or duplicate the currently configured domain.
+const appOriginSource = await fs.readFile(path.join(project, 'src/lib/appOrigins.ts'), 'utf8');
+const testOrigins = ['APP_ORIGIN', 'LEGACY_APP_ORIGIN', 'WORKER_ORIGIN'].map(name => {
+  const value = appOriginSource.match(new RegExp(`^export const ${name} = '(https://[^']+)';$`, 'm'))?.[1];
+  if (!value) throw new Error(`The media harness could not read ${name}.`);
+  return value;
+});
+const PRIMARY_ORIGIN = testOrigins[0];
 const localHosts = ['localhost', '127.0.0.1', '[::1]'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ttf': 'font/ttf', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 
@@ -25,7 +32,7 @@ function localUrl(value, name) {
 export function replaceTestOrigins(source, origin) {
   if (origin === PRIMARY_ORIGIN) return source;
   localUrl(origin, 'test origin');
-  return source.replaceAll(PRIMARY_ORIGIN, origin).replaceAll(PREVIEW_ORIGIN, origin);
+  return testOrigins.reduce((changed, productionOrigin) => changed.replaceAll(productionOrigin, origin), source);
 }
 
 /** The production UI deliberately accepts HTTPS image URLs only. The isolated
@@ -41,13 +48,13 @@ export function replaceTestMediaGuards(source, id, origin) {
   if (normalized.endsWith('/src/App.tsx')) {
     source = source.replace("url.protocol === 'https:' ? url.href", `(url.protocol === 'https:' || ${media('url')}) ? url.href`);
     source = source.replace("url.protocol === 'https:' && !url.username", `(url.protocol === 'https:' || ${media('url')}) && !url.username`);
-    const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '\\/');
-    source = source.replace(String.raw`^https:\/\/quorum\.arca\.computer\/media\/`, `^${escapedOrigin}\\/media\\/`);
   }
   if (normalized.endsWith('/src/components/MediaViewer.tsx')) source = source.replace("url.protocol === 'https:' && !url.username", `(url.protocol === 'https:' || ${media('url')}) && !url.username`);
-  if (normalized.endsWith('/src/lib/composerDraft.ts')) {
+  if (normalized.endsWith('/src/lib/appOrigins.ts')) {
     const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll('/', '\\/');
-    source = source.replace(String.raw`^https:\/\/quorum\.arca\.computer\/media\/`, `^${escapedOrigin}\\/media\\/`);
+    // Drafts call this real shared helper. Keep production HTTPS links valid,
+    // adding only the exact configured loopback origin and hashed media path.
+    source = source.replace(/(export function isUploadedMediaUrl[\s\S]*?return typeof value === 'string' && )([^\n]+);/, (_match, prefix, production) => `${prefix}(${production} || (value.length === ${origin.length + '/media/'.length + 64} && /^${escapedOrigin}\\/media\\/[a-f0-9]{64}$/.test(value)));`);
   }
   if (normalized.endsWith('/src/components/EditProfileDialog.tsx')) source = source.replace("parsed.protocol === 'https:' &&", `(parsed.protocol === 'https:' || ${media('parsed')}) &&`);
   if (normalized.endsWith('/src/lib/social.ts')) source = source.replace("url.protocol !== 'https:' ||", `(url.protocol !== 'https:' && !${media('url')}) ||`);
@@ -79,7 +86,7 @@ async function miniflareModule() {
 }
 
 /** Use this plugin for a separate E2E browser build too. It only rewrites our
- * two public origins in first-party code; it does not change protocol domains,
+ * three public origins in first-party code; it does not change protocol domains,
  * node destinations, SDK code or the checked-in production source.
  */
 export function testOriginTransform(origin) {

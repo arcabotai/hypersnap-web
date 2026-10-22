@@ -1,5 +1,7 @@
 // These helpers are platform independent and can move to a shared Hypersnap
 // client package when a mobile client needs the same public URL contract.
+import { APP_ORIGIN } from './appOrigins';
+
 export type ProfileTab = 'casts' | 'replies' | 'media' | 'likes' | 'recasts';
 export type SearchKind = 'casts' | 'users';
 export type AppRoute =
@@ -18,7 +20,6 @@ export type AppRoute =
   | { kind: 'cast-alias'; authorIdentifier: string; hashPrefix: string }
   | { kind: 'not-found' };
 
-const PUBLIC_ORIGIN = 'https://quorum.arca.computer';
 const MAX_PATH_LENGTH = 256;
 const MAX_SEARCH_LENGTH = 2048;
 const USERNAME = /^[a-zA-Z0-9_.-]{1,128}$/;
@@ -29,7 +30,7 @@ const RESERVED_NAMES = new Set([
   'following', 'bookmarks', 'notifications', 'channels', 'devlog', 'settings', 'connect', 'search', 'profile', 'channel', 'cast',
   'api', 'assets', 'media', 'licenses', '.well-known',
   'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json', 'manifest.webmanifest', 'sw.js', 'service-worker.js',
-  'unknown-dark.png', 'unknown-light.png', 'intervariable.ttf', 'sen-variablefont_wght.ttf', 'quorum-symbol.svg', 'third_party_dependency_licenses.txt',
+  'unknown-dark.png', 'unknown-light.png', 'intervariable.ttf', 'sen-variablefont_wght.ttf', 'quorum-symbol.svg', 'opencaster-symbol.svg', 'third_party_dependency_licenses.txt',
 ]);
 
 function normalizedHash(hash: string): string | undefined {
@@ -164,5 +165,5 @@ export function castAliasPath(authorIdentifier: string, hashPrefix: string): str
 /** Public share links always use our canonical origin, including on previews. */
 export function publicUrl(path: string): string {
   if (parseLocalPath(path).kind === 'not-found') throw new Error('Invalid public path.');
-  return `${PUBLIC_ORIGIN}${path}`;
+  return `${APP_ORIGIN}${path}`;
 }

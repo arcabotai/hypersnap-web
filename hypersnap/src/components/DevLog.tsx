@@ -4,7 +4,7 @@ import { DEV_LOG, PROJECT_STARTED_DATE, type DevLogMilestone } from '../lib/devL
 import { Button } from './ui';
 import '../devlog.scss';
 
-const source = 'https://github.com/arcabotai/hypersnap-web';
+const source = 'https://github.com/arcabotai/opencaster';
 const categories = ['Launch', 'Wallets', 'Security', 'Social', 'Reliability'] as const;
 const labels = { Launch: 'The beginning', Wallets: 'Wallets', Security: 'Security', Social: 'Features', Reliability: 'Reliability' };
 function dateLabel(date: string) {
@@ -19,9 +19,9 @@ export default function DevLog() {
   const visible = oldestFirst ? [...entries].reverse() : entries;
   return <div className="devlog">
     <section className="devlog-intro" aria-labelledby="devlog-story">
-      <span className="devlog-kicker"><IconHistory size={15} aria-hidden="true" />BUILDING QUORUM, IN PUBLIC</span>
+      <span className="devlog-kicker"><IconHistory size={15} aria-hidden="true" />BUILDING OPENCASTER, IN PUBLIC</span>
       <h2 id="devlog-story">The story so far<span>✳</span></h2>
-      <p>From a Quorum fork to a familiar social home on Hypersnap. Here’s what we’ve shipped, what changed along the way, and why.</p>
+      <p>From a Quorum fork to Opencaster, an open source client for everyone. Here’s what we’ve shipped on Hypersnap, what changed along the way, and why.</p>
       <dl className="devlog-facts"><div><dt>First commit</dt><dd><time dateTime={PROJECT_STARTED_DATE}>{dateLabel(PROJECT_STARTED_DATE)}</time></dd></div><div><dt>Milestones</dt><dd>{DEV_LOG.length} and counting</dd></div><div><dt>Latest update</dt><dd><time dateTime={DEV_LOG[0].date}>{dateLabel(DEV_LOG[0].date)}</time></dd></div></dl>
       <div className="devlog-intro__actions"><Button variant="secondary" aria-pressed={oldestFirst} onClick={() => { setOldestFirst(value => !value); setCategory('all'); }}><IconArrowDown size={16} aria-hidden="true" />{oldestFirst ? 'Show latest first' : 'Read from the beginning'}</Button><a href={`${source}/commits/main/hypersnap`} target="_blank" rel="noopener noreferrer">Explore the commits<IconArrowUpRight size={15} aria-hidden="true" /></a></div>
     </section>

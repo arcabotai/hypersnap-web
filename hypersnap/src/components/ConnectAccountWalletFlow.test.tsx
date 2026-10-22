@@ -97,7 +97,7 @@ function assertReadOnlyWalletMethods(request: ReturnType<typeof wallet>['request
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  vi.stubGlobal('location', { origin: 'https://quorum.arca.computer' });
+  vi.stubGlobal('location', { origin: 'https://opencaster.org' });
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
   vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
   registry = { signers: [], currentUserNonce: 4, gaslessSignerCount: 0, gaslessSignerLimit: 1000 };

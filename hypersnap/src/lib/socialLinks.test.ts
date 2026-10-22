@@ -3,7 +3,29 @@ import { quorumSocialPath } from './socialLinks';
 
 const fullHash = '0xcfd6d3c3e990cffcb4af8063426d299cf22fab37';
 
-describe('public Farcaster links opened in Quorum', () => {
+describe('public social links opened in Opencaster', () => {
+  it.each(['https://opencaster.org', 'https://quorum.arca.computer'])('opens supported current and historic native social links locally: %s', origin => {
+    for (const [path, expected] of [
+      ['/profile/1234', '/profile/1234'],
+      ['/profile/alice?tab=replies&utm_source=old#ignored', '/profile/alice?tab=replies'],
+      ['/alice?tab=likes&scopes=1,2,11&return=https://evil.test', '/profile/alice?tab=likes'],
+      ['/ALICE/?tab=recasts', '/profile/alice?tab=recasts'],
+      [`/cast/${fullHash}?scopes=1,2,11`, `/cast/${fullHash}`],
+      ['/alice/0xcfd6d3c3', '/alice/0xcfd6d3c3'],
+      [`/?cast=${fullHash}`, `/cast/${fullHash}`],
+    ]) expect(quorumSocialPath(`${origin}${path}`)).toBe(expected);
+  });
+
+  it.each(['https://opencaster.org', 'https://quorum.arca.computer'])('does not rewrite native authorization, unsupported handlers or malformed semantic queries: %s', origin => {
+    for (const path of [
+      '/connect?fid=3&scopes=1,2,11', '/settings', '/profile', '/search?q=alice', '/media/' + 'a'.repeat(64),
+      '/alice/../bob', '/%61lice', '/profile/alice?tab=unknown', '/alice?tab=likes&tab=recasts',
+      '/?cast=0xcfd6d3c3', `/?cast=${fullHash}&cast=${fullHash}`, `/?cast=${fullHash}&return=/connect`,
+      `/?scopes=1,2&cast=${fullHash}`, '/?cast=javascript:alert(1)', '/?tab=likes',
+      `/~/conversations/${fullHash}`, `/cast/${fullHash}/extra`,
+    ]) expect(quorumSocialPath(`${origin}${path}`)).toBeUndefined();
+  });
+
   it.each([
     ['https://farcaster.xyz/alice', '/profile/alice'],
     ['https://www.farcaster.xyz/Alice/', '/profile/alice'],
@@ -27,6 +49,9 @@ describe('public Farcaster links opened in Quorum', () => {
     'https://farcaster%2exyz/alice', 'https://farcaster。xyz/alice', 'https://fаrcaster.xyz/alice',
     'https://user@farcaster.xyz/alice', 'https://user:password@warpcast.com/alice', 'https://farcaster.xyz@evil.example/alice',
     'https://farcaster.xyz:8443/alice', 'https://warpcast.com:80/alice', 'https://warpcast.com:0443/alice',
+    'https://opencaster.org.evil.example/alice', 'https://opencaster.org./alice', 'https://www.opencaster.org/alice',
+    'https://user@opencaster.org/alice', 'https://opencaster.org:8443/alice', 'https://opencaster.org:0443/alice',
+    'https://quorum.arca.computer.evil.example/profile/alice', 'https://quorum.arca.computer./alice',
     'https://farcaster.xyz:/alice', 'http://farcaster.xyz/alice', '//farcaster.xyz/alice', 'farcaster.xyz/alice',
     'javascript:https://farcaster.xyz/alice', 'https:////farcaster.xyz/alice',
   ])('keeps unsupported authorities and URL formats external: %j', source => {

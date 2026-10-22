@@ -11,7 +11,7 @@ import { composerDraftScope, readComposerDraft, saveComposerDraft } from '../lib
 vi.mock('../lib/api', async original => ({ ...await original<typeof import('../lib/api')>(), getUser: vi.fn(), searchUsers: vi.fn() }));
 vi.mock('../lib/media', () => ({ uploadMedia: vi.fn() }));
 const user = (fid: number, username: string): User => ({ fid, username, custody_address: '', profile: { bio: { text: '' } }, follower_count: 0, following_count: 0 });
-const imageUrl = `https://quorum.arca.computer/media/${'c'.repeat(64)}`;
+const imageUrl = `https://opencaster.org/media/${'c'.repeat(64)}`;
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(value => { resolve = value; }); return { promise, resolve }; };
 let container: HTMLDivElement; let root: Root; let session: WalletSession; let props: ComposerProps;
 beforeEach(() => {
@@ -142,7 +142,7 @@ describe('isolated familiar composer behavior', () => {
     expect(uploadMedia).not.toHaveBeenCalled(); expect(container.querySelector('[role="alert"]')?.textContent).toContain('one image at a time');
   });
   it('lets a cancelled upload retry and ignores the old uploader’s late public URL', async () => {
-    const old = deferred<{ url: string }>(); const newer = `https://quorum.arca.computer/media/${'f'.repeat(64)}`;
+    const old = deferred<{ url: string }>(); const newer = `https://opencaster.org/media/${'f'.repeat(64)}`;
     vi.mocked(uploadMedia).mockReturnValueOnce(old.promise).mockResolvedValueOnce({ url: newer });
     await render(); await paste([new File(['old'], 'old.png', { type: 'image/png' })]);
     const signal = vi.mocked(uploadMedia).mock.calls[0][2]!; expect(tool('Add image').disabled).toBe(true);

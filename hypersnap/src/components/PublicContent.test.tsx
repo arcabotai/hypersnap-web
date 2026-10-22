@@ -26,7 +26,7 @@ describe('public content tools', () => {
     const user = { fid: 12, username: 'alice', registered_at: '2024-02-01T00:00:00Z', verified_addresses: { eth_addresses: [`0x${'a'.repeat(40)}`, 'javascript:bad'], sol_addresses: ['1'.repeat(32)] } } as User;
     await act(async () => root.render(<><ProfileDetails user={user} /><ShareProfileDialog user={user} onClose={vi.fn()} /></>));
     expect(host.textContent).toContain('Linked addresses (2)'); expect(host.textContent).not.toContain('javascript:bad'); expect(host.textContent).toContain('Joined');
-    expect(host.querySelector<HTMLInputElement>('input[aria-label="Profile link"]')?.value).toBe('https://quorum.arca.computer/profile/12');
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Profile link"]')?.value).toBe('https://opencaster.org/profile/12');
   });
   it('copies rendered mention text without changing or submitting a cast', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });

@@ -29,7 +29,7 @@ export function ShareProfileDialog({ user, onClose }: { user: User; onClose(): v
   }
   async function share() {
     setBusy(true);
-    try { await navigator.share({ title: `${user.display_name || user.username || `FID ${user.fid}`} on Quorum`, url: link }); setStatus('Profile shared.'); }
+    try { await navigator.share({ title: `${user.display_name || user.username || `FID ${user.fid}`} on Opencaster`, url: link }); setStatus('Profile shared.'); }
     catch (error) { if (!(error instanceof Error && error.name === 'AbortError')) setStatus('Use Copy link to share this profile.'); }
     finally { setBusy(false); }
   }

@@ -64,7 +64,7 @@ async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
-describe('Quorum destinations for supported social links', () => {
+describe('Opencaster destinations for supported social links', () => {
   it.each(['short cast-text link', 'full-hash URL embed'] as const)('pushes a %s from a direct conversation so Back and Close return to its source cast', async kind => {
     const target: Cast = { ...otherCast, hash: `0xcbbe7828${'b'.repeat(32)}`, author: { ...otherCast.author, username: 'gandhionchain' }, text: 'The separate linked conversation' };
     const short = kind === 'short cast-text link';
@@ -113,13 +113,13 @@ describe('Quorum destinations for supported social links', () => {
     await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname).toBe('/');
   });
 
-  it('labels supported URL embeds with their Quorum destination and opens profile and cast embeds locally', async () => {
+  it('labels supported URL embeds with their Opencaster destination and opens profile and cast embeds locally', async () => {
     const profileUrl = 'https://farcaster.xyz/person30?ref=embed'; const castUrl = `https://www.warpcast.com/person20/${otherCast.hash}#replies`;
     vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, embeds: [{ url: profileUrl }, { url: castUrl }] }], next: {} });
     await start();
     const links = [...container.querySelectorAll<HTMLAnchorElement>('main .feed .link-embed')];
     expect(links.map(link => link.getAttribute('href'))).toEqual(['/profile/person30', `/person20/${otherCast.hash}`]);
-    for (const link of links) { expect(link.target).toBe(''); expect(link.textContent).toContain('quorum.arca.computer'); expect(link.textContent).not.toMatch(/warpcast\.com|farcaster\.xyz/); }
+    for (const link of links) { expect(link.target).toBe(''); expect(link.textContent).toContain('opencaster.org'); expect(link.textContent).not.toMatch(/warpcast\.com|farcaster\.xyz/); }
     expect(links[0].title).toContain(profileUrl); expect(links[1].title).toContain(castUrl);
     await click(links[0]); expect(location.pathname).toBe('/profile/person30');
     await traverse('back'); await click(container.querySelector(`main .feed .link-embed[href="/person20/${otherCast.hash}"]`)!);
@@ -447,7 +447,7 @@ describe('isolated App feature integration', () => {
   it('reserves one of the two embed slots for a quote and allows only one attached image', async () => {
     vi.mocked(getFeed).mockResolvedValue({ casts: [otherCast], next: {} });
     const connected = session(FULL_CLIENT_SCOPES);
-    vi.mocked(uploadMedia).mockResolvedValue({ url: `https://quorum.arca.computer/media/${'e'.repeat(64)}` });
+    vi.mocked(uploadMedia).mockResolvedValue({ url: `https://opencaster.org/media/${'e'.repeat(64)}` });
     await start(); await connect(connected);
     await click(container.querySelector('button[aria-label="Quote cast"]')!);
     const quote = dialog('Quote cast');
@@ -457,7 +457,7 @@ describe('isolated App feature integration', () => {
     await act(async () => { field.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(quote.querySelector<HTMLButtonElement>('button[aria-label="Add image"]')?.disabled).toBe(true); expect(quote.textContent).toContain('1/1 images');
     await click(button('Quote', quote));
-    expect(connected.cast).toHaveBeenCalledWith('', undefined, expect.objectContaining({ embeds: [{ url: `https://quorum.arca.computer/media/${'e'.repeat(64)}` }, { castId: { fid: otherCast.author.fid, hash: otherCast.hash } }] }));
+    expect(connected.cast).toHaveBeenCalledWith('', undefined, expect.objectContaining({ embeds: [{ url: `https://opencaster.org/media/${'e'.repeat(64)}` }, { castId: { fid: otherCast.author.fid, hash: otherCast.hash } }] }));
     expect(dialog('Quote cast')).toBeUndefined();
   });
 
@@ -565,7 +565,7 @@ describe('isolated App feature integration', () => {
     expect(vi.mocked(getProfileFeed).mock.calls.some(([options]) => options.tab === 'likes')).toBe(true);
     expect(container.querySelector('nav[aria-label="Profile content"] a[aria-current="page"]')?.textContent).toBe('Likes');
     await click(button('Share profile'));
-    expect(dialog('Share profile').querySelector<HTMLInputElement>('input')?.value).toBe('https://quorum.arca.computer/profile/10');
+    expect(dialog('Share profile').querySelector<HTMLInputElement>('input')?.value).toBe('https://opencaster.org/profile/10');
     await click(dialog('Share profile').querySelector('button[aria-label="Close dialog"]')!);
     await click(container.querySelector('button[aria-label="More cast options"]')!);
     expect(dialog('Cast options').querySelector('textarea')?.value).toBe(otherCast.text);

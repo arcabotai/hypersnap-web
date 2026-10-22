@@ -7,6 +7,8 @@
 .onboarding__intro > p:first-child { margin: 0 0 .65rem; font-size: .66rem; font-weight: 550; letter-spacing: .15em; color: var(--accent-300); }
 .onboarding__intro > h1 { margin: 0; font: 550 clamp(1.8rem, 4vw, 2.65rem)/1.15 Sen, sans-serif; color: var(--color-text-strong); letter-spacing: -.03em; }
 .onboarding__intro > p:last-child { margin: .9rem 0 0; color: var(--color-text-subtle); font-size: .95rem; line-height: 1.75; }
+.onboarding__credit { margin: 1.25rem auto 0; text-align: center; font-size: .75rem; line-height: 1.8; color: var(--color-text-muted); }
+.onboarding__credit a { color: var(--color-text-subtle); }
 .onboarding__card { max-width: 42rem; margin-inline: auto; padding: clamp(1rem, 3vw, 2rem); border: .0625rem solid var(--border); border-radius: 1rem; background: var(--surface-0); }
 .onboarding__card .button { min-height: 2.75rem; font-size: .82rem; line-height: 1.5; }
 .onboarding__card .input { min-height: 3rem; font-size: 1rem; }
@@ -23,6 +25,8 @@
 .onboarding__card .pairing-back { font-size: .8rem; }
 .onboarding__card .error { font-size: .84rem; line-height: 1.8; overflow-wrap: anywhere; }
 .onboarding__card .source-note { margin-top: 1.5rem; font-size: .75rem; line-height: 1.7; }
+.onboarding-domain-notice { margin: 0 0 1.3rem; padding: .85rem 1rem; border: .0625rem solid var(--border); border-radius: .65rem; color: var(--color-text-subtle); background: var(--surface-1); font-size: .8rem; line-height: 1.8; overflow-wrap: anywhere; }
+.onboarding-domain-notice strong { color: var(--color-text-strong); }
 .onboarding-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin: 0 0 1.8rem; padding: 1rem 0; list-style: none; border-block: .0625rem solid var(--border); }
 .onboarding-steps > li { display: flex; gap: .4rem; align-items: flex-start; min-width: 0; font-size: .72rem; line-height: 1.5; color: var(--color-text-muted); }
 .onboarding-steps > li > span { display: grid; place-items: center; flex-shrink: 0; width: 1.5rem; height: 1.5rem; border: .0625rem solid var(--surface-4); border-radius: 50%; font-size: .66rem; }

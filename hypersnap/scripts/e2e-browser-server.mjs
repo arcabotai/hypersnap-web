@@ -41,7 +41,7 @@ const provider = { async request({method,params}) {
 const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider',{detail:{info:{uuid:'180899aa-2a71-41ae-a931-febf090b2444',name:'Isolated test wallet',rdns:'test.arca.local'},provider}}));
 window.addEventListener('eip6963:requestProvider',announce);
 announce();
-document.title = 'ISOLATED TEST · Quorum';
+document.title = 'ISOLATED TEST · Opencaster';
 const banner = document.createElement('div');
 banner.textContent = 'ISOLATED HYPERSNAP TEST · synthetic FID ${fixture.fid} · no production writes';
 banner.setAttribute('role','note');

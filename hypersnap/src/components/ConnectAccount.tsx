@@ -10,8 +10,8 @@ import { ApiError, getUser } from '../lib/api';
 import { normalizeReviewIdentity, parseAccountLookup, sameReviewIdentity, type ReviewIdentity } from '../lib/accountLookup';
 import '../onboarding.scss';
 
-const sourceUrl = 'https://github.com/arcabotai/hypersnap-web';
-const releaseTag = 'arca-signer-v0.2.0';
+const sourceUrl = 'https://github.com/arcabotai/opencaster';
+const releaseTag = 'arca-signer-v0.2.1';
 const signerUrl = `${sourceUrl}/releases/download/${releaseTag}/Arca-Signer-mac-arm64.zip`;
 const approvalLimitBytes = 16 * 1024;
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'This action could not be completed.';
@@ -132,7 +132,7 @@ function OnboardingFrame({ presentation, title, onClose, children }: { presentat
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (presentation === 'page') heading.current?.focus(); }, [presentation]);
   if (presentation === 'dialog') return <Modal title={title} onClose={onClose}>{children}</Modal>;
-  return <main className="onboarding" aria-labelledby={headingId}><header className="onboarding__header"><Button variant="ghost" aria-label="Cancel sign-in" onClick={onClose}><IconArrowLeft size={18} />Back</Button><span>QUORUM <span>on Hypersnap</span></span></header><div className="onboarding__intro"><p>YOUR IDENTITY, YOUR WALLET</p><h1 ref={heading} tabIndex={-1} id={headingId}>{title}</h1><p>Bring your existing account. Keep your recovery phrase in your wallet.</p></div><div className="onboarding__card">{children}</div></main>;
+  return <main className="onboarding" aria-labelledby={headingId}><header className="onboarding__header"><Button variant="ghost" aria-label="Cancel sign-in" onClick={onClose}><IconArrowLeft size={18} />Back</Button><span>Opencaster <span>Runs on Hypersnap</span></span></header><div className="onboarding__intro"><p>YOUR IDENTITY, YOUR WALLET</p><h1 ref={heading} tabIndex={-1} id={headingId}>{title}</h1><p>Bring your existing account. Keep your recovery phrase in your wallet.</p></div><div className="onboarding__card">{children}</div><p className="onboarding__credit">Powered by <a href="https://arca.computer" target="_blank" rel="noopener noreferrer">Arca Computer</a> · <a href={sourceUrl} target="_blank" rel="noopener noreferrer">Open source</a></p></main>;
 }
 export interface ConnectAccountProps { onClose(): void; onConnect(session: WalletSession): void; requestedScopes?: readonly number[]; initialFid?: number; presentation?: 'page' | 'dialog' }
 export default function ConnectAccount({ onClose, onConnect, requestedScopes, initialFid, presentation = 'page' }: ConnectAccountProps) {
@@ -321,6 +321,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
   }
 
   return <OnboardingFrame presentation={presentation} title={deletionApproval ? 'Enable cast deletion' : socialApproval ? 'Enable social features' : unlock ? 'Welcome back.' : 'Connect your account'} onClose={close}>
+    <p className="onboarding-domain-notice">We’ve moved to <strong>opencaster.org</strong>. Saved device keys and passkeys from quorum.arca.computer do not transfer here automatically. Reconnect your existing custody wallet; your seed phrase stays in your wallet.</p>
     <div className="pairing-hero"><span className="pairing-symbol"><IconShieldLock size={27} /></span><div><strong>Your recovery phrase stays out of this website.</strong><p>Approve a separate device key in your own wallet app.</p></div></div>
     {socialApproval && <p className="pairing-copy">Approve a new device key with permission to {deletionApproval ? 'delete your own casts, ' : ''}follow and unfollow accounts and edit your profile, alongside casts and reactions. {deletionApproval && 'Cast deletion cannot be undone. '}Previous keys retain their original network permissions; switching does not revoke them. The app switches only after Hypersnap confirms the new approval.</p>}
     {unlock ? <form onSubmit={unlockDevice}>
@@ -355,7 +356,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
         {!attempted && !socialApproval && <details className="pairing-advanced"><summary>Advanced: approve offline with Arca Signer</summary>
           <section className="pairing-offline"><h3><IconDeviceDesktop size={18} />Optional offline approval</h3><p>If you prefer a separate offline signer, download this public request and open it in Arca Signer. Compare the FID, custody address, complete device fingerprint, and request checksum. Enter your 24 words only in the downloaded signer, then import its public approval file below.</p>
             <div className="pairing-downloads"><Button variant="secondary" onClick={downloadRequest} disabled={busy || expired}><IconArrowDown size={16} />Download request</Button><a href={signerUrl} className="pairing-download-link"><IconArrowDown size={16} />Arca Signer for macOS</a></div>
-            <p className="pairing-release">Optional v0.2.0 · macOS Apple Silicon only · <a href={`${sourceUrl}/releases/tag/${releaseTag}`} target="_blank" rel="noopener noreferrer">Release & verification</a></p>
+            <p className="pairing-release">Optional v0.2.1 · macOS Apple Silicon only · <a href={`${sourceUrl}/releases/tag/${releaseTag}`} target="_blank" rel="noopener noreferrer">Release & verification</a></p>
             <p className="pairing-release">Developer ID signed beta. Apple notarization pending. Independent security audit pending. <a href={`${sourceUrl}/tree/${releaseTag}/hypersnap/signer`} target="_blank" rel="noopener noreferrer">Source & build instructions</a></p>
           </section>
           <Input ref={fileInput} type="file" accept="application/json,.json" aria-label="Import public approval JSON" className="pairing-file-input" tabIndex={-1} onChange={event => void importApproval(event)} disabled={busy || expired} />
@@ -527,7 +528,7 @@ export function DeviceSettings({ session, onClose, onLock, notify }: { session: 
       {!attempted && <details className="pairing-advanced"><summary>Advanced: approve revocation offline</summary>
         <p className="pairing-copy">Download the public revocation request and open it in Arca Signer. Compare its action, FID, custody address, device key, and checksum. Import the signer’s public approval below. Enter recovery words only in the downloaded signer.</p>
         <div className="pairing-downloads"><Button variant="secondary" disabled={busy || expired} onClick={downloadRevocation}><IconArrowDown size={16} />Download revocation request</Button><a href={signerUrl} className="pairing-download-link"><IconArrowDown size={16} />Arca Signer for macOS</a></div>
-        <p className="pairing-release">Optional v0.2.0 · macOS Apple Silicon only · Developer ID signed beta. Apple notarization and independent security audit pending. <a href={`${sourceUrl}/releases/tag/${releaseTag}`} target="_blank" rel="noopener noreferrer">Release & verification</a></p>
+        <p className="pairing-release">Optional v0.2.1 · macOS Apple Silicon only · Developer ID signed beta. Apple notarization and independent security audit pending. <a href={`${sourceUrl}/releases/tag/${releaseTag}`} target="_blank" rel="noopener noreferrer">Release & verification</a></p>
         <Input ref={fileInput} type="file" accept="application/json,.json" aria-label="Import public revocation approval JSON" className="pairing-file-input" tabIndex={-1} onChange={event => void importRevocation(event)} disabled={busy || expired} />
         <Button variant="secondary" className="full-width pairing-import" disabled={busy || expired} onClick={() => fileInput.current?.click()}><IconFileCheck size={17} />Import offline revocation approval JSON</Button>
         <p className="pairing-release">Only the signer’s public approval JSON belongs here. It contains a signature, never recovery words or a private key.</p>

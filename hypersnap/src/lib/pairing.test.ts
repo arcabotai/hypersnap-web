@@ -6,13 +6,19 @@ import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES, hashPairingRequest, validatePai
 const now = Date.UTC(2026, 9, 19, 12);
 const custody = hexToBytes('1111111111111111111111111111111111111111111111111111111111111111');
 function request(): PairingRequest {
-  return { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://quorum.arca.computer', requestId: bytesToHex(randomBytes(32)), createdAt: now / 1000, fid: 1234, custodyAddress: addressFromCustodyPrivateKey(custody), publicKey: bytesToHex(randomBytes(32)), scopes: [1, 3, 4], ttl: PAIRING_TTL_SECONDS, nonce: 9, deadline: now / 1000 - 1609459200 + 900 };
+  return { kind: 'arca.hypersnap.signer.request', version: 1, origin: 'https://opencaster.org', requestId: bytesToHex(randomBytes(32)), createdAt: now / 1000, fid: 1234, custodyAddress: addressFromCustodyPrivateKey(custody), publicKey: bytesToHex(randomBytes(32)), scopes: [1, 3, 4], ttl: PAIRING_TTL_SECONDS, nonce: 9, deadline: now / 1000 - 1609459200 + 900 };
 }
 function approve(req: PairingRequest): PairingApproval {
   const key = hexToBytes(req.publicKey);
   return { kind: 'arca.hypersnap.signer.approval', version: 1, requestId: req.requestId, requestHash: hashPairingRequest(req), custodyAddress: req.custodyAddress, custodySignature: bytesToHex(signEip712Digest(keyAddDigest({ fid: req.fid, key, keyType: 1, scopes: req.scopes, ttl: req.ttl, nonce: req.nonce, deadline: req.deadline }), custody)), requestSignature: bytesToHex(signEip712Digest(signedKeyRequestDigest({ requestFid: req.fid, key, deadline: req.deadline }), custody)) };
 }
 describe('offline authorization transfer boundary', () => {
+  it.each(['https://opencaster.org', 'https://quorum.arca.computer', 'https://hypersnap-quorum.lf-e32.workers.dev'])('retains narrow current and historic request display origins: %s', origin => {
+    const req = { ...request(), origin };
+    expect(validatePairingRequest(req, now).origin).toBe(origin);
+    expect(() => verifyPairingApproval(req, approve(req), now)).not.toThrow();
+    for (const untrusted of [`${origin}.evil.test`, `${origin}/`, `${origin}:443`]) expect(() => validatePairingRequest({ ...req, origin: untrusted }, now)).toThrow('supported Arca client');
+  });
   it('binds cast deletion to a distinct explicit approval and rejects escalation of existing social signatures', () => {
     const req = { ...request(), scopes: [...FULL_CLIENT_SCOPES] };
     expect(validatePairingRequest(req, now).scopes).toEqual(FULL_CLIENT_SCOPES);

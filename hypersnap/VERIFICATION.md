@@ -1,3 +1,11 @@
+# Opencaster migration · 2026-10-22
+
+The user confirmed `opencaster.org` and the Opencaster product/repository name. The active Cloudflare zone is `37b169ad321b96250025080e8606ab35` in Arca Computer, Inc. GitHub is renamed to `arcabotai/opencaster`; the homepage and local origin remote point to the new names. The pre-release Worker source is `b629f7e5c41a36d26976bebaec3c8936205f684c`, version `c58ffa28-b404-4f2e-968e-94c87d6e09eb`.
+
+The migration preserves protocol signing labels, message scopes, storage keys, upstream node, Worker service identity, R2 bucket and Durable Object namespace. Exact legacy GET/HEAD requests redirect with path/query preserved; other legacy methods reject before signed data is read or forwarded. Historical media remains served from the existing bucket. Saved local keys, passkeys, drafts and preferences remain origin-bound; users reconnect their existing custody wallet on the new domain. The native v0.2.1 companion adds the new exact display origin and keeps its original limited permission set. Notarization remains deferred at the user's request.
+
+Release verification and deployed identifiers will be recorded below after the final checks and deployment. All account, signing and upload write tests remain isolated; production checks use public reads and navigation only.
+
 # Open linked profiles and casts on Quorum · 2026-10-22
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

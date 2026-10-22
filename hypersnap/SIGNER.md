@@ -4,7 +4,7 @@ The website never asks for your recovery phrase. Use a compatible wallet app to 
 
 ## Connect with a wallet app
 
-1. Open `https://quorum.arca.computer/connect` in the browser you want to use. Enter a public username, ENS/Base name, FID or exact custody wallet address, then choose **Find my account**. The dedicated page shows the same complete username/FID/custody summary for every input. `name.eth` and `name.base.eth` must already have a name proof linked to an account in Hypersnap; a name's Ethereum wallet record alone is insufficient. Current name labels are limited to 1–16 ASCII letters, digits or hyphens, starting with a letter or digit. A username missing from the node is labeled unavailable; it is not invented from the FID. Choose **Use this account** after reviewing it. Lookup alone requests no wallet permissions and creates no device key.
+1. Open `https://opencaster.org/connect` in the browser you want to use. Enter a public username, ENS/Base name, FID or exact custody wallet address, then choose **Find my account**. The dedicated page shows the same complete username/FID/custody summary for every input. `name.eth` and `name.base.eth` must already have a name proof linked to an account in Hypersnap; a name's Ethereum wallet record alone is insufficient. Current name labels are limited to 1–16 ASCII letters, digits or hyphens, starting with a letter or digit. A username missing from the node is labeled unavailable; it is not invented from the FID. Choose **Use this account** after reviewing it. Lookup alone requests no wallet permissions and creates no device key.
 2. If your Farcaster custody wallet is not already in your chosen wallet, import its 24-word phrase **inside the wallet's own import screen**. Never paste it into this website. Use the wallet's add/import flow rather than resetting an existing wallet. Check the wallet's own backup and cloud-sync settings before importing.
 3. Quorum checks the account again before preparing approval. Changed account details require a fresh review. Select the imported custody address in the wallet; a different verified address cannot approve this account. Under **Browser wallet**, select your extension and choose its connect/approve button. All discovered compatible providers are available, including Coinbase Wallet and Rainbow; several extensions require an explicit choice. If one is missing, unlock/enable it, allow it to access this site and choose **Refresh browser wallets**. The embedded preview browser cannot access extensions installed in Chrome. For a separate mobile wallet, choose **Connect wallet app** for WalletConnect: scan the QR code from another device, or tap your installed wallet on the same phone. Keep the browser tab open. Opening a different browser starts a separate device session.
 4. Review the browser's permissions, approval deadline and inactivity lifetime. **Device key and protocol details** exposes the full fingerprint and request checksum. Choose your wallet and approve the two typed signing requests: `KeyAdd`, then `SignedKeyRequest`. On mobile, return to the browser between prompts and use **Open wallet to approve** again if the phone does not switch automatically.
@@ -68,9 +68,9 @@ Select **Ethereum Mainnet** in the wallet before approving: some wallets require
 
 ## Optional offline desktop approval
 
-1. Open [Quorum for Hypersnap](https://quorum.arca.computer). Look up your public username, FID, or custody address.
+1. Open [Opencaster](https://opencaster.org). Look up your public username, FID, or custody address.
 2. Download the public authorization request. Keep that browser tab open: its random posting key stays there.
-3. Download [Arca Signer v0.2.0](https://github.com/arcabotai/hypersnap-web/releases/tag/arca-signer-v0.2.0). The supplied binary is for Apple Silicon Macs. Other platforms can build the source.
+3. Download [Arca Signer v0.2.1](https://github.com/arcabotai/opencaster/releases/tag/arca-signer-v0.2.1). The supplied binary is for Apple Silicon Macs. Other platforms can build the source.
 4. Check the release's SHA-256 checksum and Developer ID signature. You may disconnect your computer from the network before opening the signer.
 5. Import the request into Arca Signer. Compare the FID, custody address, complete posting key, request checksum, and permissions with the browser. Requests expire after 15 minutes. The displayed website name is self-asserted, not proof of who created the request.
 6. Enter the matching 24-word English phrase only in the native app. Export the public approval, clear the app, and quit.
@@ -78,7 +78,7 @@ Select **Ethereum Mainnet** in the wallet before approving: some wallets require
 
 The posting key can create casts and add/remove reactions. Its seven-day inactivity window is refreshed when it is used; it does not expire seven days after sign-in. It cannot transfer funds or change custody through these permitted Hypersnap message types. Hypersnap protocol rules and node software enforce those limits.
 
-The released Arca Signer v0.2.0 beta accepts only the original `[1, 3, 4]` permission set. It cannot approve expanded social or deletion keys. Use a compatible browser or mobile wallet for follow/profile/deletion permissions; an expanded request fails closed in the offline signer before phrase derivation. This web feature release does not replace or repackage the published native beta.
+Arca Signer v0.2.1 adds the Opencaster website to its exact origin display allowlist and retains the original `[1, 3, 4]` permission set. It cannot approve expanded social or deletion keys. Use a compatible browser or mobile wallet for follow/profile/deletion permissions; an expanded request fails closed in the offline signer before phrase derivation. The older v0.2.0 binary does not accept a new-domain pairing request; use v0.2.1 for this website. Apple notarization remains pending.
 
 ## Saved devices and revocation
 
@@ -127,7 +127,7 @@ On a Mac with your own Developer ID certificate:
 yarn signer:package --sign-identity 'Developer ID Application: YOUR NAME (TEAMID)'
 ```
 
-Release packaging requires a clean, committed tree. An optional `--notary-profile PROFILE_NAME` uses an existing `notarytool` Keychain profile; no Apple credentials belong in source. See [native implementation](signer/README.md), [verification record](VERIFICATION.md), and [source](https://github.com/arcabotai/hypersnap-web).
+Release packaging requires a clean, committed tree. An optional `--notary-profile PROFILE_NAME` uses an existing `notarytool` Keychain profile; no Apple credentials belong in source. See [native implementation](signer/README.md), [verification record](VERIFICATION.md), and [source](https://github.com/arcabotai/opencaster).
 
 ## Boundaries
 

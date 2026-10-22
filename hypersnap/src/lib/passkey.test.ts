@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enrollPasskey, evaluatePasskey, passkeysAvailable, validatePasskeyDescriptor, type PasskeyDescriptor } from './passkey';
 
-const ORIGIN = 'https://quorum.arca.computer';
+const ORIGIN = 'https://opencaster.org';
 const ID = new Uint8Array(32).fill(7);
 const ACCOUNT = { fid: 1234, publicKey: '03'.repeat(32) };
 const b64 = (value: Uint8Array) => btoa(String.fromCharCode(...value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const hex = (value: Uint8Array) => Array.from(value, byte => byte.toString(16).padStart(2, '0')).join('');
 const json = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).buffer;
-const descriptor = (): PasskeyDescriptor => ({ origin: ORIGIN, rpId: 'quorum.arca.computer', credentialId: b64(ID), prfSalt: '08'.repeat(32), userHandle: '09'.repeat(32) });
+const descriptor = (): PasskeyDescriptor => ({ origin: ORIGIN, rpId: 'opencaster.org', credentialId: b64(ID), prfSalt: '08'.repeat(32), userHandle: '09'.repeat(32) });
 
 class SyntheticCredential {
   type = 'public-key';
@@ -65,13 +65,15 @@ describe('local WebAuthn PRF unlock', () => {
     const pending = enrollPasskey({ origin: ORIGIN, account: ACCOUNT });
     expect(create).toHaveBeenCalledOnce(); // No async work precedes the native prompt.
     const { descriptor: saved, prfSecret } = await pending;
-    expect(saved).toMatchObject({ origin: ORIGIN, rpId: 'quorum.arca.computer', credentialId: b64(ID) });
+    expect(saved).toMatchObject({ origin: ORIGIN, rpId: 'opencaster.org', credentialId: b64(ID) });
     expect(saved.prfSalt).toMatch(/^[a-f0-9]{64}$/);
     expect(saved.userHandle).toBe(hex(new Uint8Array(userHandle)));
     expect(prfSecret).toEqual(new Uint8Array(32).fill(42));
     expect(first.every(byte => byte === 0) && second.every(byte => byte === 0)).toBe(true);
     const creation = create.mock.calls[0][0].publicKey;
     const assertion = get.mock.calls[0][0].publicKey;
+    expect(creation.rp).toEqual({ id: 'opencaster.org', name: 'Opencaster on Hypersnap' });
+    expect(creation.user.displayName).toBe('Opencaster FID 1234');
     expect(creation.authenticatorSelection).toEqual({ residentKey: 'required', requireResidentKey: true, userVerification: 'required' });
     expect(creation.attestation).toBe('none');
     expect(creation.extensions).toEqual({ prf: {}, credProps: true });
@@ -97,10 +99,18 @@ describe('local WebAuthn PRF unlock', () => {
     expect(() => validatePasskeyDescriptor(local, 'http://localhost:5187')).toThrow();
     for (const bad of [
       { ...descriptor(), extra: 'untrusted' }, { ...descriptor(), rpId: 'arca.computer' },
-      { ...descriptor(), origin: 'http://quorum.arca.computer' }, { ...descriptor(), credentialId: b64(ID) + '=' },
+      { ...descriptor(), origin: 'http://opencaster.org' }, { ...descriptor(), credentialId: b64(ID) + '=' },
       { ...descriptor(), credentialId: 'A' }, { ...descriptor(), prfSalt: '01' }, { ...descriptor(), userHandle: '01' },
     ]) expect(() => validatePasskeyDescriptor(bad)).toThrow();
     expect(create).not.toHaveBeenCalled(); expect(get).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse a legacy-domain passkey on the new canonical website', async () => {
+    const legacy = { ...descriptor(), origin: 'https://quorum.arca.computer', rpId: 'quorum.arca.computer' };
+    expect(validatePasskeyDescriptor(legacy)).toEqual(legacy);
+    expect(() => validatePasskeyDescriptor(legacy, ORIGIN)).toThrow();
+    await expect(evaluatePasskey(legacy, { origin: ORIGIN })).rejects.toThrow();
+    expect(get).not.toHaveBeenCalled(); expect(create).not.toHaveBeenCalled();
   });
 
   it('reports generic API availability without claiming that every provider supports PRF', async () => {
@@ -142,7 +152,7 @@ describe('local WebAuthn PRF unlock', () => {
 
   it.each([0x00, 0x01, 0x04, 0x45])('rejects assertion data without both UP/UV or with creation-only flags: %i', async flags => {
     const original = get.getMockImplementation()!;
-    get.mockImplementation(async options => { const result = await original(options); result.response.authenticatorData = await authenticator('quorum.arca.computer', flags); return result; });
+    get.mockImplementation(async options => { const result = await original(options); result.response.authenticatorData = await authenticator('opencaster.org', flags); return result; });
     await expect(evaluatePasskey(descriptor(), { origin: ORIGIN })).rejects.toMatchObject({ code: 'invalid_response' });
     expect(first.every(byte => byte === 0)).toBe(true);
   });
@@ -175,7 +185,7 @@ describe('local WebAuthn PRF unlock', () => {
     for (const flags of [0x41, 0x44, 0x05]) {
       create.mockImplementation(async options => {
         const result = await original(options);
-        const data = await authenticator('quorum.arca.computer', flags, true);
+        const data = await authenticator('opencaster.org', flags, true);
         result.response.getAuthenticatorData = () => data;
         return result;
       });
@@ -183,7 +193,7 @@ describe('local WebAuthn PRF unlock', () => {
     }
     create.mockImplementation(async options => {
       const result = await original(options);
-      const data = new Uint8Array(await authenticator('quorum.arca.computer', 0x45, true)); data[55] ^= 1;
+      const data = new Uint8Array(await authenticator('opencaster.org', 0x45, true)); data[55] ^= 1;
       result.response.getAuthenticatorData = () => data.buffer;
       return result;
     });

@@ -20,7 +20,7 @@ import { FULL_CLIENT_SCOPES } from '../src/lib/pairing';
 import { bytesToHex, hexToBytes } from '../src/lib/protocol/signedKeyRequest';
 import { decryptSignerVaultWithPasskey, deleteSavedVault, encryptSignerVault, readSavedVault, writeSavedVault, type PasskeySignerVault } from '../src/lib/vault';
 
-const ORIGIN = 'https://quorum.arca.computer';
+const ORIGIN = 'https://opencaster.org';
 const args = process.argv.slice(2);
 assert.equal(args.length, 2); assert.equal(args[0], '--identity-file');
 const identityFile = path.resolve(args[1]);
@@ -32,7 +32,7 @@ const node = new URL(fixture.nodeOrigin);
 assert.equal(node.origin, 'http://127.0.0.1:13381');
 assert.equal(node.pathname + node.search + node.hash, '/');
 const project = process.cwd();
-assert.equal(JSON.parse(await fs.readFile(path.join(project, 'package.json'), 'utf8')).name, 'quorum-hypersnap-web');
+assert.equal(JSON.parse(await fs.readFile(path.join(project, 'package.json'), 'utf8')).name, 'opencaster');
 const { createMediaRuntime } = await import(pathToFileURL(path.join(project, 'scripts/e2e-media-runtime.mjs')).href);
 const runtime = await createMediaRuntime({ nodeUrl: node.origin });
 const nativeFetch = globalThis.fetch;

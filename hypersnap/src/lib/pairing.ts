@@ -2,6 +2,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha256.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, hexToBytes, keyAddDigest, keyRemoveDigest, signedKeyRequestDigest } from './protocol/signedKeyRequest';
+import { APP_ORIGINS } from './appOrigins';
 
 export const PAIRING_SCOPES = [1, 3, 4] as const;
 /** Requested only through an explicit "Enable social features" approval. */
@@ -18,7 +19,7 @@ export const PAIRING_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const PAIRING_REQUEST_MAX_BYTES = 16_384;
 export const PAIRING_WINDOW_SECONDS = 15 * 60;
 export const FARCASTER_EPOCH_SECONDS = 1_609_459_200;
-export const PAIRING_ORIGINS = ['https://quorum.arca.computer', 'https://hypersnap-quorum.lf-e32.workers.dev'] as const;
+export const PAIRING_ORIGINS = APP_ORIGINS;
 
 export interface PairingRequest {
   kind: 'arca.hypersnap.signer.request';
@@ -105,7 +106,7 @@ export function validatePairingRequest(value: unknown, nowMs = Date.now()): Pair
   if (!checkString(value.requestId, HEX32) || !checkString(value.publicKey, HEX32) || !checkString(value.custodyAddress, ADDRESS)) throw new Error('The authorization contains an invalid account, request ID, or posting key.');
   if (!integer(value.fid, 1) || !integer(value.nonce, 1, 0xffffffff) || !integer(value.createdAt, FARCASTER_EPOCH_SECONDS) || !integer(value.deadline, 1)) throw new Error('The authorization contains invalid account or timing fields.');
   if (value.createdAt > now + 60 || value.deadline !== value.createdAt - FARCASTER_EPOCH_SECONDS + PAIRING_WINDOW_SECONDS) throw new Error('The authorization has invalid timing. Check your device clock and create a new request.');
-  if (value.deadline <= now - FARCASTER_EPOCH_SECONDS) throw new Error('This authorization request has expired. Create a new request in Quorum.');
+  if (value.deadline <= now - FARCASTER_EPOCH_SECONDS) throw new Error('This authorization request has expired. Create a new request in Opencaster.');
   const scopes = validatePairingScopes(value.scopes);
   if (value.ttl !== PAIRING_TTL_SECONDS) throw new Error('Arca Signer only approves a seven-day inactivity window.');
   return { kind: value.kind, version: 1, origin: value.origin, requestId: value.requestId, createdAt: value.createdAt, fid: value.fid, custodyAddress: value.custodyAddress.toLowerCase(), publicKey: value.publicKey, scopes, ttl: PAIRING_TTL_SECONDS, nonce: value.nonce, deadline: value.deadline };

@@ -129,7 +129,7 @@ function Signer() {
       </section> : !display ? <section className="panel import-panel">
         <div className="folder-icon"><Folder /></div>
         <h2>Start with your browser</h2>
-        <p>On <strong>quorum.arca.computer</strong>, select “Connect with Arca Signer” to authorize a browser, or “Revoke this device” to remove access. Download the request and open its JSON file here.</p>
+        <p>On <strong>opencaster.org</strong>, select “Connect with Arca Signer” to authorize a browser, or “Revoke this device” to remove access. Download the request and open its JSON file here.</p>
         <Button onClick={() => void loadRequest()} disabled={busy}><Folder />{busy ? 'Opening…' : 'Import request JSON'}<Arrow /></Button>
         <p className="small muted">Only public account and posting-key details are imported.</p>
       </section> : <>

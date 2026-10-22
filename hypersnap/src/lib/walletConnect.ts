@@ -175,7 +175,7 @@ export async function withWalletConnect<T>(options: WalletConnectOptions, action
     assertActive(controller.signal);
     options.onProgress?.('Opening a temporary encrypted wallet connection…');
     const origin = metadataOrigin(request);
-    const pending = createClient({ projectId: options.projectId, storage, customStoragePrefix: `arca-${crypto.randomUUID()}`, logger: 'silent', telemetryEnabled: false, metadata: { name: 'Quorum Hypersnap', description: 'Approve one Hypersnap posting-key operation. No wallet transaction.', url: origin, icons: [`${origin}/quorum-symbol.svg`] }, signal: controller.signal });
+    const pending = createClient({ projectId: options.projectId, storage, customStoragePrefix: `arca-${crypto.randomUUID()}`, logger: 'silent', telemetryEnabled: false, metadata: { name: 'Opencaster', description: 'Approve one Hypersnap posting-key operation. No wallet transaction.', url: origin, icons: [`${origin}/opencaster-symbol.svg`] }, signal: controller.signal });
     pending.then(late => { if (!active) void cleanupClient(late); }, () => {});
     client = await bounded(pending, WALLETCONNECT_SETUP_TIMEOUT_MS, controller.signal, 'The wallet relay could not initialize. Please try again.');
     if (client.session.getAll().length !== 0) throw new Error('A restored wallet session was rejected. Start a fresh connection.');

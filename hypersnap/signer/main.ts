@@ -93,7 +93,7 @@ ipcMain.handle('arca:import-request', async (event, ...args): Promise<NativeResu
   if (operationPending) return failure('Finish the current operation first.');
   operationPending = true;
   try { return success(await importRequest()); }
-  catch { clearState(); return failure('This request could not be imported. Create a fresh request on quorum.arca.computer and select its JSON file.'); }
+  catch { clearState(); return failure('This request could not be imported. Create a fresh request on opencaster.org and select its JSON file.'); }
   finally { operationPending = false; }
 });
 

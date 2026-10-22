@@ -55,7 +55,7 @@ export function ShareCastDialog({ cast, onClose, notify }: { cast: Cast; onClose
 
   return <Modal title="Share cast" onClose={onClose}>
     <div className="share-cast">
-      <p className="share-cast__intro">Anyone with this link can open the public cast on Quorum.</p>
+      <p className="share-cast__intro">Anyone with this link can open the public cast on Opencaster.</p>
       <label className="field-label" htmlFor={inputId}>Cast link</label>
       <Input ref={input} id={inputId} value={link} readOnly aria-describedby={statusId} autoComplete="off" spellCheck={false} onFocus={event => event.currentTarget.select()} />
       <div className="share-cast__actions">

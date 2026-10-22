@@ -1,10 +1,10 @@
 # Arca Signer
 
-A local Electron companion for authorizing or revoking a Quorum Hypersnap browser posting key. The website never asks for a recovery phrase. The native app imports a public request JSON, derives the custody wallet from exactly 24 BIP39 English words, checks its address, signs only the requested Hypersnap EIP-712 operation, and exports public approval JSON. It never creates a custody-wallet transaction.
+A local Electron companion for authorizing or revoking an Opencaster Hypersnap browser posting key. The website never asks for a recovery phrase. The native app imports a public request JSON, derives the custody wallet from exactly 24 BIP39 English words, checks its address, signs only the requested Hypersnap EIP-712 operation, and exports public approval JSON. It never creates a custody-wallet transaction.
 
 ## Use
 
-1. In Quorum, enter your FID and download a browser pairing request.
+1. In Opencaster, enter your FID and download a browser pairing request.
 2. Open Arca Signer and use **Import request JSON**. No recovery phrase is needed for this step.
 3. Compare the full posting public key, account, and custody address between the browser and native app. Review the permissions and lifetime.
 4. Enter the 24 words in Arca Signer and approve. Save the public approval JSON.
@@ -26,7 +26,7 @@ Revocation uses distinct `arca.hypersnap.signer.revoke.request` and `.revoke.app
 
 ## Origin limitation
 
-The claimed website in a request is **self asserted**. Only `https://quorum.arca.computer` and the current Cloudflare preview origin are accepted as display values, but any file author can write either name. The Hypersnap signature schema has no website-origin field. An offline app cannot determine which website actually created a JSON file or confirm the FID's live registry record. Compare the entire posting public key and intended custody address with the browser. The request SHA-256 binds the response to the browser's pending request; it is not a publisher signature or proof of website identity.
+The claimed website in a request is **self asserted**. Only `https://opencaster.org`, the legacy `https://quorum.arca.computer` and the current Cloudflare preview origin are accepted as display values, but any file author can write either name. The Hypersnap signature schema has no website-origin field. An offline app cannot determine which website actually created a JSON file or confirm the FID's live registry record. Compare the entire posting public key and intended custody address with the browser. The request SHA-256 binds the response to the browser's pending request; it is not a publisher signature or proof of website identity.
 
 ## Code and storage boundary
 

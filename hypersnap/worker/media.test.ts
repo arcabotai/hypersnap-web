@@ -4,8 +4,10 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 import { createMediaUploadGrant, MAX_MEDIA_BYTES, MEDIA_UPLOAD_HEADER, mediaGrantPayload, parseMediaUploadGrant, sha256Hex, type MediaUploadGrant } from '../src/lib/media';
 import { bytesToHex, hexToBytes } from '../src/lib/protocol/signedKeyRequest';
 import { handleMediaRequest, MediaUploadQuota, validateImage, type MediaEnv } from './media';
+import { handleRequest } from './index';
 
-const BASE = 'https://quorum.arca.computer';
+const BASE = 'https://opencaster.org';
+const LEGACY = 'https://quorum.arca.computer';
 // Synthetic, unregistered test identity. It never signs a live account action.
 const key = new Uint8Array(32).fill(31);
 const publicKey = bytesToHex(ed25519.getPublicKey(key));
@@ -57,6 +59,26 @@ function upload(grant: MediaUploadGrant, bytes = png, headers: Record<string, st
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('authenticated media uploads', () => {
+  it('redirects legacy public image URLs to the same bucket without blocking cross-origin images', async () => {
+    const { env, images } = environment(); const digest = await sha256Hex(png); images.set(digest, { bytes: png, type: 'image/png' });
+    const workerEnv = { ...env, ASSETS: { fetch: vi.fn() } };
+    const redirect = await handleRequest(new Request(`${LEGACY}/media/${digest}`), workerEnv);
+    expect(redirect.status).toBe(308); expect(redirect.headers.get('Location')).toBe(`${BASE}/media/${digest}`); expect(redirect.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+    const image = await handleRequest(new Request(redirect.headers.get('Location')!), workerEnv);
+    expect(image.status).toBe(200); expect(image.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin'); expect(new Uint8Array(await image.arrayBuffer())).toEqual(png);
+  });
+
+  it('never redirects or forwards a legacy image upload and rejects its grant on the new origin', async () => {
+    const { env, fetch, put } = environment();
+    const legacyGrant = await createMediaUploadGrant({ origin: LEGACY, sha256: await sha256Hex(png), size: png.length, contentType: 'image/png' }, { fid: 1234, publicKey }, async payload => ed25519.sign(payload, key));
+    const legacyUpload = new Request(`${LEGACY}/media/upload`, { method: 'POST', headers: { Origin: LEGACY, 'Content-Type': legacyGrant.contentType, [MEDIA_UPLOAD_HEADER]: JSON.stringify(legacyGrant) }, body: new Uint8Array(png).buffer });
+    const moved = await handleRequest(legacyUpload, { ...env, ASSETS: { fetch: vi.fn() } });
+    expect(moved.status).toBe(409); expect(await moved.json()).toMatchObject({ code: 'site_moved' }); expect(legacyUpload.bodyUsed).toBe(false);
+    expect((await handleMediaRequest(upload(legacyGrant), env)).status).toBe(401);
+    for (const origin of [LEGACY, 'null', 'https://hypersnap-quorum.lf-e32.workers.dev']) expect((await handleMediaRequest(upload(legacyGrant, png, { Origin: origin }), env)).status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled();
+  });
+
   it('stores only signed, active-signer, bounded images and serves immutable inert content', async () => {
     const { env, fetch, put } = environment();
     const grant = await grantFor();

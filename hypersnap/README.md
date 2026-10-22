@@ -1,6 +1,6 @@
-# Quorum for Hypersnap
+# Opencaster — powered by Arca Computer
 
-This standalone browser entry makes Hypersnap public browsing and local signing available without requiring Quorum messenger registration. Quorum's original messenger source, license, fonts, symbol, and theme tokens are preserved in the parent fork. The new web primitives and shell use its semantic tokens; Farcaster wire signing modules are adapted from the MIT-licensed `quorum-shared` source.
+An open source client for everyone. Powered by Arca Computer. Runs on Hypersnap. This standalone browser entry offers public browsing and wallet-approved device signing without requiring Quorum messenger registration. Quorum's original messenger source, license, fonts, symbol, and theme tokens are preserved in the parent fork. The new web primitives and shell use its semantic tokens; Farcaster wire signing modules are adapted from the MIT-licensed `quorum-shared` source.
 
 ## Run
 
@@ -10,7 +10,7 @@ Use Node 22 and Yarn 1.22. `yarn install --frozen-lockfile`, then `yarn dev`. Vi
 
 ## Deploy
 
-Follow the [release checklist](#release-notes), including the dev log check, verification and a build in a fresh external directory. `wrangler.jsonc` targets the Arca Cloudflare account, the `hypersnap-quorum` Worker, and the `quorum.arca.computer` custom domain. Use your own account/domain when deploying another fork. Authentication is handled by the local Wrangler CLI; credentials never belong in source or browser environment variables.
+Follow the [release checklist](#release-notes), including the dev log check, verification and a build in a fresh external directory. `wrangler.jsonc` targets the Arca Cloudflare account, the `hypersnap-quorum` Worker, and the `opencaster.org` custom domain and the old domain redirect. Use your own account/domain when deploying another fork. Authentication is handled by the local Wrangler CLI; credentials never belong in source or browser environment variables.
 
 Copy `.env.example` to your own ignored `.env.local` for local development, or provide `VITE_WALLETCONNECT_PROJECT_ID` in your build environment for wallet app connections. Obtain your own public project ID from the [Reown Dashboard](https://dashboard.reown.com). Allowlist the precise deployed origins in its project configuration. No Dashboard API secret, private wallet key, social login, or hosted account authentication is needed. Vite embeds this public ID into the browser bundle; changes require a rebuild. Missing configuration disables WalletConnect while browser wallet and offline approval remain available.
 
@@ -42,9 +42,15 @@ The retained Quorum app and this fork's own application code remain under the re
 
 ## Scope and verification
 
-The public [dev log](https://quorum.arca.computer/devlog) records the standalone client's history from its first commit. It is available without sign-in, with topic filters, oldest/latest ordering and links to the code behind each milestone. The header link remains available on small screens.
+The public [dev log](https://opencaster.org/devlog) records the standalone client's history from its first commit. It is available without sign-in, with topic filters, oldest/latest ordering and links to the code behind each milestone. The header link remains available on small screens.
 
 Every feature/fix release must include a new milestone; the [release checklist](#release-notes) and CI enforce that requirement. The page and its styles load only when opened.
+
+### Domain migration
+
+Public links from `quorum.arca.computer` redirect to the same path and query on the new canonical domain. Legacy media URLs retain their content hash and existing R2 bucket. Legacy write requests return `409 site_moved` before reading a body or reaching Hypersnap, so signed bytes are never forwarded across an origin-changing redirect. Reopen the new site and reconnect your existing wallet.
+
+Saved device keys/passkeys and other local browser data are bound to the original origin and cannot transfer automatically. New-domain saving is optional and requires a fresh setup after connection. Protocol signing labels, device scopes, upstream endpoints and existing network authorizations are unchanged. The Worker service name and storage bindings remain stable to preserve media and quota state.
 
 ## Release notes
 
@@ -79,9 +85,9 @@ Excluded: creating Farcaster accounts, paid storage/on-chain registration, seed 
 
 See [FEATURE_SUPPORT.md](FEATURE_SUPPORT.md) for the source-backed feature matrix and upstream limitations.
 
-For a Farcaster-style cast link, replace its host with `quorum.arca.computer`, keeping `/<author>/0x<hash>` intact. Hashes may contain 8–40 hexadecimal characters in complete bytes. Full hashes use an exact author/FID lookup. Hypersnap currently has no native short-hash index, so short links search the author's available history in explicit batches of up to four 250-message pages. Matching casts are shown immediately with canonical **Open full cast** links; **Search older casts** checks another bounded batch. A single match is opened automatically only after the returned history is exhausted. Multiple matches remain a choice, and an incomplete search never claims uniqueness or absence. Each batch has a 25-second deadline, at most four simultaneous candidate reads, and bounded cumulative history/candidate limits. History includes cast removals; matched adds are hydrated again to confirm current availability. Deleted/pruned casts or data absent from this node cannot be restored by changing a URL. These are public Hypersnap reads; Farcaster client account status is not queried.
+For a Farcaster-style cast link, replace its host with `opencaster.org`, keeping `/<author>/0x<hash>` intact. Hashes may contain 8–40 hexadecimal characters in complete bytes. Full hashes use an exact author/FID lookup. Hypersnap currently has no native short-hash index, so short links search the author's available history in explicit batches of up to four 250-message pages. Matching casts are shown immediately with canonical **Open full cast** links; **Search older casts** checks another bounded batch. A single match is opened automatically only after the returned history is exhausted. Multiple matches remain a choice, and an incomplete search never claims uniqueness or absence. Each batch has a 25-second deadline, at most four simultaneous candidate reads, and bounded cumulative history/candidate limits. History includes cast removals; matched adds are hydrated again to confirm current availability. Deleted/pruned casts or data absent from this node cannot be restored by changing a URL. These are public Hypersnap reads; Farcaster client account status is not queried.
 
-Supported HTTPS profile and cast links to `farcaster.xyz` or legacy `warpcast.com` (including their `www` hosts) now open on Quorum when rendered in cast text, non-image URL attachments or profile bios. Normal clicks use local navigation; modified clicks and copied link targets also point to Quorum. The original authored text and protocol URLs are preserved. Root profile links, author/hash links and the full-hash `/~/conversations/<hash>` fallback are recognized; tracking query/fragment data is discarded. Other sites and unsupported Farcaster handlers retain their existing external behavior. Recognition uses the original URL token and exact allowed hosts rather than contacting a Farcaster redirect or resolver service.
+Supported HTTPS profile and cast links to `farcaster.xyz` or legacy `warpcast.com` (including their `www` hosts) now open on Opencaster when rendered in cast text, non-image URL attachments or profile bios. Normal clicks use local navigation; modified clicks and copied link targets also point to Opencaster. The original authored text and protocol URLs are preserved. Root profile links, author/hash links and the full-hash `/~/conversations/<hash>` fallback are recognized; tracking query/fragment data is discarded. Other sites and unsupported Farcaster handlers retain their existing external behavior. Recognition uses the original URL token and exact allowed hosts rather than contacting a Farcaster redirect or resolver service.
 
 The [MIT-licensed Farcaster client snapshot](https://github.com/farcasterxyz/client) informed familiar sharing, profile, and conversation UX. These features are independently implemented against Hypersnap; no Farcaster-hosted API client, account service, websocket, or source dependency was imported.
 

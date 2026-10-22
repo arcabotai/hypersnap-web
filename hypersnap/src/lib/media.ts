@@ -3,6 +3,7 @@
  * a future mobile client; only uploadMedia uses browser File/fetch APIs.
  */
 import { bytesToHex } from './protocol/signedKeyRequest';
+import { APP_ORIGIN, APP_ORIGINS } from './appOrigins';
 
 export const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 export const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
@@ -20,7 +21,7 @@ export const MEDIA_UPLOAD_TTL_SECONDS = 120;
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 export function isMediaType(value: unknown): value is MediaType { return MEDIA_TYPES.includes(value as MediaType); }
 export function isMediaOrigin(value: unknown): value is string {
-  return value === 'https://quorum.arca.computer' || value === 'https://hypersnap-quorum.lf-e32.workers.dev';
+  return APP_ORIGINS.includes(value as typeof APP_ORIGINS[number]);
 }
 function validInput(value: MediaUploadInput): void {
   if (!isMediaOrigin(value.origin) || !/^[a-f0-9]{64}$/.test(value.sha256) || !Number.isSafeInteger(value.size)
@@ -72,7 +73,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 export async function uploadMedia(file: File, authorize: (input: MediaUploadInput) => Promise<MediaUploadGrant>, signal?: AbortSignal): Promise<{ url: string }> {
   if (signal?.aborted) throw new DOMException('Upload cancelled.', 'AbortError');
   const origin = globalThis.location?.origin;
-  if (!isMediaOrigin(origin)) throw new Error('Image uploads are available on quorum.arca.computer.');
+  if (!isMediaOrigin(origin)) throw new Error('Image uploads are available on opencaster.org.');
   if (!isMediaType(file.type) || file.size < 1 || file.size > MAX_MEDIA_BYTES) throw new Error('Choose a JPEG, PNG, WebP or GIF image up to 5 MiB.');
   const bytes = new Uint8Array(await file.arrayBuffer());
   const sha256 = await sha256Hex(bytes);
@@ -101,7 +102,7 @@ export async function uploadMedia(file: File, authorize: (input: MediaUploadInpu
     };
     throw new Error(messages[response.status] || 'The upload status could not be confirmed. Check your attachment before trying again.');
   }
-  const expected = `https://quorum.arca.computer/media/${sha256}`;
+  const expected = `${APP_ORIGIN}/media/${sha256}`;
   if (!object(value) || value.url !== expected) throw new Error('The server returned an invalid image link.');
   return { url: expected };
 }

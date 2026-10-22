@@ -21,7 +21,7 @@ import { uploadMedia } from '../src/lib/media';
 import { bytesToHex, hexToBytes } from '../src/lib/protocol/signedKeyRequest';
 import { deleteSavedVault, encryptSignerVault, writeSavedVault } from '../src/lib/vault';
 
-const ORIGIN = 'https://quorum.arca.computer';
+const ORIGIN = 'https://opencaster.org';
 const args = process.argv.slice(2);
 assert([2, 3].includes(args.length), 'Use --identity-file /tmp/arca-hypersnap-e2e-features/identity.json [--read-only].');
 assert.equal(args[0], '--identity-file');
@@ -42,7 +42,7 @@ assert.equal(node.protocol, 'http:');
 assert.equal(node.pathname, '/');
 assert.equal(node.username + node.password + node.search + node.hash, '');
 const project = path.resolve(process.cwd());
-assert.equal(JSON.parse(await fs.readFile(path.join(project, 'package.json'), 'utf8')).name, 'quorum-hypersnap-web', 'Run from hypersnap/.');
+assert.equal(JSON.parse(await fs.readFile(path.join(project, 'package.json'), 'utf8')).name, 'opencaster', 'Run from hypersnap/.');
 const runtimeModule = await import(pathToFileURL(path.join(project, 'scripts/e2e-media-runtime.mjs')).href);
 const runtime = await runtimeModule.createMediaRuntime({ nodeUrl: node.origin });
 const nativeFetch = globalThis.fetch;

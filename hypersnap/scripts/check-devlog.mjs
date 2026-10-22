@@ -69,7 +69,7 @@ export function parseDevLog(source) {
         !entry.changes.length || !entry.changes.every(text) || !tags.has(entry.tag)) {
       throw new Error(`Milestone ${entry.id} needs a title, summary, changes and valid topic.`);
     }
-    if (!text(entry.commit) || !/^https:\/\/github\.com\/arcabotai\/hypersnap-web\/commit\/[a-f0-9]{40}$/.test(entry.commit)) {
+    if (!text(entry.commit) || !/^https:\/\/github\.com\/arcabotai\/(?:opencaster|hypersnap-web)\/commit\/[a-f0-9]{40}$/.test(entry.commit)) {
       throw new Error(`Milestone ${entry.id} needs a full implementation commit URL in this repository.`);
     }
   }

@@ -6,6 +6,13 @@ function cast(id = 1, extra: Partial<Cast> = {}): Cast { return { hash: `0x${id.
 function storage() { const values = new Map<string, string>(); return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } }; }
 
 describe('bounded local bookmark snapshots', () => {
+  it('retains published canonical and legacy URLs verbatim under the existing storage schema', () => {
+    const store = storage();
+    const embeds = [{ url: `https://quorum.arca.computer/media/${'a'.repeat(64)}` }, { url: 'https://opencaster.org/profile/3' }];
+    expect(saveBookmarks([cast(1, { embeds })], store)).toBe(true);
+    expect(readBookmarks(store)[0].embeds).toEqual(embeds);
+    expect(BOOKMARK_STORAGE_KEY).toBe('arca.hypersnap.bookmarks.v1');
+  });
   it('reads legacy raw arrays safely, normalizes hashes and deduplicates in saved order without changing the legacy record', () => {
     const store = storage(); const raw = JSON.stringify([cast(2), { ...cast(2), hash: cast(2).hash.slice(2).toUpperCase() }, cast(1)]); store.setItem(LEGACY_BOOKMARK_STORAGE_KEY, raw);
     expect(readBookmarks(store).map(item => item.author.fid)).toEqual([2, 1]); expect(store.getItem(LEGACY_BOOKMARK_STORAGE_KEY)).toBe(raw); expect(store.getItem(BOOKMARK_STORAGE_KEY)).toBeNull();

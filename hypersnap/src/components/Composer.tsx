@@ -14,7 +14,7 @@ function ComposerAvatar({ user }: { user?: User }) {
   const [failed, setFailed] = useState('');
   let url: string | undefined;
   try { const candidate = new URL(user?.pfp_url ?? ''); if (candidate.protocol === 'https:' && !candidate.username && !candidate.password) url = candidate.href; } catch { /* Use initials. */ }
-  return <span className="avatar">{url && failed !== url ? <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url!)} /> : (user?.display_name || user?.username || 'Q').slice(0, 2).toUpperCase()}</span>;
+  return <span className="avatar">{url && failed !== url ? <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(url!)} /> : (user?.display_name || user?.username || 'O').slice(0, 2).toUpperCase()}</span>;
 }
 const mentionUser = ({ fid, username }: { fid: number; username: string }): User => ({ fid, username, custody_address: '', profile: { bio: { text: '' } }, follower_count: 0, following_count: 0 });
 const emojiChoices = [['😀', 'grinning face'], ['😊', 'smiling face'], ['❤️', 'heart'], ['🔥', 'fire'], ['✨', 'sparkles'], ['👍', 'thumbs up'], ['🎉', 'party popper'], ['🌈', 'rainbow'], ['👀', 'eyes'], ['🙏', 'folded hands'], ['💜', 'purple heart'], ['🌐', 'globe']] as const;

@@ -19,7 +19,7 @@ function requestFixture(): PairingRequest {
   try {
     return {
       kind: 'arca.hypersnap.signer.request', version: 1,
-      origin: 'https://quorum.arca.computer', requestId: '12'.repeat(32),
+      origin: 'https://opencaster.org', requestId: '12'.repeat(32),
       createdAt: Math.floor(now / 1000), fid: 123,
       custodyAddress: addressFromCustodyPrivateKey(account.privateKey!),
       publicKey: bytesToHex(ed25519.getPublicKey(new Uint8Array(32).fill(2))),

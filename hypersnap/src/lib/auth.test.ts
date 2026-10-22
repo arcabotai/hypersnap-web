@@ -14,7 +14,7 @@ vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof impor
 vi.mock('./vault', async importOriginal => ({ ...await importOriginal<typeof import('./vault')>(), compareAndSwapSavedVault: vi.fn(), readSavedVault: vi.fn(), writeSavedVault: vi.fn(), deleteSavedVault: vi.fn() }));
 vi.mock('./passkey', async importOriginal => ({ ...await importOriginal<typeof import('./passkey')>(), enrollPasskey: vi.fn(), evaluatePasskey: vi.fn() }));
 
-const ORIGIN = 'https://quorum.arca.computer';
+const ORIGIN = 'https://opencaster.org';
 const CUSTODY_KEY = hexToBytes('01'.repeat(32)); // synthetic test fixture; no real account
 const CUSTODY = addressFromCustodyPrivateKey(CUSTODY_KEY);
 const user = { fid: 1234, username: 'test', display_name: 'Test', custody_address: CUSTODY } as User;

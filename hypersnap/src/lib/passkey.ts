@@ -225,8 +225,8 @@ export async function enrollPasskey(options: EnrollPasskeyOptions): Promise<Enro
     const challenge = crypto.getRandomValues(new Uint8Array(32));
     const userHandle = crypto.getRandomValues(new Uint8Array(32));
     const result = await credentialResult(navigator.credentials.create({ signal: current.signal, publicKey: {
-      challenge, rp: { id: rpId, name: 'Quorum on Hypersnap' },
-      user: { id: userHandle, name: `Hypersnap FID ${options.account.fid}`, displayName: `Quorum FID ${options.account.fid}` },
+      challenge, rp: { id: rpId, name: 'Opencaster on Hypersnap' },
+      user: { id: userHandle, name: `Hypersnap FID ${options.account.fid}`, displayName: `Opencaster FID ${options.account.fid}` },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
       attestation: 'none', timeout: TIMEOUT_MS, extensions: { prf: {}, credProps: true },

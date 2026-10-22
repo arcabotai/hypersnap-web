@@ -7,6 +7,7 @@ import { compareAndSwapSavedVault, decryptSignerVault, decryptSignerVaultWithPas
 import { enrollPasskey, evaluatePasskey } from './passkey';
 import { profileChanges, type ProfileField, type ProfilePatch, type ProfileUpdateResult } from './social';
 import { createMediaUploadGrant, type MediaUploadInput, type MediaUploadGrant } from './media';
+import { APP_ORIGIN } from './appOrigins';
 
 export const SIGNER_TTL_SECONDS = PAIRING_TTL_SECONDS;
 const SIGNER_SCOPE_NAMES: Record<number, string> = { 1: 'MESSAGE_TYPE_CAST_ADD', 2: 'MESSAGE_TYPE_CAST_REMOVE', 3: 'MESSAGE_TYPE_REACTION_ADD', 4: 'MESSAGE_TYPE_REACTION_REMOVE', 5: 'MESSAGE_TYPE_LINK_ADD', 6: 'MESSAGE_TYPE_LINK_REMOVE', 11: 'MESSAGE_TYPE_USER_DATA_ADD' };
@@ -97,7 +98,7 @@ function clientOrigin(origin: string): string {
   if (import.meta.env.DEV) {
     try {
       const url = new URL(origin);
-      if (origin === url.origin && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return 'https://quorum.arca.computer';
+      if (origin === url.origin && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return APP_ORIGIN;
     } catch { /* The strict pairing validator supplies the user-facing error. */ }
   }
   return origin;

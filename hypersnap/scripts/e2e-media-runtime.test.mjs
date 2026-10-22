@@ -8,21 +8,40 @@ const media = `${origin}/media/${'a'.repeat(64)}`;
 const appPath = fileURLToPath(new URL('../src/App.tsx', import.meta.url));
 const app = await fs.readFile(appPath, 'utf8');
 const transformed = replaceTestMediaGuards(replaceTestOrigins(app, origin), appPath, origin);
+const originsPath = fileURLToPath(new URL('../src/lib/appOrigins.ts', import.meta.url));
+const originsSource = await fs.readFile(originsPath, 'utf8');
+const publicOrigin = (source, name) => source.match(new RegExp(`^export const ${name} = '([^']+)';$`, 'm'))?.[1];
+const primaryOrigin = publicOrigin(originsSource, 'APP_ORIGIN');
+const legacyOrigin = publicOrigin(originsSource, 'LEGACY_APP_ORIGIN');
+const rewrittenOrigins = replaceTestOrigins(originsSource, origin);
+const imageExpression = source => source.match(/export function isUploadedMediaUrl[\s\S]*?return ([^\n]+);/)?.[1];
+const photosGuard = (source, origins) => {
+  const expression = source.match(/return ((?:url\.protocol|\(url\.protocol)[\s\S]*?);/)?.[1];
+  expect(expression).toBeTruthy();
+  const evaluate = new Function('url', 'APP_ORIGIN', 'LEGACY_APP_ORIGIN', `return ${expression};`);
+  return url => evaluate(url, publicOrigin(origins, 'APP_ORIGIN'), publicOrigin(origins, 'LEGACY_APP_ORIGIN'));
+};
 
 describe('isolated media harness URL transformations', () => {
-  it('keeps saved image drafts restricted to the configured loopback media origin only in the harness', async () => {
+  it('uses the real shared draft image guard and adds only the configured loopback media origin in the harness', async () => {
     const draftPath = fileURLToPath(new URL('../src/lib/composerDraft.ts', import.meta.url));
     const source = await fs.readFile(draftPath, 'utf8');
-    const changed = replaceTestMediaGuards(replaceTestOrigins(source, origin), draftPath, origin);
-    const regex = value => value.match(/value\.images\.every[\s\S]*?&& (\/\^[^\n]+?\/)\.test\(url\)/)?.[1];
-    expect(regex(changed)).toBeTruthy();
-    const accepted = new Function('value', `return ${regex(changed)}.test(value);`);
+    expect(source).toContain("import { isUploadedMediaUrl } from './appOrigins'");
+    expect(source).toContain('value.images.every(isUploadedMediaUrl)');
+    const changed = replaceTestMediaGuards(rewrittenOrigins, originsPath, origin);
+    expect(imageExpression(changed)).toBeTruthy();
+    const accepted = new Function('value', `return ${imageExpression(changed)};`);
     expect(accepted(media)).toBe(true);
-    for (const rejected of [`${media}/extra`, `${media}?query=1`, `${origin}/media/${'a'.repeat(63)}`, `http://127x0x0x1:5187/media/${'a'.repeat(64)}`, `http://127.0.0.1:5188/media/${'a'.repeat(64)}`, `http://user@127.0.0.1:5187/media/${'a'.repeat(64)}`]) expect(accepted(rejected)).toBe(false);
-    const production = new Function('value', `return ${regex(source)}.test(value);`);
+    for (const rejected of [`${media}/extra`, `${media}?query=1`, `${media}#hash`, `${media}\n`, `${origin}/media/${'a'.repeat(63)}`, `http://127x0x0x1:5187/media/${'a'.repeat(64)}`, `http://127.0.0.1:5188/media/${'a'.repeat(64)}`, `http://user@127.0.0.1:5187/media/${'a'.repeat(64)}`]) expect(accepted(rejected)).toBe(false);
+    const production = new Function('value', `return ${imageExpression(originsSource)};`);
     expect(production(media)).toBe(false);
-    expect(production(`https://quorum.arca.computer/media/${'a'.repeat(64)}`)).toBe(true);
-    expect(replaceTestMediaGuards(source, draftPath, 'https://quorum.arca.computer')).toBe(source);
+    for (const productionOrigin of [primaryOrigin, legacyOrigin]) {
+      const url = `${productionOrigin}/media/${'a'.repeat(64)}`;
+      expect(production(url)).toBe(true); expect(accepted(url)).toBe(true);
+    }
+    for (const value of [undefined, null, {}, 123]) { expect(production(value)).toBe(false); expect(accepted(value)).toBe(false); }
+    expect(replaceTestMediaGuards(source, draftPath, origin)).toBe(source);
+    expect(replaceTestMediaGuards(originsSource, originsPath, primaryOrigin)).toBe(originsSource);
   });
   it('keeps casting URL validation strict while accepting only the isolated upload path', async () => {
     const authPath = fileURLToPath(new URL('../src/lib/auth.ts', import.meta.url));
@@ -50,13 +69,12 @@ describe('isolated media harness URL transformations', () => {
     const apiPath = fileURLToPath(new URL('../src/lib/api.ts', import.meta.url));
     const source = await fs.readFile(apiPath, 'utf8');
     const replaced = replaceTestMediaGuards(replaceTestOrigins(source, origin), apiPath, origin);
-    const expression = replaced.match(/return ((?:url\.protocol|\(url\.protocol)[\s\S]*?);/)?.[1];
-    expect(expression).toBeTruthy();
-    const accepted = new Function('url', `return ${expression};`);
+    const accepted = photosGuard(replaced, rewrittenOrigins);
     expect(accepted(new URL(media))).toBe(true);
     for (const rejected of [`${origin}/photo.png`, `${origin}/media/${'a'.repeat(63)}`, `http://localhost:5187/media/${'a'.repeat(64)}`, `http://attacker.test/photo.png`]) expect(accepted(new URL(rejected))).toBe(false);
-    const productionExpression = source.match(/return (url\.protocol[\s\S]*?);/)?.[1];
-    expect(new Function('url', `return ${productionExpression};`)(new URL(media))).toBe(false);
+    const production = photosGuard(source, originsSource);
+    expect(production(new URL(media))).toBe(false);
+    for (const productionOrigin of [primaryOrigin, legacyOrigin]) expect(production(new URL(`${productionOrigin}/media/${'a'.repeat(64)}`))).toBe(true);
   });
   it('admits only the configured loopback hashed media path through the actual App URL expression', () => {
     const expression = transformed.match(/return (.*?) \? url\.href : undefined;/)?.[1];
@@ -94,6 +112,10 @@ describe('isolated media harness URL transformations', () => {
     const workerPath = fileURLToPath(new URL('../worker/index.ts', import.meta.url));
     const worker = plugin.transform(await fs.readFile(workerPath, 'utf8'), workerPath);
     expect(worker).toContain("const UPSTREAM = 'https://haatz.quilibrium.com'");
+    expect(worker).toContain(`const CANONICAL_ORIGIN = '${origin}'`);
+    expect(worker).toContain("const LEGACY_HOST = 'quorum.arca.computer'");
+    for (const name of ['APP_ORIGIN', 'LEGACY_APP_ORIGIN', 'WORKER_ORIGIN']) expect(publicOrigin(rewrittenOrigins, name)).toBe(origin);
+    expect(replaceTestOrigins(originsSource, primaryOrigin)).toBe(originsSource);
     for (const rejected of ['https://attacker.example', 'http://127.0.0.1.attacker.example:5187', 'http://user@127.0.0.1:5187', `${origin}/unexpected`]) expect(() => viteTestOriginPlugin(rejected)).toThrow('loopback');
   });
 });

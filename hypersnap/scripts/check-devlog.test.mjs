@@ -121,6 +121,15 @@ describe('release-note guard against real isolated Git history', () => {
 });
 
 describe('release policy and static data validation', () => {
+  it('keeps historical repository links valid after the Opencaster rename and restricts new source URLs to this repository', () => {
+    const old = milestone('historical-release', 'a'.repeat(40));
+    const renamed = { ...old, id: 'renamed-release', commit: old.commit.replace('/hypersnap-web/', '/opencaster/') };
+    expect(parseDevLog(`export const DEV_LOG = ${JSON.stringify([renamed, old])};`)).toEqual([renamed, old]);
+    for (const commit of [renamed.commit.replace('/arcabotai/', '/someone-else/'), renamed.commit.replace('/opencaster/', '/other/'), renamed.commit.replace('github.com/', 'github.com.evil.invalid/')]) {
+      expect(() => parseDevLog(`export const DEV_LOG = ${JSON.stringify([{ ...renamed, commit }])};`)).toThrow('implementation commit URL');
+    }
+  });
+
   it('requires a note for shipped dependencies, styles, workers, signer code, assets, build scripts and unknown product paths', () => {
     const paths = ['hypersnap/package.json', 'hypersnap/yarn.lock', 'hypersnap/src/App.tsx', 'hypersnap/src/style.scss', 'hypersnap/worker/index.ts', 'hypersnap/signer/main.ts', 'hypersnap/public/quorum-symbol.svg', 'hypersnap/public/InterVariable.ttf', 'hypersnap/scripts/build-signer.mjs', 'hypersnap/wrangler.toml', 'hypersnap/vite.config.ts', 'hypersnap/unknown-runtime.config', 'hypersnap/scripts/e2e-helpers/runtime.mjs'];
     expect(paths.filter(needsReleaseNote)).toEqual(paths);
