@@ -64,6 +64,27 @@ async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
+describe('homepage node support placement', () => {
+  it('appears after the introduction and before the composer, without blocking browsing', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [otherCast], next: {} });
+    await start();
+    const banner = container.querySelector('.node-support')!;
+    const welcome = container.querySelector('.welcome')!;
+    const composer = container.querySelector('main .composer')!;
+    expect(banner).not.toBeNull(); expect(composer).not.toBeNull();
+    expect(welcome.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector('main .feed')?.textContent).toContain(otherCast.text);
+    await click(banner.querySelector('button')!);
+    expect(container.querySelector('.node-support')).toBeNull();
+    expect(container.querySelector('main .feed')?.textContent).toContain(otherCast.text);
+  });
+
+  it.each(['/following', '/settings', '/devlog', '/profile/20'])('does not interrupt %s', async path => {
+    await start(path); expect(container.querySelector('.node-support')).toBeNull();
+  });
+});
+
 describe('Opencaster destinations for supported social links', () => {
   it.each(['short cast-text link', 'full-hash URL embed'] as const)('pushes a %s from a direct conversation so Back and Close return to its source cast', async kind => {
     const target: Cast = { ...otherCast, hash: `0xcbbe7828${'b'.repeat(32)}`, author: { ...otherCast.author, username: 'gandhionchain' }, text: 'The separate linked conversation' };
