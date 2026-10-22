@@ -1,3 +1,51 @@
+# Compatible author and cast URLs · 2026-10-22
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **746 tests across 42 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. New tests cover route/reserved-name compatibility, exact author and cast validation, short-hash ambiguity, cumulative explicit continuation, native pagination shape/order/key binding, caps at EOF, timeout/caller cancellation (including late 404s), retry/cancel preservation, canonical replacement, Back/Forward and sign-in return context. All write tests remain synthetic/isolated; this feature's live probes are public reads only.
+
+Quorum accepts `/<author>/0x<hash>` with byte-aligned 8–40 hexadecimal characters and root `/<author>` profile links, while retaining existing `/profile/...` and full `/cast/...` URLs. Authors can be usernames, supported native ENS/Base names or numeric FIDs. Reserved application/static namespaces remain reserved. Shares use stable full hashes.
+
+The reviewed Hypersnap revision remains `2e8733d044141ad3ba0e0592a4d5873c1dc6ce9c`. Native v2 cast lookup and `find_cast_fid_by_hash` require exact 20-byte hashes; no short-hash index was found. Short links therefore check author-scoped native `/v1/castsByFid` history in explicit batches of at most four 250-message pages. That history includes cast removals. Exact FID/full-hash hydration verifies each current candidate, skipping only a verified `cast_not_found`. A partial result can show candidates immediately but cannot claim uniqueness or absence. Only one candidate after exhausted available history auto-opens; incomplete or ambiguous matches require a choice. Full hashes use exact author-scoped lookup directly.
+
+Each batch shares a 25-second deadline and at most four concurrent hydration reads. Cumulative limits are 100,000 checked messages, 400 cursor pages and 25 candidate hashes. A reached limit remains incomplete, including a final page that exceeds the remaining message budget. Native v1 pagination uses canonical base64 of a 30-byte legacy User/CastMessage key, bound to the exact FID. Receipt keys must descend, page cursors must match the last receipt, and subsequent pages must move below the incoming cursor. Missing/empty terminal tokens are accepted; null, loops, other key namespaces/authors and skipped-key cursors are errors. Cancellation wins over late HTTP results, including a late missing-cast response. Lookup state stays in memory.
+
+Public Hypersnap reads confirmed `gandhionchain` resolves to FID410023 and the supplied prefix matches full hash `0xcfd6d3c3e990cffcb4af8063426d299cf22fab37`, found in the first author-history page and confirmed by exact author/hash lookup. This establishes availability on Hypersnap; it does not verify why another client may omit it. URL compatibility cannot recover deleted, pruned or unsynced data. No Farcaster-operated lookup endpoint, new dependency, authentication permission or protocol write was introduced.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   b76b720  ⚠ working tree dirty (11 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/App.test.tsx, desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/lib/api.ts)
+            (… and 7 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Native ENS and Base name lookup · 2026-10-21
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

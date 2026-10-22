@@ -59,11 +59,13 @@ const pagination: QueryRules = { limit: integer(100), cursor };
 const followPagination: QueryRules = { limit: integer(100), cursor: value => /^\d{1,20}$/.test(value) && BigInt(value) <= 0xffffffffffffffffn };
 const reactionType: Rule = value => value === 'Like' || value === 'Recast';
 const reactionPageToken: Rule = value => value.length > 0 && value.length <= 2048 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+const castHistoryPageToken: Rule = value => { try { return reactionPageToken(value) && btoa(atob(value)) === value; } catch { return false; } };
 
 interface Endpoint { required?: string[]; query: QueryRules; validate?: (params: URLSearchParams) => boolean }
 const READ_ENDPOINTS: Record<string, Endpoint> = {
   '/v1/info': { query: {} },
   '/v1/fidByName': { required: ['name', 'type'], query: { name: ensName, type: value => value === 'ens' || value === 'basename' }, validate: params => normalizeHypersnapEnsName(params.get('name')!).type === params.get('type') },
+  '/v1/castsByFid': { required: ['fid', 'pageSize', 'reverse'], query: { fid: integer(0xffffffff), pageSize: value => value === '250', reverse: value => value === 'true', pageToken: castHistoryPageToken } },
   '/v1/signersByFid': { required: ['fid'], query: { fid, pageSize: integer(1000), pageToken: cursor, 'requesterFids[0]': fid } },
   '/v1/onChainIdRegistryEventByAddress': { required: ['address'], query: { address } },
   '/v1/linkById': { required: ['fid', 'link_type', 'target_fid'], query: { fid, link_type: value => value === 'follow', target_fid: fid } },

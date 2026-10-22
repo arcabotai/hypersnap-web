@@ -13,6 +13,44 @@ afterEach(() => {
 });
 
 describe('the fixed Hypersnap gateway', () => {
+  it('forwards fixed-size public cast-history pages and opaque canonical cursors without credentials', async () => {
+    const receipt = { data: { type: 'MESSAGE_TYPE_CAST_ADD', fid: 410023, network: 'FARCASTER_NETWORK_MAINNET' }, hash: `0x${'a'.repeat(40)}` };
+    const token = 'AwAGQacBCpe8t9Lvcp/t5/Ae6RvjfQ51dp6dJmN8';
+    const fetch = vi.fn().mockImplementation(async () => jsonResponse({ messages: [receipt], nextPageToken: token })); vi.stubGlobal('fetch', fetch);
+    for (const cursor of [undefined, token]) {
+      const query = new URLSearchParams({ fid: '410023', pageSize: '250', reverse: 'true', ...(cursor ? { pageToken: cursor } : {}) });
+      const path = `/v1/castsByFid?${query}`;
+      const response = await handleRequest(new Request(`${BASE}/api${path}`, { headers: { Cookie: 'do-not-forward', Authorization: 'Bearer do-not-forward', Origin: BASE } }), env);
+      expect(response.status).toBe(200); expect(await response.json()).toEqual({ messages: [receipt], nextPageToken: token });
+      const [url, init] = fetch.mock.calls.at(-1)!;
+      expect(url).toBe(`https://haatz.quilibrium.com${path}`); expect(init.method).toBe('GET'); expect(init.credentials).toBe('omit'); expect(init.redirect).toBe('manual');
+      expect(init.headers.get('Cookie')).toBeNull(); expect(init.headers.get('Authorization')).toBeNull(); expect(response.headers.get('Cache-Control')).toBe('no-store');
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects unbounded, malformed or alternative cast-history queries before contacting the node', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const valid = 'fid=410023&pageSize=250&reverse=true';
+    const invalid = [
+      valid.replace('fid=410023', 'fid=0'), valid.replace('fid=410023', 'fid=-1'), valid.replace('fid=410023', 'fid=4294967296'),
+      valid.replace('pageSize=250', 'pageSize=249'), valid.replace('pageSize=250', 'pageSize=251'), valid.replace('reverse=true', 'reverse=false'),
+      valid.replace('&pageSize=250', ''), valid.replace('&reverse=true', ''), valid.replace('fid=410023&', ''),
+      valid.replace('pageSize=250', 'page_size=250'), `${valid}&pageSize=250`, `${valid}&fid=3`, `${valid}&startTimestamp=0`, `${valid}&stop_timestamp=1`, `${valid}&rpc=https://example.com`,
+      ...['', 'A===', 'AA=', 'AB==', 'AAAA_', 'not a cursor', 'A'.repeat(2052)].map(value => `${valid}&pageToken=${encodeURIComponent(value)}`),
+      `${valid}&pageToken=YQ%3D%3D&pageToken=YQ%3D%3D`, `${valid}&page_token=YQ%3D%3D`,
+    ];
+    for (const query of invalid) expect((await handleRequest(new Request(`${BASE}/api/v1/castsByFid?${query}`), env)).status, query).toBe(400);
+    expect((await handleRequest(new Request(`${BASE}/api/v1/castsByFid?${valid}`, { method: 'POST' }), env)).status).toBe(405);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('preserves cast-history failures as controlled errors rather than a falsely complete empty page', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'Failed to get casts', error_detail: 'private database failure' }, 400)));
+    const response = await handleRequest(new Request(`${BASE}/api/v1/castsByFid?fid=410023&pageSize=250&reverse=true`), env);
+    expect(response.status).toBe(400); expect(await response.json()).toEqual({ code: 'upstream_error', message: 'The node rejected this request.' });
+  });
+
   it('forwards only canonical native ENS/Basename name-to-FID reads to the fixed node without credentials', async () => {
     const fetch = vi.fn().mockImplementation(async () => jsonResponse({ fid: 3 })); vi.stubGlobal('fetch', fetch);
     for (const [name, type] of [['dwr.eth', 'ens'], ['jesse.base.eth', 'basename'], [`${'a'.repeat(16)}.eth`, 'ens'], [`${'a'.repeat(16)}.base.eth`, 'basename']]) {

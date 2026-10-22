@@ -18,6 +18,7 @@ import Composer from './components/Composer';
 import CastReactions from './components/CastReactions';
 import MediaViewer, { type CastImage } from './components/MediaViewer';
 import CastOptions from './components/CastOptions';
+import CastLinkLookup from './components/CastLinkLookup';
 import { SuggestedPeople, ChannelPeopleDialog, CastQuotesDialog } from './components/CommunityPanels';
 import { ProfileDetails, ShareProfileDialog } from './components/ProfileDetails';
 import { readChannelPins, writeChannelPins, toggleChannelPin } from './lib/channelPins';
@@ -36,13 +37,15 @@ const DevLog = lazy(() => import('./components/DevLog'));
 const ConnectAccount = lazy(() => import('./components/ConnectAccount'));
 const DeviceSettings = lazy(() => import('./components/ConnectAccount').then(module => ({ default: module.DeviceSettings })));
 
-type FeedRoute = Exclude<AppRoute, { kind: 'cast' | 'connect' }>;
+type ConversationRoute = Extract<AppRoute, { kind: 'cast' | 'cast-alias' }>;
+type FeedRoute = Exclude<AppRoute, { kind: 'cast' | 'cast-alias' | 'connect' }>;
+const isConversationRoute = (route: AppRoute): route is ConversationRoute => route.kind === 'cast' || route.kind === 'cast-alias';
 type ConnectFlow = { returnPath: string; backgroundPath: string; thread: boolean; scopes?: readonly number[]; initialFid?: number; action: 'edit' | 'follow' | null; quote: Cast | null; deletion: Cast | null };
 function backgroundLocation(): FeedRoute {
   const path: unknown = history.state?.quorumBackground;
   if (typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')) {
     const parsed = parseLocalPath(path);
-    if (parsed.kind !== 'cast' && parsed.kind !== 'connect' && parsed.kind !== 'not-found') return parsed;
+    if (!isConversationRoute(parsed) && parsed.kind !== 'connect' && parsed.kind !== 'not-found') return parsed;
   }
   return { kind: 'discover' };
 }
@@ -127,7 +130,7 @@ function CastCard({ cast, onProfile, onThread, onShare, onQuote, onDelete, react
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => parseRoute(location));
   const [background, setBackground] = useState<FeedRoute>(() => backgroundLocation());
-  const base = route.kind === 'cast' ? background : route;
+  const base = isConversationRoute(route) ? background : route;
   const view = base.kind;
   const signIn = route.kind === 'connect';
   const channel = base.kind === 'channel' ? base.channel : '';
@@ -168,6 +171,7 @@ export default function App() {
   const [thread, setThread] = useState<Cast | null>(null);
   const [conversation, setConversation] = useState<ConversationNode | null>(null);
   const [threadError, setThreadError] = useState('');
+  const [threadErrorKey, setThreadErrorKey] = useState('');
   const [sharedCast, setSharedCast] = useState<Cast | null>(null);
   const [sharedProfile, setSharedProfile] = useState<User | null>(null);
   const [imageViewer, setImageViewer] = useState<{ images: CastImage[]; initialIndex: number } | null>(null);
@@ -216,16 +220,17 @@ export default function App() {
     const next = parseLocalPath(path);
     const previous = currentRoute.current;
     if (previous.kind === 'connect' && next.kind !== 'connect') { connectGeneration.current += 1; connectFlow.current = null; afterSocialConnect.current = null; }
-    const isThread = next.kind === 'cast';
+    const isThread = isConversationRoute(next);
+    const wasThread = isConversationRoute(previous);
     const threadBackground: FeedRoute = currentBase.current.kind === 'connect' ? { kind: 'discover' } : currentBase.current;
-    const state = isThread ? { quorumThread: previous.kind !== 'cast' || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
+    const state = isThread ? { quorumThread: !wasThread || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
     if (path !== location.pathname + location.search) {
-      if (replace || (isThread && previous.kind === 'cast')) history.replaceState(state, '', path);
+      if (replace || (isThread && wasThread)) history.replaceState(state, '', path);
       else history.pushState(state, '', path);
     }
     currentRoute.current = next;
     setRoute(next); setSharedCast(null); setSharedProfile(null); setImageViewer(null); setCastOptions(null); setCastQuotes(null); setReactionPeople(null); setShortcutHelp(false); setRevealState(current => ({ ...current, hashes: new Set() })); setChannelPeople(null); quoteGeneration.current += 1; setQuotedCast(null); setDeletedCast(null); setFollowList(null); setEditProfile(false);
-    if (next.kind === 'cast') setBackground(threadBackground);
+    if (isConversationRoute(next)) setBackground(threadBackground);
     else if (next.kind !== 'connect') { setBackground(next); setThread(null); }
   }, []);
   const openProfile = useCallback((user: User) => {
@@ -236,6 +241,19 @@ export default function App() {
   const openThread = useCallback((cast: Cast) => {
     threadCache.current.set(castPath(cast.hash), cast); setThread(cast); navigate(castPath(cast.hash));
   }, [navigate]);
+  const openResolvedAlias = useCallback((cast: Cast, sourcePath: string) => {
+    const alias = currentRoute.current;
+    if (alias.kind !== 'cast-alias' || routePath(alias) !== sourcePath) return;
+    const hash = bookmarkHash(cast.hash);
+    if (!hash || !hash.startsWith(alias.hashPrefix) || !Number.isSafeInteger(cast.author?.fid) || cast.author.fid < 1) return;
+    const path = castPath(hash);
+    threadCache.current.set(path, cast);
+    // Keep the same entry and its original background/Back behavior. Calling
+    // navigate here would turn a directly loaded link into a pushed thread.
+    history.replaceState(history.state, '', path);
+    const next: AppRoute = { kind: 'cast', hash };
+    currentRoute.current = next; setRoute(next); setThread(cast); setConversation(null); setThreadError(''); setThreadErrorKey(path);
+  }, []);
   const closeThread = useCallback(() => {
     setSharedCast(null);
     if (history.state?.quorumThread) history.back();
@@ -261,9 +279,9 @@ export default function App() {
     const returnPath = connectReturnPath(history.state?.quorumConnectReturn);
     const backgroundPath = connectReturnPath(history.state?.quorumConnectBackground);
     navigate(returnPath, true);
-    if (parseLocalPath(returnPath).kind === 'cast') {
+    if (isConversationRoute(parseLocalPath(returnPath))) {
       const parsed = parseLocalPath(backgroundPath);
-      const background: FeedRoute = parsed.kind === 'cast' || parsed.kind === 'connect' ? { kind: 'discover' } : parsed;
+      const background: FeedRoute = isConversationRoute(parsed) || parsed.kind === 'connect' ? { kind: 'discover' } : parsed;
       setBackground(background); currentBase.current = background;
       history.replaceState({ quorumThread: false, quorumBackground: routePath(background) }, '', returnPath);
     }
@@ -308,7 +326,7 @@ export default function App() {
       if (currentRoute.current.kind === 'connect' || next.kind === 'connect') { connectGeneration.current += 1; connectFlow.current = null; afterSocialConnect.current = null; setConnectError(''); }
       connectReturning.current = false; afterConnectReturn.current = null;
       currentRoute.current = next; setRoute(next); setSharedCast(null); setSharedProfile(null); setImageViewer(null); setCastOptions(null); setCastQuotes(null); setReactionPeople(null); setShortcutHelp(false); setRevealState(current => ({ ...current, hashes: new Set() })); setChannelPeople(null); quoteGeneration.current += 1; setQuotedCast(restored?.quote ?? null); setDeletedCast(restored?.deletion ?? null); setFollowList(null); setEditProfile(editAfterReturn);
-      if (next.kind === 'cast') setBackground(backgroundLocation());
+      if (isConversationRoute(next)) setBackground(backgroundLocation());
       else if (next.kind !== 'connect') { setBackground(next); setThread(null); }
     };
     window.addEventListener('popstate', pop);
@@ -352,7 +370,7 @@ export default function App() {
     }).catch(error => { if (!controller.signal.aborted) { setChannelInfo(null); setChannelError(message(error)); } });
     return () => controller.abort();
   }, [view, channel, refresh]);
-  useEffect(() => { document.title = route.kind === 'cast' ? 'Conversation · Quorum' : `${activeTitle} · Quorum`; }, [route.kind, activeTitle]);
+  useEffect(() => { document.title = isConversationRoute(route) ? 'Conversation · Quorum' : `${activeTitle} · Quorum`; }, [route.kind, activeTitle]);
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); try { localStorage.setItem('quorum.theme', dark ? 'dark' : 'light'); } catch { /* Theme still works for this tab. */ } }, [dark]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 6500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => currentSession.current?.dispose(), []);
@@ -377,10 +395,15 @@ export default function App() {
     return () => { controller.abort(); feedMoreRead.current?.abort(); };
   }, [view, channel, session?.fid, session?.publicKey, profile?.fid, profileTab, trendingWindow, refresh]);
   useEffect(() => {
-    if (route.kind !== 'cast') { setThread(null); setConversation(null); setThreadError(''); return; }
-    const controller = new AbortController(); setConversation(null); setThreadError('');
-    setThread(threadCache.current.get(castPath(route.hash)) ?? null);
-    getConversation(route.hash, controller.signal).then(data => { if (controller.signal.aborted) return; setConversation(data); setThread(data.cast); threadCache.current.set(castPath(route.hash), data.cast); }).catch(error => { if (!controller.signal.aborted) setThreadError(message(error)); });
+    if (route.kind !== 'cast') { setThread(null); setConversation(null); setThreadError(''); setThreadErrorKey(''); return; }
+    const key = castPath(route.hash);
+    const controller = new AbortController(); setConversation(null); setThreadError(''); setThreadErrorKey(key);
+    const cached = threadCache.current.get(key); setThread(cached ?? null);
+    getConversation(route.hash, controller.signal).then(data => {
+      if (controller.signal.aborted || currentRoute.current.kind !== 'cast' || currentRoute.current.hash !== route.hash) return;
+      if (bookmarkHash(data.cast?.hash) !== route.hash || !Number.isSafeInteger(data.cast?.author?.fid) || data.cast.author.fid < 1 || (cached && data.cast.author.fid !== cached.author.fid)) throw new Error('The node returned a different conversation for this cast.');
+      setConversation(data); setThread(data.cast); threadCache.current.set(key, data.cast);
+    }).catch(error => { if (!controller.signal.aborted && currentRoute.current.kind === 'cast' && currentRoute.current.hash === route.hash) { setThreadErrorKey(key); setThreadError(message(error)); } });
     return () => controller.abort();
   }, [route.kind === 'cast' ? route.hash : null, refresh]);
 
@@ -446,6 +469,9 @@ export default function App() {
       notify('You’re connected to Hypersnap.');
     }} />
   </Suspense>;
+  const activeThread = route.kind === 'cast' && thread && bookmarkHash(thread.hash) === route.hash ? thread : null;
+  const activeConversation = route.kind === 'cast' && activeThread && conversation && bookmarkHash(conversation.cast.hash) === route.hash && conversation.cast.author.fid === activeThread.author.fid ? conversation : null;
+  const activeThreadError = route.kind === 'cast' && threadErrorKey === castPath(route.hash) ? threadError : '';
   const card = (cast: Cast) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
@@ -524,7 +550,7 @@ export default function App() {
     <nav className="mobile-nav" aria-label="Mobile navigation"><Button variant="ghost" aria-label="Discover" onClick={() => navigate('/')}><IconCompass /></Button><Button variant="ghost" aria-label="Following" onClick={() => navigate('/following')}><IconUsers /></Button><Button variant="ghost" aria-label="Bookmarks" onClick={() => navigate('/bookmarks')}><IconBookmark /></Button><Button variant="ghost" aria-label="Search" onClick={() => navigate('/search')}><IconSearch /></Button><Button variant="ghost" aria-label="Notifications" onClick={() => navigate('/notifications')}><IconBell /></Button><Button variant="ghost" aria-label="Channels" onClick={() => navigate('/channels')}><IconHash /></Button><Button variant="ghost" aria-label="Account" onClick={() => session ? navigate('/profile') : requestSignIn()}><IconKey /></Button></nav>
     {toast && <div className="toast" role="status"><span>{toast}</span><Button variant="ghost" aria-label="Dismiss notification" onClick={() => setToast('')}><IconX size={17} /></Button></div>}
     {deviceSettings && session && <Suspense fallback={<Modal title="This device’s access" onClose={() => setDeviceSettings(false)}><p role="status">Loading device settings…</p></Modal>}><DeviceSettings session={session} onClose={() => setDeviceSettings(false)} onLock={revoked => lockSession(session, revoked)} notify={notify} /></Suspense>}
-    {route.kind === 'cast' && <Modal title="Conversation" onClose={closeThread} wide>{thread && card(thread)}{threadError ? <div className="empty"><p className="error">{threadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : conversation && thread ? <><Composer key={`${session?.publicKey ?? 'guest'}:${thread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={thread} notify={notify} />{conversation.replies.length ? <ConversationReplies nodes={conversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</Modal>}
+    {isConversationRoute(route) && <Modal title="Conversation" onClose={closeThread} wide>{route.kind === 'cast-alias' ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={card} onOpen={cast => openResolvedAlias(cast, routePath(route))} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <><Composer key={`${session?.publicKey ?? 'guest'}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} />{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</Modal>}
     {followList && profile && <FollowListDialog key={`${profile.fid}:${followList}`} user={profile} kind={followList} loadPage={getFollows} onProfile={openProfile} onClose={() => setFollowList(null)} />}
     {editProfile && session && profile?.fid === session.fid && <EditProfileDialog key={profile.fid} user={profile} onSave={patch => session.updateProfile(patch)} onUpload={(file, signal) => uploadMedia(file, input => session.authorizeMediaUpload(input), signal)} onReload={() => session.refreshProfile()} onSaved={patch => {
       // An older profile read can finish after the session confirms this edit.

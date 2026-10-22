@@ -3,7 +3,7 @@ import { act, useEffect, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { getCast, getChannel, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getReactionStatus, getSuggestedUsers, getChannelMembers, getCastQuotes, getUser, searchCasts, searchUsers, type Cast, type User } from './lib/api';
+import { getCast, getChannel, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getReactionStatus, getSuggestedUsers, getChannelMembers, getCastQuotes, getUser, resolveCastAlias, searchCasts, searchUsers, type Cast, type CastAliasResult, type CastAliasContinuation, type User } from './lib/api';
 import type { WalletSession } from './lib/auth';
 import { uploadMedia } from './lib/media';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './lib/pairing';
@@ -18,7 +18,7 @@ vi.mock('./components/ConnectAccount', () => ({
   DeviceSettings: () => <div>Synthetic device settings</div>,
 }));
 vi.mock('./lib/media', () => ({ uploadMedia: vi.fn() }));
-vi.mock('./lib/api', async original => ({ ...await original<typeof import('./lib/api')>(), getCast: vi.fn(), getChannel: vi.fn(), getChannels: vi.fn(), getConversation: vi.fn(), getFeed: vi.fn(), getFollowStatus: vi.fn(), getInfo: vi.fn(), getProfileFeed: vi.fn(), getReactionStatus: vi.fn(), getSuggestedUsers: vi.fn(), getChannelMembers: vi.fn(), getCastQuotes: vi.fn(), getUser: vi.fn(), searchCasts: vi.fn(), searchUsers: vi.fn() }));
+vi.mock('./lib/api', async original => ({ ...await original<typeof import('./lib/api')>(), getCast: vi.fn(), getChannel: vi.fn(), getChannels: vi.fn(), getConversation: vi.fn(), getFeed: vi.fn(), getFollowStatus: vi.fn(), getInfo: vi.fn(), getProfileFeed: vi.fn(), getReactionStatus: vi.fn(), getSuggestedUsers: vi.fn(), getChannelMembers: vi.fn(), getCastQuotes: vi.fn(), getUser: vi.fn(), resolveCastAlias: vi.fn(), searchCasts: vi.fn(), searchUsers: vi.fn() }));
 
 const person = (fid: number): User => ({ fid, username: `person${fid}`, display_name: `Person ${fid}`, custody_address: '0x1111111111111111111111111111111111111111', profile: { bio: { text: 'An isolated public profile' } }, follower_count: 0, following_count: 0 });
 const cast = (letter: string, authorFid: number, text: string): Cast => ({ hash: `0x${letter.repeat(40)}`, author: person(authorFid), text, timestamp: '2026-10-19T12:00:00.000Z', embeds: [], reactions: { likes_count: 0, recasts_count: 0 }, replies: { count: 0 } });
@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.mocked(getFollowStatus).mockResolvedValue(false);
   vi.mocked(getConversation).mockResolvedValue({ cast: otherCast, replies: [] });
   vi.mocked(getCast).mockResolvedValue(otherCast);
+  vi.mocked(resolveCastAlias).mockResolvedValue({ author: person(20), candidates: [otherCast], complete: true, scanned: 1 });
   vi.mocked(searchCasts).mockResolvedValue({ casts: [otherCast], next: {} });
   vi.mocked(searchUsers).mockResolvedValue({ users: [person(42)] });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
@@ -62,6 +63,82 @@ async function connect(value: WalletSession) { wallet.next = value; await click(
 async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
+
+describe('author-scoped compatible cast URLs', () => {
+  const alias = '/person20/0xbbbbbbbb';
+  const continuation: CastAliasContinuation = { authorIdentifier: 'person20', hashPrefix: '0xbbbbbbbb', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [otherCast.hash], scanned: 1000 };
+  const result = (overrides: Partial<CastAliasResult> = {}): CastAliasResult => ({ author: person(20), candidates: [otherCast], complete: true, scanned: 10, ...overrides });
+
+  it.each([alias, `/person20/${otherCast.hash}`])('verifies %s before replacing the same history entry with its canonical conversation', async path => {
+    const resolving = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValue(resolving.promise);
+    const historyLength = history.length; await start(path);
+    expect(dialog('Conversation')).toBeDefined(); expect(dialog('Conversation').textContent).toContain('Checking this cast link'); expect(getConversation).not.toHaveBeenCalled();
+    expect(resolveCastAlias).toHaveBeenCalledWith(expect.objectContaining({ authorIdentifier: 'person20', hashPrefix: path.split('/')[2], signal: expect.any(AbortSignal) }));
+    await act(async () => resolving.resolve(result()));
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.length).toBe(historyLength); expect(history.state).toBeNull();
+    expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal)); expect(dialog('Conversation').textContent).toContain(otherCast.text);
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!);
+    expect(location.pathname).toBe('/'); expect(history.length).toBe(historyLength); expect(dialog('Conversation')).toBeUndefined();
+  });
+
+  it('shows a partial candidate immediately but opens it only after a full-link click', async () => {
+    vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
+    await start(alias);
+    expect(location.pathname).toBe(alias); expect(dialog('Conversation').textContent).toContain(otherCast.text); expect(dialog('Conversation').textContent).toContain('not yet known to be unique'); expect(getConversation).not.toHaveBeenCalled();
+    await click(dialog('Conversation').querySelector(`.cast-link-lookup__candidate > a[href="/cast/${otherCast.hash}"]`)!);
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
+  });
+
+  it('keeps cumulative ambiguous candidates scoped to the author and requires choosing an exact full hash', async () => {
+    const second = { ...cast('c', 20, 'Another matching full cast'), hash: `0xbbbbbbbb${'c'.repeat(32)}` };
+    vi.mocked(resolveCastAlias).mockResolvedValueOnce(result({ complete: false, continuation, scanned: 1000 })).mockResolvedValueOnce(result({ candidates: [otherCast, second], complete: true, scanned: 2000 }));
+    vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === second.hash ? second : otherCast, replies: [] }));
+    await start(alias); await click(button('Search older casts', dialog('Conversation')));
+    expect(vi.mocked(resolveCastAlias).mock.calls[1][0].continuation).toBe(continuation); expect(location.pathname).toBe(alias); expect(getConversation).not.toHaveBeenCalled();
+    expect(dialog('Conversation').textContent).toContain('More than one cast matches'); expect(dialog('Conversation').querySelectorAll('.cast-link-lookup__candidate')).toHaveLength(2);
+    await click(dialog('Conversation').querySelector(`.cast-link-lookup__candidate > a[href="/cast/${second.hash}"]`)!);
+    expect(location.pathname).toBe(`/cast/${second.hash}`); expect(dialog('Conversation').textContent).toContain(second.text);
+  });
+
+  it('aborts an alias on Back, ignores its late result and preserves the search background through Forward and canonicalization', async () => {
+    const pendingAlias = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pendingAlias.promise);
+    const background = '/search?q=cosmos&type=users'; history.replaceState(null, '', background); history.pushState({ quorumThread: true, quorumBackground: background }, '', alias);
+    await act(async () => root.render(<App />)); const signal = vi.mocked(resolveCastAlias).mock.calls[0][0].signal!;
+    await traverse('back'); expect(signal.aborted).toBe(true); expect(location.pathname + location.search).toBe(background);
+    await act(async () => pendingAlias.resolve(result())); expect(location.pathname + location.search).toBe(background); expect(dialog('Conversation')).toBeUndefined();
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state).toEqual({ quorumThread: true, quorumBackground: background });
+    await traverse('back'); expect(location.pathname + location.search).toBe(background);
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(resolveCastAlias).toHaveBeenCalledTimes(2);
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe(background);
+  });
+
+  it('returns from sign-in to a still-unresolved alias and its explicit quote without changing account permissions', async () => {
+    vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
+    await start(alias); await click(dialog('Conversation').querySelector('button[aria-label="Quote cast"]')!); await click(button('Quote', dialog('Quote cast')));
+    expect(location.pathname).toBe('/connect'); expect(history.state.quorumConnectReturn).toBe(alias);
+    expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
+    await click(button('Cancel synthetic wallet')); await settleNavigation();
+    expect(location.pathname).toBe(alias); expect(dialog('Quote cast')).toBeDefined(); expect(dialog('Quote cast').textContent).toContain(otherCast.text);
+    await click(dialog('Quote cast').querySelector('button[aria-label="Close dialog"]')!); await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!);
+    expect(location.pathname).toBe('/'); expect(wallet.next).toBeNull();
+  });
+
+  it('keeps an exhausted no-match result on its original link with an honest node-history message', async () => {
+    vi.mocked(resolveCastAlias).mockResolvedValue(result({ candidates: [], complete: true, scanned: 250 }));
+    await start(alias);
+    expect(location.pathname).toBe(alias); expect(dialog('Conversation').textContent).toContain('No cast matched this link in the available history returned by this Hypersnap node.'); expect(getConversation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'full hash', returned: { ...otherCast, hash: ownCast.hash, text: 'Unrelated conversation must stay hidden' } },
+    { label: 'author FID', returned: { ...otherCast, author: person(99), text: 'Unrelated conversation must stay hidden' } },
+  ])('rejects a conversation response whose $label differs from the verified alias cast', async ({ returned }) => {
+    vi.mocked(getConversation).mockResolvedValue({ cast: returned, replies: [] });
+    await start(alias);
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(dialog('Conversation').querySelector('[role="alert"]')?.textContent).toContain('different conversation');
+    expect(dialog('Conversation').textContent).not.toContain(returned.text); expect(dialog('Conversation').querySelector('.composer')).toBeNull();
+  });
+});
 
 describe('isolated App feature integration', () => {
   it.each([

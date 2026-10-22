@@ -1,0 +1,16 @@
+.cast-link-lookup { padding: .5rem 0 1rem; }
+.cast-link-lookup__intro, .cast-link-lookup__status, .cast-link-lookup__error { padding-inline: .25rem; }
+.cast-link-lookup__intro h3 { margin: .5rem 0; color: var(--color-text-strong); font-size: 1rem; font-weight: 550; }
+.cast-link-lookup__intro p, .cast-link-lookup__status p, .cast-link-lookup__error p { font-size: .8rem; line-height: 1.85; overflow-wrap: anywhere; color: var(--color-text-subtle); }
+.cast-link-lookup__intro code { color: var(--color-text-strong); font-size: .75rem; }
+.cast-link-lookup__status { margin-block: .75rem; padding: .65rem .8rem; border: .0625rem solid var(--surface-4); border-radius: .6rem; background: var(--soft-accent); }
+.cast-link-lookup__status p { margin: .25rem 0; }
+.cast-link-lookup__candidate { margin-block: 1rem; overflow: hidden; border: .0625rem solid var(--surface-4); border-radius: .8rem; }
+.cast-link-lookup__candidate > a { margin: .8rem; min-height: 2.75rem; font-size: .8rem; }
+.cast-link-lookup__candidate > .cast { padding: 1rem; }
+.cast-link-lookup__loading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; color: var(--color-text-subtle); font-size: .8rem; }
+.cast-link-lookup__loading > span { display: inline-flex; align-items: center; gap: .4rem; line-height: 1.7; }
+.cast-link-lookup .button { min-height: 2.75rem; font-size: .8rem; }
+.cast-link-lookup__error p { color: var(--color-text-danger); }
+.cast-link-lookup__more, .cast-link-lookup__restart { margin-top: .75rem; }
+@media (max-width: 25rem) { .cast-link-lookup__candidate > .cast { padding: .75rem; }.cast-link-lookup__candidate > a { margin: .65rem; }.cast-link-lookup__intro p, .cast-link-lookup__status p { font-size: .75rem; } }

@@ -786,6 +786,188 @@ export async function getCast(hash: string, signal?: AbortSignal): Promise<Cast>
   return response.cast;
 }
 
+// Platform-independent candidates for a future shared Hypersnap client.
+export interface CastAliasContinuation {
+  readonly authorIdentifier: string;
+  readonly hashPrefix: string;
+  readonly fid: number;
+  readonly cursor: string;
+  readonly seenCursors: readonly string[];
+  readonly hashes: readonly string[];
+  readonly scanned: number;
+}
+export interface CastAliasResult {
+  author: User;
+  /** Cumulative, currently available matches, each hydrated by exact FID/hash. */
+  candidates: Cast[];
+  complete: boolean;
+  /** Cumulative history messages; native history includes removals as well. */
+  scanned: number;
+  continuation?: CastAliasContinuation;
+  limited?: boolean;
+}
+const CAST_LINK_PAGE_SIZE = 250;
+const CAST_LINK_BATCH_PAGES = 4;
+const CAST_LINK_MAX_MESSAGES = 100_000;
+const CAST_LINK_MAX_MATCHES = 25;
+
+/** Native v1 history uses the legacy User/CastMessage primary key. Hyper's
+ * shadow User prefix (0x1e) is used by v2 feeds, not this v1 store. The fixed
+ * key is [0x03][FID:u32 BE][0x01][timestamp:u32 BE][message hash:20].
+ */
+function castHistoryCursorKey(value: unknown, fid: number): string | undefined {
+  if (typeof value !== 'string' || !value || value.length > 2048 || !BASE64_TOKEN.test(value)) return;
+  try {
+    const bytes = atob(value);
+    if (bytes.length !== 30 || btoa(bytes) !== value || bytes.charCodeAt(0) !== 0x03 || bytes.charCodeAt(5) !== 0x01) return;
+    const cursorFid = bytes.charCodeAt(1) * 0x1000000 + bytes.charCodeAt(2) * 0x10000 + bytes.charCodeAt(3) * 0x100 + bytes.charCodeAt(4);
+    if (cursorFid !== fid) return;
+    return Array.from(bytes, byte => byte.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+  } catch { return; }
+}
+function castLinkCursor(value: unknown, fid: number): value is string {
+  return castHistoryCursorKey(value, fid) !== undefined;
+}
+function castHistoryMessageKey(fid: number, timestamp: number, hash: string): string {
+  return `03${fid.toString(16).padStart(8, '0')}01${timestamp.toString(16).padStart(8, '0')}${hashValue(hash)}`;
+}
+function descendingCastHistoryCursors(seen: readonly string[], cursor: string, fid: number): boolean {
+  let previous: string | undefined;
+  for (const token of [...seen, cursor]) {
+    const key = castHistoryCursorKey(token, fid);
+    if (!key || (previous !== undefined && key >= previous)) return false;
+    previous = key;
+  }
+  return true;
+}
+function castLinkFid(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) > 0 && Number(value) <= 0xffffffff;
+}
+async function getAuthorCast(fid: number, hash: string, signal: AbortSignal): Promise<Cast> {
+  signal.throwIfAborted();
+  const fullHash = hashValue(hash);
+  const response = await requestJson<{ cast?: unknown }>('/v2/farcaster/cast', new URLSearchParams({ identifier: fullHash, type: 'hash', fid: String(fid) }), signal);
+  signal.throwIfAborted();
+  const cast = response.cast;
+  if (!isObject(cast) || typeof cast.hash !== 'string' || !HASH.test(cast.hash) || hashValue(cast.hash) !== fullHash
+    || !isObject(cast.author) || cast.author.fid !== fid || typeof cast.text !== 'string'
+    || typeof cast.timestamp !== 'string' || !Number.isFinite(Date.parse(cast.timestamp)) || !Array.isArray(cast.embeds)) {
+    throw new ApiError('The node returned a different or invalid cast for this author.', 502, 'invalid_response');
+  }
+  return { ...cast, hash: `0x${fullHash}` } as unknown as Cast;
+}
+
+/** Native Hypersnap has no short-hash index. Search a bounded author history
+ * batch and disclose whether it was exhausted; never infer uniqueness from a
+ * first match. Continuing is explicit, and all history state stays in memory.
+ */
+export async function resolveCastAlias(options: { authorIdentifier: string; hashPrefix: string; continuation?: CastAliasContinuation; signal?: AbortSignal }): Promise<CastAliasResult> {
+  const authorIdentifier = options.authorIdentifier.toLowerCase();
+  if (!/^[a-z0-9_.-]{1,128}$/.test(authorIdentifier) || authorIdentifier === '.' || authorIdentifier === '..') throw new Error('Invalid cast author.');
+  const numericAuthor = /^\d+$/.test(authorIdentifier);
+  if (numericAuthor && !castLinkFid(Number(authorIdentifier))) throw new Error('Invalid cast author FID.');
+  if (!/^0x(?:[a-f0-9]{2}){4,20}$/i.test(options.hashPrefix)) throw new Error('Use a cast hash with 8–40 hexadecimal characters after 0x.');
+  const hashPrefix = options.hashPrefix.toLowerCase();
+  const state = options.continuation;
+  if (state && (hashPrefix.length === 42 || state.authorIdentifier !== authorIdentifier || state.hashPrefix !== hashPrefix
+    || !castLinkFid(state.fid) || !castLinkCursor(state.cursor, state.fid) || !Number.isSafeInteger(state.scanned) || state.scanned < 0 || state.scanned >= CAST_LINK_MAX_MESSAGES
+    || !Array.isArray(state.seenCursors) || state.seenCursors.length > CAST_LINK_MAX_MESSAGES / CAST_LINK_PAGE_SIZE
+    || !descendingCastHistoryCursors(state.seenCursors, state.cursor, state.fid)
+    || !Array.isArray(state.hashes) || state.hashes.length > CAST_LINK_MAX_MATCHES || new Set(state.hashes).size !== state.hashes.length
+    || state.hashes.some(hash => typeof hash !== 'string' || !/^0x[a-f0-9]{40}$/.test(hash) || !hash.startsWith(hashPrefix)))) {
+    throw new Error('This cast lookup continuation is invalid. Start the lookup again.');
+  }
+  options.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(new DOMException('Cast link lookup timed out.', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+  try {
+    const author = await getUser(numericAuthor ? { fid: Number(authorIdentifier) } : { username: authorIdentifier }, controller.signal);
+    controller.signal.throwIfAborted();
+    if (!castLinkFid(author.fid) || (numericAuthor && author.fid !== Number(authorIdentifier))) throw new ApiError('The node returned a different or invalid author.', 502, 'invalid_response');
+    if (state && state.fid !== author.fid) throw new ApiError('This username now belongs to a different account. Start the lookup again.', 409, 'account_changed');
+    if (hashPrefix.length === 42) {
+      try { return { author, candidates: [await getAuthorCast(author.fid, hashPrefix, controller.signal)], complete: true, scanned: 0 }; }
+      catch (error) {
+        controller.signal.throwIfAborted();
+        if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found') return { author, candidates: [], complete: true, scanned: 0 };
+        throw error;
+      }
+    }
+    let cursor: string | undefined = state?.cursor;
+    let scanned = state?.scanned ?? 0;
+    let complete = false;
+    let limited = false;
+    const seenCursors = new Set(state?.seenCursors ?? []);
+    const hashes = new Set(state?.hashes ?? []);
+    for (let page = 0; page < CAST_LINK_BATCH_PAGES; page++) {
+      controller.signal.throwIfAborted();
+      if (scanned >= CAST_LINK_MAX_MESSAGES || seenCursors.size >= CAST_LINK_MAX_MESSAGES / CAST_LINK_PAGE_SIZE) { limited = true; break; }
+      if (cursor) {
+        if (seenCursors.has(cursor)) throw new ApiError('The node repeated a cast-history cursor.', 502, 'invalid_pagination');
+        seenCursors.add(cursor);
+      }
+      const params = new URLSearchParams({ fid: String(author.fid), pageSize: String(CAST_LINK_PAGE_SIZE), reverse: 'true' });
+      if (cursor) params.set('pageToken', cursor);
+      const history = await requestJson<{ messages?: unknown; nextPageToken?: unknown }>('/v1/castsByFid', params, controller.signal);
+      controller.signal.throwIfAborted();
+      if (!Array.isArray(history.messages) || history.messages.length > CAST_LINK_PAGE_SIZE) throw new ApiError('The node returned invalid author history.', 502, 'invalid_response');
+      const remaining = CAST_LINK_MAX_MESSAGES - scanned;
+      const checkedMessages = history.messages.slice(0, remaining);
+      if (history.messages.length > remaining) limited = true;
+      scanned += checkedMessages.length;
+      let previousHistoryKey = cursor ? castHistoryCursorKey(cursor, author.fid) : undefined;
+      for (const [messageIndex, message] of history.messages.entries()) {
+        if (!isObject(message) || typeof message.hash !== 'string' || !HASH.test(message.hash) || !isObject(message.data)
+          || message.data.fid !== author.fid || !Number.isSafeInteger(message.data.timestamp) || Number(message.data.timestamp) < 0 || Number(message.data.timestamp) > 0xffffffff
+          || message.data.network !== 'FARCASTER_NETWORK_MAINNET'
+          || !['MESSAGE_TYPE_CAST_ADD', 'MESSAGE_TYPE_CAST_REMOVE'].includes(String(message.data.type))
+          || (message.data.type === 'MESSAGE_TYPE_CAST_ADD' && !isObject(message.data.castAddBody))
+          || (message.data.type === 'MESSAGE_TYPE_CAST_REMOVE' && !isObject(message.data.castRemoveBody))) {
+          throw new ApiError('The node returned invalid or unrelated cast history.', 502, 'invalid_response');
+        }
+        const fullHash = `0x${hashValue(message.hash)}`;
+        const key = castHistoryMessageKey(author.fid, Number(message.data.timestamp), fullHash);
+        if (previousHistoryKey !== undefined && key >= previousHistoryKey) throw new ApiError('The node returned out-of-order cast history.', 502, 'invalid_pagination');
+        previousHistoryKey = key;
+        if (messageIndex < checkedMessages.length && message.data.type === 'MESSAGE_TYPE_CAST_ADD' && fullHash.startsWith(hashPrefix) && !hashes.has(fullHash)) {
+          if (hashes.size >= CAST_LINK_MAX_MATCHES) limited = true;
+          else hashes.add(fullHash);
+        }
+      }
+      const next = history.nextPageToken;
+      if (next === undefined || next === '') { complete = !limited; cursor = undefined; break; }
+      if (!castLinkCursor(next, author.fid) || seenCursors.has(next) || !history.messages.length
+        || castHistoryCursorKey(next, author.fid) !== previousHistoryKey) throw new ApiError('The node returned invalid, unrelated or repeated cast-history pagination.', 502, 'invalid_pagination');
+      cursor = next;
+      if (limited || scanned >= CAST_LINK_MAX_MESSAGES) { limited = true; break; }
+    }
+    const matches = await mapPublicReads([...hashes], async (hash, signal) => {
+      try { return await getAuthorCast(author.fid, hash, signal); }
+      catch (error) {
+        signal.throwIfAborted();
+        if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found') return null;
+        throw error;
+      }
+    }, controller.signal);
+    controller.signal.throwIfAborted();
+    const candidates = matches.filter((cast): cast is Cast => cast !== null);
+    return { author, candidates, complete, scanned, ...(limited ? { limited: true } : {}),
+      ...(!complete && !limited && cursor ? { continuation: { authorIdentifier, hashPrefix, fid: author.fid, cursor, seenCursors: [...seenCursors], hashes: candidates.map(cast => cast.hash), scanned } } : {}) };
+  } catch (error) {
+    if (controller.signal.aborted && !options.signal?.aborted && controller.signal.reason instanceof DOMException && controller.signal.reason.name === 'TimeoutError') {
+      throw new ApiError('Cast link lookup took too long. Try again.', 504, 'timeout');
+    }
+    options.signal?.throwIfAborted();
+    controller.signal.throwIfAborted();
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
 export async function getConversation(hash: string, signal?: AbortSignal): Promise<ConversationNode> {
   type NestedCast = Cast & { direct_replies?: NestedCast[] };
   const response = await requestJson<{ conversation?: { cast?: NestedCast }; cast?: Cast; replies?: ConversationNode[] }>(
@@ -797,6 +979,8 @@ export async function getConversation(hash: string, signal?: AbortSignal): Promi
     const { direct_replies, ...plainCast } = cast;
     return { cast: plainCast, replies: depth < 5 && Array.isArray(direct_replies) ? direct_replies.map(reply => normalize(reply, depth + 1)) : [] };
   };
+  const root = response.conversation?.cast ?? response.cast;
+  if (root && (typeof root.hash !== 'string' || !HASH.test(root.hash) || hashValue(root.hash) !== hashValue(hash))) throw new ApiError('The node returned a different conversation.', 502, 'invalid_response');
   if (response.conversation?.cast) return normalize(response.conversation.cast);
   if (response.cast) return { cast: response.cast, replies: response.replies ?? [] };
   throw new ApiError('The node returned an invalid conversation.', 502, 'invalid_response');

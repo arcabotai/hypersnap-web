@@ -15,6 +15,7 @@ export type AppRoute =
   | { kind: 'channel'; channel: string }
   | { kind: 'profile'; identifier?: string; tab?: ProfileTab }
   | { kind: 'cast'; hash: string }
+  | { kind: 'cast-alias'; authorIdentifier: string; hashPrefix: string }
   | { kind: 'not-found' };
 
 const PUBLIC_ORIGIN = 'https://quorum.arca.computer';
@@ -23,6 +24,13 @@ const MAX_SEARCH_LENGTH = 2048;
 const USERNAME = /^[a-zA-Z0-9_.-]{1,128}$/;
 const CHANNEL = /^[a-zA-Z0-9_-]{1,64}$/;
 const HASH = /^(?:0x)?([a-fA-F0-9]{40})$/;
+const ALIAS_HASH = /^0x([a-f0-9]{8,40})$/i;
+const RESERVED_NAMES = new Set([
+  'following', 'bookmarks', 'notifications', 'channels', 'devlog', 'settings', 'connect', 'search', 'profile', 'channel', 'cast',
+  'api', 'assets', 'media', 'licenses', '.well-known',
+  'index.html', 'favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json', 'manifest.webmanifest', 'sw.js', 'service-worker.js',
+  'unknown-dark.png', 'unknown-light.png', 'intervariable.ttf', 'sen-variablefont_wght.ttf', 'quorum-symbol.svg', 'third_party_dependency_licenses.txt',
+]);
 
 function normalizedHash(hash: string): string | undefined {
   const match = HASH.exec(hash);
@@ -34,6 +42,15 @@ function validIdentifier(identifier: string): boolean {
   if (!/^\d+$/.test(identifier)) return true;
   const fid = Number(identifier);
   return Number.isSafeInteger(fid) && fid > 0;
+}
+
+function validAliasIdentifier(identifier: string): boolean {
+  return validIdentifier(identifier) && !RESERVED_NAMES.has(identifier.toLowerCase());
+}
+
+function normalizedAliasHash(hashPrefix: string): string | undefined {
+  const match = ALIAS_HASH.exec(hashPrefix);
+  return match && match[1].length % 2 === 0 ? `0x${match[1].toLowerCase()}` : undefined;
 }
 
 /** Parse only the public client routes; malformed identifiers never reach an API. */
@@ -75,6 +92,9 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   if (pathname === '/profile') return validTab ? { kind: 'profile', ...(tab && tab !== 'casts' ? { tab: tab as ProfileTab } : {}) } : { kind: 'not-found' };
 
   const segments = pathname.split('/');
+  if (segments.length === 2 && validAliasIdentifier(segments[1]) && validTab) {
+    return { kind: 'profile', identifier: segments[1].toLowerCase(), ...(tab && tab !== 'casts' ? { tab: tab as ProfileTab } : {}) };
+  }
   if (segments.length !== 3) return { kind: 'not-found' };
   const [, kind, identifier] = segments;
   if (kind === 'profile' && validIdentifier(identifier) && validTab) return { kind: 'profile', identifier, ...(tab && tab !== 'casts' ? { tab: tab as ProfileTab } : {}) };
@@ -82,6 +102,10 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   if (kind === 'cast') {
     const hash = normalizedHash(identifier);
     if (hash) return { kind: 'cast', hash };
+  }
+  if (validAliasIdentifier(kind)) {
+    const hashPrefix = normalizedAliasHash(identifier);
+    if (hashPrefix) return { kind: 'cast-alias', authorIdentifier: kind.toLowerCase(), hashPrefix };
   }
   return { kind: 'not-found' };
 }
@@ -117,6 +141,7 @@ export function connectReturnPath(value: unknown): string {
 
 export function routePath(route: AppRoute): string {
   if (route.kind === 'cast') return castPath(route.hash);
+  if (route.kind === 'cast-alias') return castAliasPath(route.authorIdentifier, route.hashPrefix);
   if (route.kind === 'channel') return `/channel/${route.channel}`;
   if (route.kind === 'search') return searchPath(route.query, route.searchKind);
   if (route.kind === 'profile') return `${route.identifier ? `/profile/${route.identifier}` : '/profile'}${route.tab && route.tab !== 'casts' ? `?tab=${route.tab}` : ''}`;
@@ -127,6 +152,13 @@ export function castPath(hash: string): string {
   const normalized = normalizedHash(hash);
   if (!normalized) throw new Error('Invalid cast hash.');
   return `/cast/${normalized}`;
+}
+
+/** An unresolved author-scoped alias is never a canonical cast share link. */
+export function castAliasPath(authorIdentifier: string, hashPrefix: string): string {
+  const normalized = normalizedAliasHash(hashPrefix);
+  if (!validAliasIdentifier(authorIdentifier) || !normalized) throw new Error('Invalid author-scoped cast path.');
+  return `/${authorIdentifier.toLowerCase()}/${normalized}`;
 }
 
 /** Public share links always use our canonical origin, including on previews. */
