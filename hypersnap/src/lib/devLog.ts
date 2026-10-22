@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'zero-warning-source-checks',
+    date: '2026-10-22',
+    title: 'Cleaner checks and steadier account sessions',
+    summary: 'All 262 source lint warnings are resolved across Opencaster and the retained Quorum client, with new regression tests for account changes, cancellation and one-time initialization.',
+    changes: [
+      'Make new lint warnings fail verification, without lowering lint rules or excluding application source.',
+      'Keep profile metadata refreshes from resetting feeds, pending profile lists or uncertain reaction status. Pagination and conversation reads retain cancellation and stale-response checks.',
+      'Keep wallet approval and key export tied to explicit actions and existing initialization steps. Added isolated tests check that rerenders do not repeat those operations.',
+      'Separate React component refresh boundaries from shared context state, remove unused code and obsolete suppression comments, and cancel obsolete retained-messenger startup timers when an identity changes.',
+      'Preserve message-only error boundaries around key backup and files. Keep the same Hypersnap protocol, endpoints, wallet permissions, dependencies and infrastructure; all write tests use isolated fixtures.',
+      'Pass 1,915 messenger tests, four offline harness tests and 892 Hypersnap tests locally, plus typechecks and builds. Permanent-account production checks and unavailable mobile checks remain visibly skipped.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/eaebd8c3cabdbbba458f91bdd79d0464c1b5600f',
+    tag: 'Reliability',
+  },
+  {
     id: 'repeatable-verification-for-both-clients',
     date: '2026-10-22',
     title: 'Stronger checks before updates ship',
