@@ -230,16 +230,17 @@ export default function App() {
   currentRoute.current = route;
   currentBase.current = base;
   const notify = useCallback((text: string) => setToast(text), []);
-  const navigate = useCallback((path: string, replace = false) => {
+  const navigate = useCallback((path: string, replace = false, options?: { pushThread?: boolean }) => {
     const next = parseLocalPath(path);
     const previous = currentRoute.current;
     if (previous.kind === 'connect' && next.kind !== 'connect') { connectGeneration.current += 1; connectFlow.current = null; afterSocialConnect.current = null; }
     const isThread = isConversationRoute(next);
     const wasThread = isConversationRoute(previous);
+    const pushThread = isThread && options?.pushThread === true;
     const threadBackground: FeedRoute = currentBase.current.kind === 'connect' ? { kind: 'discover' } : currentBase.current;
-    const state = isThread ? { quorumThread: !wasThread || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
+    const state = isThread ? { quorumThread: pushThread || !wasThread || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
     if (path !== location.pathname + location.search) {
-      if (replace || (isThread && wasThread)) history.replaceState(state, '', path);
+      if (replace || (isThread && wasThread && !pushThread)) history.replaceState(state, '', path);
       else history.pushState(state, '', path);
     }
     currentRoute.current = next;
@@ -247,6 +248,9 @@ export default function App() {
     if (isConversationRoute(next)) setBackground(threadBackground);
     else if (next.kind !== 'connect') { setBackground(next); setThread(null); }
   }, []);
+  // A link to a separate cast is a new destination, so Back/Close must return
+  // to the source conversation rather than replace it as reply navigation does.
+  const navigateSocialLink = useCallback((path: string) => navigate(path, false, { pushThread: true }), [navigate]);
   const openProfile = useCallback((user: User) => {
     profileCache.current.set(String(user.fid), user);
     if (user.username) profileCache.current.set(user.username, user);
@@ -489,7 +493,7 @@ export default function App() {
   const card = (cast: Cast) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
-    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigate} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
+    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigateSocialLink} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
   };
   const feedCandidates = view === 'bookmarks' ? filterBookmarks(bookmarks, bookmarkQuery, bookmarkSort) : casts;
   const visibleCasts = feedCandidates.filter(cast => revealed.has(bookmarkHash(cast.hash)!) || !getContentFilterReason(cast, preferences));
@@ -526,7 +530,7 @@ export default function App() {
         <Avatar user={profile} large /><h2>{profile.display_name || profile.username}</h2><p className="muted">@{profile.username} <span>· FID {profile.fid}</span></p>
         <ProfileDetails user={profile} />
         <Button variant="secondary" onClick={() => setSharedProfile(profile)}><IconShare size={16} />Share profile</Button>
-        <p className="profile__bio"><LinkedText text={profile.profile?.bio?.text || 'A voice on the open social web.'} onNavigate={navigate} /></p>
+        <p className="profile__bio"><LinkedText text={profile.profile?.bio?.text || 'A voice on the open social web.'} onNavigate={navigateSocialLink} /></p>
         <a className="profile-public-link" href={profilePath(profile.fid)} onClick={event => localClick(event, () => navigate(profilePath(profile.fid)))}>{publicUrl(profilePath(profile.fid))}</a>
         <div className="profile__counts"><Button variant="ghost" onClick={() => setFollowList('following')}><strong>{short(profile.following_count)}</strong> following</Button><Button variant="ghost" onClick={() => setFollowList('followers')}><strong>{short(profile.follower_count)}</strong> followers</Button></div>
         {session?.fid !== profile.fid && <div className="profile-follow"><FollowButton following={session ? followingProfile : false} pending={followBusy} onClick={() => void followProfile()} />{followError && <div><p className="error" role="alert">{followError}</p><Button variant="secondary" onClick={() => setFollowRefresh(value => value + 1)}>Check follow status</Button></div>}</div>}

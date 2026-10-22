@@ -65,6 +65,35 @@ async function traverse(direction: 'back' | 'forward') {
 }
 
 describe('Quorum destinations for supported social links', () => {
+  it.each(['short cast-text link', 'full-hash URL embed'] as const)('pushes a %s from a direct conversation so Back and Close return to its source cast', async kind => {
+    const target: Cast = { ...otherCast, hash: `0xcbbe7828${'b'.repeat(32)}`, author: { ...otherCast.author, username: 'gandhionchain' }, text: 'The separate linked conversation' };
+    const short = kind === 'short cast-text link';
+    const source: Cast = { ...ownCast, hash: '0xffe80d84ab6bc9203c084001647e9520e21ac646', text: short ? 'Source with https://farcaster.xyz/gandhionchain/0xcbbe7828' : 'Source with a separate cast embed', embeds: short ? [] : [{ url: `https://farcaster.xyz/~/conversations/${target.hash}` }] };
+    vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === source.hash ? source : target, replies: [] }));
+    vi.mocked(resolveCastAlias).mockResolvedValue({ author: target.author, candidates: [target], complete: false, scanned: 1000, continuation: { authorIdentifier: 'gandhionchain', hashPrefix: '0xcbbe7828', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [target.hash], scanned: 1000 } });
+    await start(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(dialog('Conversation').textContent).toContain(source.text);
+    await click(dialog('Conversation').querySelector(short ? '.cast__text a' : '.link-embed')!);
+    expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
+    if (short) {
+      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(dialog('Conversation').textContent).toContain('not yet known to be unique');
+      await click(dialog('Conversation').querySelector('.cast-link-lookup__candidate > a')!);
+    } else expect(resolveCastAlias).not.toHaveBeenCalled();
+    expect(location.pathname).toBe(`/cast/${target.hash}`); expect(dialog('Conversation').textContent).toContain(target.text);
+    expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
+    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(dialog('Conversation').textContent).toContain(source.text);
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${target.hash}`); expect(dialog('Conversation').textContent).toContain(target.text);
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation();
+    expect(location.pathname).toBe(`/cast/${source.hash}`); expect(dialog('Conversation').textContent).toContain(source.text);
+  });
+
+  it('returns from a social profile link to the direct source conversation on Back', async () => {
+    const source: Cast = { ...ownCast, text: 'Meet https://farcaster.xyz/person30' };
+    vi.mocked(getConversation).mockResolvedValue({ cast: source, replies: [] });
+    await start(`/cast/${source.hash}`); await click(dialog('Conversation').querySelector('.cast__text a')!);
+    expect(location.pathname).toBe('/profile/person30'); expect(dialog('Conversation')).toBeUndefined();
+    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(dialog('Conversation').textContent).toContain(source.text);
+  });
+
   it('opens cast-text profiles locally and preserves the feed background through cast-link Back and Forward', async () => {
     const source = cast('d', 10, 'Profile https://www.warpcast.com/Person30/?utm_source=cast#bio and cast https://farcaster.xyz/Person20/0xbbbbbbbb?ref=cast');
     vi.mocked(getFeed).mockResolvedValue({ casts: [source], next: {} });
