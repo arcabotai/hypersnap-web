@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'feed-first-social-layout',
+    date: '2026-10-22',
+    title: 'A feed-first layout that feels familiar',
+    summary: 'Casts now appear on the first screen on desktop and phones, with one navigation column, a Cast button and a five-tab mobile bar like other social clients.',
+    changes: [
+      'Replace the duplicate icon rail with one sidebar in a familiar order, plus a Cast button that opens a new-cast window for connected accounts. Theme, Dev log and source links move to the bottom of the sidebar; the theme choice is also in Settings.',
+      'Shorten the page header, keep the Discover and Following tabs pinned while scrolling, keep the right column in view, and move the trending time window into the feed heading.',
+      'Show visitors a compact welcome and connect prompts instead of a composer they cannot use. Connected accounts keep the inline composer on larger screens.',
+      'Raise cast text to a more readable size and collapse very long casts behind Show more, expanded in place.',
+      'On phones, use five tabs (Home, Search, Channels, Notifications, Account) with the current tab highlighted, a floating compose button for connected accounts, and a one-row cast action bar. Quote remains in the cast options menu.',
+      'Layout and presentation only: the same Hypersnap reads, signed messages, wallet permissions and limits apply. Discover is still trending, not a personalized feed, and no unsupported feature is added.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/d4431de97fb53a98e97c19546a4793b88b7f995a',
+    tag: 'Social',
+  },
+  {
     id: 'zero-warning-source-checks',
     date: '2026-10-22',
     title: 'Cleaner checks and steadier account sessions',
