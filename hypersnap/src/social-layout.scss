@@ -64,6 +64,29 @@
 .landing__footer { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; font-size: .7rem; }
 .landing__footer a { color: var(--color-text-subtle); }
 
+// Profiles follow the X layout: cover, overlapping avatar with actions to the
+// right, then name, bio, details and counts.
+.profile { padding: 0 0 1.25rem; }
+.profile > :not(.profile-cover) { margin-inline: 1.75rem; }
+.profile-cover { height: 9.5rem; overflow: hidden; background: radial-gradient(ellipse at 80% 20%, rgb(var(--accent-rgb) / .22), transparent 60%), var(--surface-1); }
+.profile-cover .profile-banner { width: 100%; height: 100%; max-height: none; margin: 0; border-radius: 0; object-fit: cover; }
+.profile-top { display: flex; align-items: flex-end; justify-content: space-between; gap: .75rem; margin-top: -2.75rem; }
+.profile-top .avatar--large { width: 5.5rem; height: 5.5rem; border: .25rem solid var(--surface-00); border-radius: 1.6rem; font-size: 1.8rem; background: var(--surface-2); }
+.profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; padding-bottom: .15rem; }
+.profile-actions .button { min-height: 2.4rem; border-radius: 2rem; font-size: .75rem; }
+.profile h2 { margin: .75rem 0 .1rem; font-size: 1.4rem; }
+.profile > .profile-handle { margin-block: 0 .7rem; font-size: .78rem; }
+.profile > .profile__bio { margin-block: 0 .5rem; font-size: .9rem; line-height: 1.6; }
+.profile .profile-details { margin-block: .3rem; }
+.profile .profile__counts { gap: .5rem; margin-top: .5rem; }
+.profile .profile__counts .button { padding-inline: 0 .6rem; font-size: .78rem; }
+.profile .profile-device-actions { margin-top: .75rem; }
+.profile .profile-device-actions .profile-signout { margin: 0; }
+
+.page-header__back { min-height: 2.5rem; width: 2.5rem; margin-left: -.6rem; padding: 0; border-radius: 50%; }
+.feature-channel-header__footer { justify-content: flex-start; }
+.feature-channel-header__footer > span { margin-right: auto; }
+
 @media (min-width: 1031px) { .sidebar__bottom .sidebar-signin { display: none; } }
 @media (max-width: 700px) {
   .page-header { gap: .7rem; padding: .75rem 1rem; min-height: 0; }
@@ -84,6 +107,12 @@
   .mobile-nav .button[aria-current="page"] { color: var(--accent-300); }
   .mobile-nav .avatar { width: 1.6rem; height: 1.6rem; font-size: .5rem; }
   .conversation-page__head { padding: .6rem .75rem; }
+  .profile > :not(.profile-cover) { margin-inline: 1rem; }
+  .profile-cover { height: 7rem; }
+  .profile-top .avatar--large { width: 4.5rem; height: 4.5rem; }
+  .profile-actions .button { padding-inline: .8rem; }
+  .page-header__back { margin-left: -.3rem; }
+  .page-header__logo:has(+ .page-header__back) { display: none; }
   .landing { grid-template-columns: minmax(0, 1fr); align-content: center; padding: 1.5rem 1.25rem; gap: 1rem; }
   .landing__visual { height: 9rem; }
   .landing__visual .orbit { transform: rotate(-25deg) scale(.55); }

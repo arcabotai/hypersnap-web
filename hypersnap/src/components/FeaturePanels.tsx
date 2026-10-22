@@ -260,11 +260,11 @@ export function ChannelsView({ onChannel, savedChannels = [], onToggleSave }: { 
   </section>;
 }
 
-export function ChannelHeader({ channel, onCompose, saved = false, onToggleSave }: { channel: Channel; onCompose?(): void; saved?: boolean; onToggleSave?(channel: Channel): void }) {
+export function ChannelHeader({ channel, onCompose, saved = false, onToggleSave, onPeople }: { channel: Channel; onCompose?(): void; saved?: boolean; onToggleSave?(channel: Channel): void; onPeople?(): void }) {
   return <div className="feature-channel-header">
     <div className="feature-channel-header__identity">{safeImage(channel.image_url) ? <img src={channel.image_url} alt="" width={64} height={64} referrerPolicy="no-referrer" /> : <span className="feature-channel-mark" aria-hidden="true"><IconHash size={30} /></span>}<div><span className="feature-kicker">HYPERSNAP CHANNEL</span><h2>{channel.name || channel.id}</h2><p>/{channel.id}</p></div></div>
     {channel.description && <p className="feature-channel-header__description">{channel.description}</p>}
-    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}{onToggleSave && <Button variant="secondary" aria-pressed={saved} onClick={() => onToggleSave(channel)}><IconBookmark size={16} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />{saved ? 'Saved on this browser' : 'Save channel'}</Button>}</div>
+    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onPeople && <Button variant="secondary" onClick={onPeople}><IconUsers size={16} aria-hidden="true" />View participants</Button>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}{onToggleSave && <Button variant="secondary" aria-pressed={saved} onClick={() => onToggleSave(channel)}><IconBookmark size={16} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />{saved ? 'Saved on this browser' : 'Save channel'}</Button>}</div>
     {onToggleSave && <p className="feature-note">Saved channels are local shortcuts on this browser.</p>}
   </div>;
 }

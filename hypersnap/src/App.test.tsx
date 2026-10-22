@@ -670,3 +670,23 @@ describe('signed-out landing and cast pages', () => {
     expect(location.pathname).toBe('/'); expect(thread()).toBeUndefined(); expect(container.querySelector<HTMLElement>('.main-base')!.hidden).toBe(false);
   });
 });
+
+describe('profile and channel headers', () => {
+  it('puts profile actions beside the avatar and returns to Discover from the header arrow', async () => {
+    await start('/profile/20'); await settleNavigation();
+    const actions = container.querySelector('.profile .profile-top .profile-actions')!;
+    expect(button('Share profile', actions)).toBeTruthy(); expect(actions.querySelectorAll('button')).toHaveLength(2);
+    expect(container.querySelector('.profile-public-link')).toBeNull(); expect(container.querySelector('main .feed-heading')).toBeNull();
+    await click(container.querySelector('header button[aria-label="Back to discover"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/');
+  });
+
+  it('keeps channel participants in the channel header and goes back to the directory', async () => {
+    const channel = { id: 'isolated', name: 'Isolated channel', url: 'https://example.com/channel/alias', parent_url: 'https://example.com/real-namespace/isolated', member_count: 2 };
+    vi.mocked(getChannel).mockResolvedValue(channel);
+    await start('/channel/isolated'); await settleNavigation();
+    expect(button('View participants', container.querySelector('.feature-channel-header')!)).toBeTruthy(); expect(container.querySelector('.channel-detail-actions')).toBeNull();
+    await click(container.querySelector('header button[aria-label="Back to channels"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/channels');
+  });
+});
