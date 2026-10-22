@@ -78,6 +78,7 @@ function Signer() {
       if (result.ok) setApproved(true);
       else setError(result.error);
     } catch { setError('Approval did not finish. The phrase field has been cleared.'); }
+    // eslint-disable-next-line no-useless-assignment -- Best-effort local reference release; JavaScript strings cannot be reliably erased.
     finally { phrase = ''; clearPhrase(); if (mounted.current) setBusy(false); }
   }
 

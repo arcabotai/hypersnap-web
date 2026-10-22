@@ -17,38 +17,40 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveMobileRepo } from '../harness/mobileRepo.mjs';
 
-const norm = (p: string) => p.replace(/\\/g, '/');
-
 describe('resolveMobileRepo', () => {
+  // Use host-native absolute paths. A Windows drive path is relative on
+  // POSIX, so feeding E:/... to node:path there tests a different situation.
+  const desktop = resolve('/repo/quorum-desktop');
+  const mobile = resolve('/repo/quorum-mobile');
+  const worktree = join(desktop, '.worktrees', 'secondary');
+  const override = resolve('/elsewhere/quorum-mobile');
+  const empty = resolve('/empty');
+
   // A linked worktree's `--git-common-dir` is an ABSOLUTE path into the main
   // checkout's .git — MEASURED against this real worktree, same as
   // routing.test.ts's mainCheckoutFrom cases.
-  const worktreeGit = () => 'E:/repo/quorum-desktop/.git\n';
+  const worktreeGit = () => `${join(desktop, '.git')}\n`;
   const mainGit = () => '.git\n';
 
   it('finds mobile beside the MAIN checkout when run from a linked worktree', () => {
-    const desktop = 'E:/repo/quorum-desktop/.worktrees/secondary';
-    expect(norm(resolveMobileRepo(desktop, {}, worktreeGit))).toBe('E:/repo/quorum-mobile');
+    expect(resolveMobileRepo(worktree, {}, worktreeGit)).toBe(mobile);
   });
 
   it('does not look inside .worktrees/ — the bug this replaced', () => {
-    const desktop = 'E:/repo/quorum-desktop/.worktrees/secondary';
-    const result = norm(resolveMobileRepo(desktop, {}, worktreeGit));
+    const result = resolveMobileRepo(worktree, {}, worktreeGit);
     expect(result).not.toContain('.worktrees');
   });
 
   it('is unchanged from a normal, non-worktree clone', () => {
-    const desktop = 'E:/repo/quorum-desktop';
-    expect(norm(resolveMobileRepo(desktop, {}, mainGit))).toBe('E:/repo/quorum-mobile');
+    expect(resolveMobileRepo(desktop, {}, mainGit)).toBe(mobile);
   });
 
   it('honours HARNESS_MOBILE_REPO, the escape hatch the error messages promise', () => {
-    const desktop = 'E:/repo/quorum-desktop';
-    const env = { HARNESS_MOBILE_REPO: 'D:/elsewhere/quorum-mobile' };
-    expect(norm(resolveMobileRepo(desktop, env, mainGit))).toBe('D:/elsewhere/quorum-mobile');
+    const env = { HARNESS_MOBILE_REPO: override };
+    expect(resolveMobileRepo(desktop, env, mainGit)).toBe(override);
   });
 
   it('does not consult git at all when the override is set', () => {
@@ -57,7 +59,7 @@ describe('resolveMobileRepo', () => {
       called += 1;
       return '.git\n';
     };
-    resolveMobileRepo('E:/repo/quorum-desktop', { HARNESS_MOBILE_REPO: 'D:/elsewhere' }, counting);
+    resolveMobileRepo(desktop, { HARNESS_MOBILE_REPO: override }, counting);
     expect(called).toBe(0);
   });
 
@@ -66,10 +68,7 @@ describe('resolveMobileRepo', () => {
     // literally would resolve mobile to the process cwd — a path that exists,
     // so the failure would be a confusing wrong-repo error rather than a
     // missing-repo one.
-    const desktop = 'E:/repo/quorum-desktop';
-    expect(norm(resolveMobileRepo(desktop, { HARNESS_MOBILE_REPO: '' }, mainGit))).toBe(
-      'E:/repo/quorum-mobile'
-    );
+    expect(resolveMobileRepo(desktop, { HARNESS_MOBILE_REPO: '' }, mainGit)).toBe(mobile);
   });
 
   // `--repos-root=` is a CLI flag, so it beats an ambient variable. It exists
@@ -77,25 +76,24 @@ describe('resolveMobileRepo', () => {
   // which cannot work if a stray env var in the operator's shell wins.
   it('lets an explicit siblings root beat the environment override', () => {
     const out = resolveMobileRepo(
-      'E:/repo/quorum-desktop',
-      { HARNESS_MOBILE_REPO: 'D:/elsewhere/quorum-mobile' },
+      desktop,
+      { HARNESS_MOBILE_REPO: override },
       mainGit,
-      'E:/empty'
+      empty
     );
-    expect(norm(out)).toBe('E:/empty/quorum-mobile');
+    expect(out).toBe(join(empty, 'quorum-mobile'));
   });
 
   it('lets an explicit siblings root beat the inferred sibling', () => {
-    const out = resolveMobileRepo('E:/repo/quorum-desktop', {}, mainGit, 'E:/empty');
-    expect(norm(out)).toBe('E:/empty/quorum-mobile');
+    const out = resolveMobileRepo(desktop, {}, mainGit, empty);
+    expect(out).toBe(join(empty, 'quorum-mobile'));
   });
 
   it('falls back to the sibling guess when git fails', () => {
     // Fail-open, matching mainCheckoutFrom: with no git there is no better
     // answer available, and the old behaviour is still right for the common
     // (non-worktree) case.
-    const desktop = 'E:/repo/quorum-desktop';
-    expect(norm(resolveMobileRepo(desktop, {}, () => null))).toBe('E:/repo/quorum-mobile');
+    expect(resolveMobileRepo(desktop, {}, () => null)).toBe(mobile);
   });
 });
 

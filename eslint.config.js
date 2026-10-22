@@ -98,6 +98,15 @@ export default [
     ignores: [
       'dist',
       'node_modules/**',
+      // Pinned upstream dependency checkouts, installed by the root bootstrap.
+      // These are verified as dependencies rather than linted as local app code.
+      '.quorum-deps/**',
+      // Opencaster has a separate browser/Worker/native-signer build. Lint its
+      // tracked source below, never the generated bundles or packaged apps.
+      'hypersnap/dist/**',
+      'hypersnap/dist-signer/**',
+      'hypersnap/release/**',
+      'hypersnap/.wrangler/**',
       // Git worktrees live here by convention and are full second checkouts,
       // each with its own tsconfig.json. Without this, typescript-eslint finds
       // several candidate tsconfigRootDirs and fails to parse EVERY file:

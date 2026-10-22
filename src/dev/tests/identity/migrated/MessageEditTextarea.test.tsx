@@ -20,8 +20,8 @@
  * provider's cache before mounting the editor.
  */
 import * as React from 'react';
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { i18n } from '@lingui/core';
 import { messages } from '@/i18n/en/messages';
@@ -79,6 +79,8 @@ import { publicProfileQueryKey } from '@/hooks/business/user/useUserPublicProfil
 
 const ADDR = 'QmPeerAEgVKpYZKYuFu2J49zHXnA8vZtEqHMtpB4imzzzz';
 const SPACE_ID = 'space-1';
+const scrollIntoView = vi.fn();
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 
 // Deliberately WRONG name — see file header.
 const staleMapSenderToUser = (_addr: string) => ({
@@ -139,6 +141,19 @@ function renderEditor(
 describe('MessageEditTextarea — mention pills resolve via the identity module', () => {
   beforeEach(() => {
     getPublicProfile.mockReset();
+    scrollIntoView.mockClear();
+    // jsdom has no layout/scroll API. The real editor calls this after 50 ms,
+    // which can otherwise surface as an unhandled error under full-suite load.
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true, writable: true, value: scrollIntoView,
+    });
+  });
+
+  afterEach(() => {
+    // Unmount before restoring the API so any pending mount timer sees null refs.
+    cleanup();
+    if (originalScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
+    else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
   });
 
   it('the load-bearing case: a warm QNS profile renders <qns>.q on the rebuilt pill', async () => {
@@ -179,6 +194,9 @@ describe('MessageEditTextarea — mention pills resolve via the identity module'
     expect(container.querySelector('[data-mention-type="user"]')?.textContent).not.toContain(
       'Stale Mapper Name',
     );
+    // Exercise the delayed callback while mounted, including on a fast run.
+    // This observes the request only; jsdom cannot prove actual scroll position.
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' }));
   });
 
   it('a member WITH a per-space nickname rebuilds the pill with the nickname and no .q', async () => {

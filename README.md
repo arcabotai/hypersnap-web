@@ -133,55 +133,52 @@ localStorage.removeItem('debug_mock_conversations')
 
 ## Setup and Development
 
-### Prerequisites
+### Retained messenger setup and full verification
 
-Requires Node.js, plus two sibling repositories cloned next to this one:
+The root package verifies the retained Quorum messenger as well as running
+Opencaster’s standalone gate. Use Node 22 and Yarn Classic 1.22:
 
-```
-your-git-folder/
-├── quorum-desktop/              ← this repo
-├── quorum-shared/               ← github.com/QuilibriumNetwork/quorum-shared
-└── quilibrium-js-sdk-channels/
-```
-
-> **`@quilibrium/quorum-shared` is linked locally, not installed from a registry.**
-> `package.json` declares it as `"link:../quorum-shared"`, so `yarn install` symlinks the sibling folder directly into `node_modules`. The folder must be named exactly `quorum-shared` and sit next to `quorum-desktop`, otherwise the install fails. There is no published package to fall back on.
-
-When running locally in a browser, calls to the prod Quorum API are routed through the Vite dev server proxy (see `web/vite.config.ts` → `server.proxy`), so the browser only ever talks same-origin and no CORS workaround is needed. You do **not** need to disable browser CORS or install a CORS-unblocking extension. The proxy is dev-only; production and Electron builds call the API directly and are unaffected.
-
-### Initial Setup
-
-```bash
-# 1. SDK: build it and register a global yarn link
-cd ../quilibrium-js-sdk-channels/
-yarn build
-yarn link
-
-# 2. Shared package: install deps and build dist/
-#    dist/ is gitignored, so a fresh clone ships no build output
-cd ../quorum-shared/
-yarn install
-yarn build
-
-# 3. This repo
-cd ../quorum-desktop/
-yarn link @quilibrium/quilibrium-js-sdk-channels
-yarn install
+```sh
+# From the repository root
+yarn setup:verify
+yarn setup:verify --check
+yarn verify
 ```
 
-Note the asymmetry: the SDK uses `yarn link` (a global link registered by the SDK repo), while `quorum-shared` needs no link command at all, since the `link:../quorum-shared` entry in `package.json` makes `yarn install` create the symlink for you.
+The setup command restores the exact compatible shared-library and SDK source
+revisions listed in [`scripts/verification-dependencies.json`](scripts/verification-dependencies.json),
+installs their frozen Yarn lockfiles, builds their missing `dist/` artifacts,
+and installs the root and `hypersnap/` packages independently. The source
+checkouts live under ignored `.quorum-deps/`, with local `link:` dependencies;
+no sibling checkout or global `yarn link` is required.
 
-### Working on `quorum-shared`
+The retained messenger uses `quorum-shared` **2.1.0-45** at
+`c00c61e099fe9e682c982bc952b4e712c7a4a576` and the SDK **2.1.1** at
+`882d8e1b520fc97c73be964013b06a57ca4f4a63`, matching its recorded upstream
+verification environment. Intentional dependency updates need an explicit
+manifest pin and a clean matching checkout. Setup refuses unexpected origins,
+versions, revisions or local changes rather than resetting them. Its immutable
+local comparison ref lets verification detect later committed or uncommitted
+dependency changes.
 
-The app imports the **built** output (`dist/index.mjs`), not the TypeScript source. Editing `quorum-shared/src` has no effect on this app until you rebuild:
+`--check` validates the pinned sources, built artifacts and installed root links
+without changing files. `--deps-only` restores/builds the source dependencies
+without installing either application. Opencaster can still be installed and
+verified independently from `hypersnap/`, using its own manifest and lockfile.
 
-```bash
-cd ../quorum-shared/
-yarn build   # one-off rebuild
-yarn dev     # or watch mode: rebuilds on every save
-```
+The root gate validates the dependency setup, runs messenger typecheck, lint,
+unit tests, offline harness and build, then runs `hypersnap/yarn verify` in its
+own directory. Generated output and dependency checkouts are excluded from
+lint; application sources remain checked. The normal routing, failure handling,
+known-red ceilings and permanent-account mint guard remain active. A fresh
+checkout can correctly report **PASS (PARTIAL)** because production live arms
+would create permanent accounts or Spaces; do not bypass the guard to obtain
+a bare PASS. Optional quorum-mobile cross-client coverage still needs that
+separate repository and existing persisted test identities.
 
-Vite picks up the new `dist` on the next reload. If the app still serves stale shared code, run `yarn dev:clean` here to drop Vite's cache.
+When running the retained messenger locally, its Vite server proxies the Quorum
+API through the same origin. Opencaster uses its own fixed Hypersnap gateway.
+The two applications have separate build entries and dependency toolchains.
 
 ### Web Development
 

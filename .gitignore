@@ -75,3 +75,6 @@ src/dev/tests/harness/logs/
 
 
 
+
+# Pinned source dependencies restored by yarn setup:verify
+/.quorum-deps/

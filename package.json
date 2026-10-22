@@ -48,15 +48,16 @@
     "harness": "vitest --run --config vitest.harness.config.ts",
     "bench": "vitest --run --config vitest.perf.config.ts",
     "harness:cross": "node src/dev/tests/harness/run-cross.mjs",
-    "harness:config-cross": "node src/dev/tests/harness/run-config-cross.mjs"
+    "harness:config-cross": "node src/dev/tests/harness/run-config-cross.mjs",
+    "setup:verify": "node scripts/setup-verification.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@floating-ui/react": "^0.27.19",
     "@lingui/react": "^5.3.3",
-    "@quilibrium/quilibrium-js-sdk-channels": "^2.1.0-2",
-    "@quilibrium/quorum-shared": "link:../quorum-shared",
+    "@quilibrium/quilibrium-js-sdk-channels": "link:./.quorum-deps/quilibrium-js-sdk-channels",
+    "@quilibrium/quorum-shared": "link:./.quorum-deps/quorum-shared",
     "@tanstack/react-query": "^5.62.7",
     "@twemoji/parser": "^17.0.1",
     "base58-js": "^2.0.0",
@@ -125,7 +126,7 @@
     "ws": "^8"
   },
   "resolutions": {
-    "@quilibrium/quilibrium-js-sdk-channels": "^2.1.0-2"
+    "@quilibrium/quilibrium-js-sdk-channels": "link:./.quorum-deps/quilibrium-js-sdk-channels"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

@@ -52,6 +52,7 @@ export function stepsFor(repoName, repoPath, tier) {
   if (tier === 'fast') {
     if (repoName === 'desktop')
       return [
+        mk('dependencies', 'dependencies', ['setup:verify', '--check'], () => ''),
         mk('typecheck', 'typecheck', ['tsc', '--noEmit'], () => ''),
         mk('lint', 'lint', ['lint'], eslintDetail),
         mk('unit', 'unit', ['test:run'], vitestDetail),
@@ -74,6 +75,13 @@ export function stepsFor(repoName, repoPath, tier) {
           vitestDetail
         ),
         mk('build', 'build', ['build'], () => ''),
+        // The deployed Opencaster client keeps its own locked toolchain and
+        // gate. Its tests, browser/Worker typecheck and offline signer build
+        // must also pass; the retained messenger's suites load none of them.
+        {
+          ...mk('hypersnap', 'hypersnap', ['verify'], vitestDetail),
+          cwd: at('hypersnap'),
+        },
       ];
     if (repoName === 'shared')
       return [

@@ -175,6 +175,7 @@ function nextCursor(value: unknown, previous?: string | null): string | null {
 
 function searchQuery(value: string): string {
   const query = value.trim();
+  // eslint-disable-next-line no-control-regex -- Search validation intentionally rejects ASCII control characters.
   if (!query || new TextEncoder().encode(query).length > 256 || /[\u0000-\u001f\u007f]/.test(query)) throw new Error('Enter a search query of 1 to 256 bytes.');
   return query;
 }

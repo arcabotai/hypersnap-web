@@ -98,6 +98,7 @@ function safeImage(url?: string): boolean {
   try { const parsed = new URL(url); return parsed.protocol === 'https:' && !parsed.username && !parsed.password; }
   catch { return false; }
 }
+// eslint-disable-next-line no-control-regex -- Search validation intentionally rejects ASCII control characters.
 function validQuery(value: string): boolean { return Boolean(value.trim()) && new TextEncoder().encode(value.trim()).length <= 256 && !/[\u0000-\u001f\u007f]/.test(value); }
 function ProfileAvatar({ user, size = 44 }: { user: User; size?: number }) {
   return safeImage(user.pfp_url)

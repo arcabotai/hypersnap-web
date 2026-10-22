@@ -59,7 +59,9 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
   // Route identifiers have an ASCII wire format, so percent escapes are neither
   // needed nor accepted. This also rejects encoded and double-encoded slashes.
   if (pathname.length > MAX_PATH_LENGTH || search.length > MAX_SEARCH_LENGTH
+    // eslint-disable-next-line no-control-regex -- Reject raw path controls before parsing or normalization.
     || !pathname.startsWith('/') || /[%\\?#\s\u0000-\u001f\u007f]/.test(pathname)
+    // eslint-disable-next-line no-control-regex -- Reject raw query controls before parsing or normalization.
     || (search !== '' && !search.startsWith('?')) || /[\u0000-\u001f\u007f]/.test(search)) {
     return { kind: 'not-found' };
   }
@@ -84,6 +86,7 @@ export function parseRoute({ pathname, search }: { pathname: string; search: str
     const query = params.get('q')?.trim() ?? '';
     const kind = params.get('type') ?? 'casts';
     if (params.getAll('q').length > 1 || params.getAll('type').length > 1 || !['casts', 'users'].includes(kind)
+      // eslint-disable-next-line no-control-regex -- Decoded search text must also exclude ASCII control characters.
       || new TextEncoder().encode(query).length > 256 || /[\u0000-\u001f\u007f]/.test(query)) return { kind: 'not-found' };
     return { kind: 'search', query, searchKind: kind as SearchKind };
   }

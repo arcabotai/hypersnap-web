@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { resolve } from 'node:path';
 import { stepsFor } from '../../../../scripts/verify/steps.mjs';
 import {
   planFromPaths,
@@ -436,20 +437,19 @@ describe('mainCheckoutFrom', () => {
   it('resolves to the main checkout root from a linked worktree', () => {
     // A linked worktree's --git-common-dir is an ABSOLUTE path into the main
     // checkout's .git, exactly as MEASURED against this real worktree.
-    const desktop = 'E:/repo/quorum-desktop/.worktrees/secondary';
-    const execGit = () => 'E:/repo/quorum-desktop/.git\n';
-    const result = mainCheckoutFrom(desktop, execGit).replace(/\\/g, '/');
-    expect(result).toBe('E:/repo/quorum-desktop');
+    const main = resolve('/repo/quorum-desktop');
+    const desktop = resolve(main, '.worktrees/secondary');
+    const execGit = () => `${resolve(main, '.git')}\n`;
+    expect(mainCheckoutFrom(desktop, execGit)).toBe(main);
   });
 
   it('is a no-op in a normal, non-worktree clone', () => {
     // The main checkout's --git-common-dir is the RELATIVE '.git' — this is
     // what makes the override collapse back to the brief's original
     // expression in the shipped, non-worktree case.
-    const desktop = 'E:/repo/quorum-desktop';
+    const desktop = resolve('/repo/quorum-desktop');
     const execGit = () => '.git\n';
-    const result = mainCheckoutFrom(desktop, execGit).replace(/\\/g, '/');
-    expect(result).toBe('E:/repo/quorum-desktop');
+    expect(mainCheckoutFrom(desktop, execGit)).toBe(desktop);
   });
 
   it('falls back to the desktop path when git fails', () => {

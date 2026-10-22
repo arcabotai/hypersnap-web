@@ -101,6 +101,7 @@ ipcMain.handle('arca:approve', async (event, ...args): Promise<NativeResult<true
   assertSender(event);
   if (operationPending) return failure('Finish the current operation first.');
   if (args.length !== 1) return failure('Invalid approval input.');
+  // eslint-disable-next-line no-useless-assignment -- Initialize sensitive local state empty before input validation.
   let phrase = '';
   try {
     const input = validateApproveInput(args[0]);
@@ -120,6 +121,7 @@ ipcMain.handle('arca:approve', async (event, ...args): Promise<NativeResult<true
         || message === 'This recovery phrase does not match the custody address in the request. No approval was created.') return failure(message);
     return failure('Approval failed. Check your request is current and contains the expected account.');
   } finally {
+    // eslint-disable-next-line no-useless-assignment -- Best-effort local reference release; JavaScript strings cannot be reliably erased.
     phrase = '';
     args.length = 0;
   }

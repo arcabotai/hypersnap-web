@@ -100,6 +100,7 @@ export function discoverInjectedWallets(onWallets: (wallets: InjectedWallet[]) =
       const info = property(detail, 'info'); const provider = property(detail, 'provider');
       if (!object(info) || !isProvider(provider)) return;
       const uuid = property(info, 'uuid'); const name = property(info, 'name');
+      // eslint-disable-next-line no-control-regex -- Untrusted provider labels must exclude controls and bidi overrides.
       if (typeof uuid !== 'string' || !UUID.test(uuid) || typeof name !== 'string' || name.length < 1 || name.length > 80 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(name)) return;
       const rdnsValue = property(info, 'rdns');
       const rdns = typeof rdnsValue === 'string' && rdnsValue.length <= 253 && RDNS.test(rdnsValue.toLowerCase()) ? rdnsValue.toLowerCase() : undefined;

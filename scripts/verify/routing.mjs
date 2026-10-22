@@ -203,7 +203,8 @@ export function heldBackArms(plan, steps) {
  * The branch this work will be merged into, as a ref name.
  *
  * Prefers the local `refs/remotes/origin/HEAD` because it is offline and
- * instant, then falls back through the usual names. Returns `null` when none
+ * instant, then falls back through the usual remote names, the explicit
+ * dependency snapshot, and local branch names. Returns `null` when none
  * resolves, which callers must treat as "cannot tell what changed" rather than
  * "nothing changed".
  *
@@ -224,7 +225,14 @@ export function branchBaseRef(repoPath, execGit) {
   ])?.trim();
   const placeholder = symbolic === '(unknown)' || symbolic?.endsWith('/(unknown)');
   if (symbolic && !placeholder) return symbolic;
-  for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
+  for (const candidate of [
+    'origin/main', 'origin/master',
+    // A fixed local snapshot for bootstrapped dependencies, not a fabricated
+    // remote branch. Local main may move as commits are made; this ref must
+    // keep those commits visible. The dependency check validates its exact pin.
+    'refs/verify/dependency-base',
+    'main', 'master',
+  ]) {
     if (execGit(repoPath, ['rev-parse', '--verify', '--quiet', candidate])) return candidate;
   }
   return null;
@@ -357,6 +365,27 @@ export function mainCheckoutFrom(desktop, execGit) {
   const commonDir = execGit(desktop, ['rev-parse', '--git-common-dir']);
   if (!commonDir) return desktop;
   return dirname(resolve(desktop, commonDir.trim()));
+}
+
+/**
+ * Follow the shared source actually installed for desktop. The bootstrap uses
+ * a pinned checkout under .quorum-deps/, while upstream development may use a
+ * sibling or another linked worktree. Diffing a different sibling would let a
+ * shared change escape its cross-client fan-out.
+ *
+ * The caller provides the package's realpath. Accept it only when it is its
+ * own Git root: an ordinary published package inside desktop/node_modules
+ * otherwise inherits desktop's enclosing Git root and is not a source repo.
+ * An explicit --repos-root override still wins, including absence simulations.
+ */
+export function resolveSharedRepo(desktop, installedPackagePath, execGit, siblingsRoot) {
+  if (siblingsRoot) return resolve(siblingsRoot, 'quorum-shared');
+  if (installedPackagePath) {
+    const installed = resolve(installedPackagePath);
+    const gitRoot = execGit(installed, ['rev-parse', '--show-toplevel'])?.trim();
+    if (gitRoot && resolve(gitRoot) === installed) return installed;
+  }
+  return resolve(mainCheckoutFrom(desktop, execGit), '..', 'quorum-shared');
 }
 
 /**

@@ -56,6 +56,7 @@ describe('WalletConnect SDK global-cache isolation', () => {
   it('creates and removes the temporary browser shim without retaining a process global', async () => {
     Reflect.deleteProperty(globalThis, 'process');
     let result;
+    // eslint-disable-next-line no-useless-assignment -- Keep a fail-closed sentinel until the post-initialization check completes.
     let retainedProcess = true;
     try { result = await createWalletConnectClient(options()); retainedProcess = Object.hasOwn(globalThis, 'process'); }
     finally { if (originalProcess) Object.defineProperty(globalThis, 'process', originalProcess); }

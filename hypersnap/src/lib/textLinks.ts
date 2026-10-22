@@ -4,6 +4,7 @@ export type TextLinkSegment = { text: string; href?: string };
 export function textLinks(text: string): TextLinkSegment[] {
   const segments: TextLinkSegment[] = [];
   let consumed = 0;
+  // eslint-disable-next-line no-control-regex -- Control characters must terminate a rendered URL token.
   for (const match of text.matchAll(/https?:\/\/[^\s<>"'“”‘’\u0000-\u001f\u007f]+/gi)) {
     const at = match.index!;
     if (at && /[\p{L}\p{N}_]$/u.test(text.slice(0, at))) continue;

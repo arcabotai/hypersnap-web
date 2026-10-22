@@ -36,6 +36,7 @@ export function approveSignerRequest(request: unknown, phrase: string, nowMs = D
   let root: HDKey | undefined;
   let account: HDKey | undefined;
   let custody: Uint8Array | undefined;
+  // eslint-disable-next-line no-useless-assignment -- Initialize sensitive local state empty before validation.
   let normalized = '';
   try {
     const valid = validateSignerRequest(request, nowMs);
@@ -91,7 +92,9 @@ export function approveSignerRequest(request: unknown, phrase: string, nowMs = D
       requestSignature: bytesToHex(requestSignature),
     };
   } finally {
+    // eslint-disable-next-line no-useless-assignment -- Best-effort local reference release; JavaScript strings cannot be reliably erased.
     phrase = '';
+    // eslint-disable-next-line no-useless-assignment -- Best-effort local reference release; JavaScript strings cannot be reliably erased.
     normalized = '';
     custody?.fill(0);
     seed?.fill(0);

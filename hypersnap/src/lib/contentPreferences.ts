@@ -9,6 +9,7 @@ export const MUTED_WORD_CHARACTER_LIMIT = 80;
 export const MUTED_WORD_BYTE_LIMIT = 256;
 const MAX_STORED_BYTES = 256 * 1024;
 const HASH = /^(?:0x)?[a-fA-F0-9]{40}$/;
+// eslint-disable-next-line no-control-regex -- Stored content settings intentionally reject C0 and C1 control characters.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);

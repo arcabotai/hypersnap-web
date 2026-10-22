@@ -11,7 +11,7 @@
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { stepsFor } from './steps.mjs';
 import { runStep, skipped } from './runner.mjs';
 import { renderReport, verdictOf, buildReceipt, writeReceiptSafely, clearReceipt } from './report.mjs';
@@ -21,6 +21,7 @@ import {
   changedPaths,
   mainCheckoutFrom,
   resolveMobileRepo,
+  resolveSharedRepo,
   liveArmsFor,
   heldBackArms,
   needsMobile,
@@ -100,9 +101,17 @@ const SIBLINGS = reposRootArg
   ? resolve(reposRootArg.split('=')[1])
   : resolve(mainCheckoutFrom(DESKTOP, execGit), '..');
 
+const installedSharedPath = (() => {
+  try {
+    return realpathSync(resolve(DESKTOP, 'node_modules/@quilibrium/quorum-shared'));
+  } catch {
+    return null;
+  }
+})();
+
 const REPOS = {
   desktop: DESKTOP,
-  shared: resolve(SIBLINGS, 'quorum-shared'),
+  shared: resolveSharedRepo(DESKTOP, installedSharedPath, execGit, reposRootArg ? SIBLINGS : null),
   // Asked, not computed. The harness scripts this gate spawns resolve mobile
   // through this same function, which honours `HARNESS_MOBILE_REPO` — so a
   // second, independent answer here is exactly how the gate ends up diffing

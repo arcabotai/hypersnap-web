@@ -55,6 +55,7 @@ const hash: Rule = value => /^(?:0x)?[a-fA-F0-9]{40}$/.test(value);
 const username: Rule = value => /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
 const ensName: Rule = value => { try { return normalizeHypersnapEnsName(value).name === value; } catch { return false; } };
 const channel: Rule = value => /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+// eslint-disable-next-line no-control-regex -- Gateway search validation intentionally rejects ASCII control characters.
 const searchQuery: Rule = value => !!value.trim() && new TextEncoder().encode(value).length <= 256 && !/[\u0000-\u001f\u007f]/.test(value);
 const cursor: Rule = value => /^[a-zA-Z0-9_+/=:-]{1,2048}$/.test(value);
 const pagination: QueryRules = { limit: integer(100), cursor };
