@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'linked-profiles-and-casts-stay-on-quorum',
+    date: '2026-10-22',
+    title: 'Follow profile and cast links without leaving Quorum',
+    summary: 'Supported Farcaster and legacy Warpcast links in posts now open their profiles and conversations here, through Hypersnap.',
+    changes: [
+      'Open supported profile and cast links locally from cast text, URL attachments and profile bios, including replies, search results, bookmarks and profile feeds.',
+      'Recognize HTTPS farcaster.xyz and warpcast.com links, including www hosts, author/hash links and the full-hash conversation fallback.',
+      'Keep ordinary clicks inside the app with browser Back and Forward support. Modified clicks and copied link destinations also point to Quorum.',
+      'Preserve the author’s original text and protocol data. URL attachments show their Quorum destination and keep the original link available in a tooltip.',
+      'Discard tracking query and fragment data from recognized local destinations. Other sites and unsupported Farcaster pages retain their existing external behavior.',
+      'Reuse the existing Hypersnap lookup and availability limits, without adding a Farcaster-operated resolver or changing wallet permissions.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/691a926458d6e89afff84798ba74f4cce086f4b0',
+    tag: 'Social',
+  },
+  {
     id: 'compatible-author-and-cast-links',
     date: '2026-10-22',
     title: 'Familiar profile and cast links, powered by Hypersnap',
