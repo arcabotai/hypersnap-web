@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'compatible-author-and-cast-links',
+    date: '2026-10-22',
+    title: 'Familiar profile and cast links, powered by Hypersnap',
+    summary: 'Replace a Farcaster-style link’s host with quorum.arca.computer to open a public profile or find its cast in the history available on Hypersnap.',
+    changes: [
+      'Added root /username profile links and /author/0xhash cast links, including numeric FIDs and supported ENS or Base names. Existing profile and full-hash URLs keep working.',
+      'Show matching casts with full-hash links after a bounded author-history search. Search older casts checks another batch when needed.',
+      'Verify each candidate against its author FID and complete hash. A single match opens automatically only after the available history is exhausted; partial or ambiguous matches remain a choice.',
+      'Keep Back, Forward, reload and sign-in return context working, with cancellation and retry that ignore late results from a previous lookup.',
+      'Bound history reads, validate native pagination and distinguish incomplete searches, missing data and network failures. Changing a URL cannot restore deleted, pruned or unsynced casts.',
+      'Resolve links through our Hypersnap gateway without a Farcaster-operated service. New shares use stable full hashes.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/861275562ecc0de6d5da041874342f5d75ac9752',
+    tag: 'Social',
+  },
+  {
     id: 'native-ens-and-base-name-lookup',
     date: '2026-10-21',
     title: 'Find your account with an ENS or Base name',
