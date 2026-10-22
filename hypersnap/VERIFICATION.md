@@ -1,3 +1,60 @@
+# Zero-warning source checks · 2026-10-22
+
+**All 262 source lint warnings are resolved; new warnings fail verification.** Implementation `eaebd8c3cabdbbba458f91bdd79d0464c1b5600f` cleans both applications without changing ESLint rules, source exclusions or dependency versions. The full audit covered 1,087 files with **zero errors and zero warnings**; the final gate runs `eslint . --max-warnings 0`. Historical warning counts below describe their recorded runs.
+
+Unused bindings and obsolete suppression comments were removed. Component refresh boundaries now live separately from their single shared context objects, with compatibility exports preserving existing import paths. Hook dependencies follow primitive identities and stable callbacks. Initialization snapshots preserve existing one-time exports and editor drafts; retained-messenger startup timers and queued callbacks are deactivated when their identity scope ends. Already-dispatched service work retains its existing cancellation limits. Sensitive export/file errors keep their prior message-only surface rather than adding transport or SDK objects as causes. Large formatting-only changes were trimmed from three message/channel files before committing.
+
+**24 new isolated regression cases** cover these changes: 19 retained-messenger cases and five Hypersnap cases. They exercise same-identity metadata refreshes, editor hydration, registration/export denial and explicit reauthorization, startup/reconnect timer ownership, stale queued/in-flight reads, invitation errors, reaction quarantine and paginated profile requests. Export fixtures never resolve to real key material; service, wallet and write paths use local mocks/synthetic identities. No production write test or permanent-account minting was performed.
+
+The final complete routed gate, `yarn verify --base=b7e4bda020831496dee403111665a6462816aa3a`, passes **1,915 messenger tests**, **four offline harness tests**, **892 Hypersnap tests**, dependency checks, typechecks, zero-warning lint, both browser builds and the offline signer build. It ran against `bca45a9db7cf0ef46ddcb5572e4c2d84815cd8ba` in **130.81 seconds**, with no failed or retry-only step. Its only dirty files were concurrent root `AGENTS.md`/`CLAUDE.md` edits, preserved separately and excluded from these commits.
+
+An intermediate run on `ac10c34d3bfdde39ec787957cdfe632b7cfc0490` exceeded the default five-second limit in the real-ESLint source-scope test: **6,504 ms**, with no assertion mismatch. The gate's existing retry passed and correctly reported **FLAKY**. Follow-up `bca45a9db7cf0ef46ddcb5572e4c2d84815cd8ba` gives **only that integration case** a documented 15-second budget for real configuration/plugin loading; all ten source/ignore assertions remain unchanged. The 14-case focused tooling suite and subsequent complete gate pass on their first attempts. No global timeout, new retry, rule suppression or baseline exemption was added.
+
+The honest full root verdict remains **PASS (PARTIAL)**. Three retained-messenger production arms lack persisted bot identities and would create permanent state; two cross-client arms need the unavailable optional mobile checkout. The mint guard stayed enabled. These gaps limit live messenger/cross-client claims; they do not represent new Hypersnap protocol coverage. Hypersnap's protocol, API/session implementation, fixed endpoint, wallet scopes, dependencies, gateway and storage configuration are unchanged by this release. Its own auth/protocol, UI and Worker suites run through the standalone child gate. The retained-harness `NOT COVERED` statement in the receipt is scoped to that messenger harness.
+
+[Main CI 39759364530](https://github.com/arcacomputer/opencaster/actions/runs/39759364530) and [feature CI 39759361171](https://github.com/arcacomputer/opencaster/actions/runs/39759361171) both passed on **attempt 1**. Downloaded receipts confirm the complete 1,915/4/892 totals and no failed or retry-only steps. Main compared the complete release with the previous `b7e4bda` source, routed to fast + live and reports **PASS (PARTIAL)** with all five skips visible. The incremental feature push contained only the scoped tooling-test follow-up, so its correct fast-only route reports **PASS**; it is not presented as live coverage. Both workflows also passed the standalone gate and signer payload reproducibility check.
+
+Dev-log note `ac10c34d3bfdde39ec787957cdfe632b7cfc0490` links the actual implementation commit and recorded author date, retaining all earlier milestones. The release guard passed against the actual pre-release deployed source `899af864af8d8f68d0a5b0fcbbc69c347ba64e6e`, Worker `8cc1e700-48ec-4029-b643-1523555acb82`. Production assets were freshly built from `bca45a9db7cf0ef46ddcb5572e4c2d84815cd8ba` into `/tmp/opencaster-lint-production-20261022-bca45a9` and deployed as Worker **`534f865e-09db-40f3-a22c-cddf725c0576`**. All **23** files were inspected for fixture markers, source maps, duplicate names and symlinks; public WalletConnect configuration and the new source link were confirmed. Dry run passed with the existing R2/Durable Object bindings, and every inspected file hash remained unchanged after deployment. The signer renderer export cleanup produces the same production IIFE; no signed companion asset was replaced.
+
+Live browser checks confirmed **24 dev-log milestones**, the new implementation link, 25 discovery casts, hydrated public profile `/profile/912253` and conversation `0xeb7ff856fab32bcde047cf56c8661448bc6700af` with replies. Before/after public `/api/v1/info` reads returned the same peer and version **0.13.5**. Legacy-domain HEAD checks returned **308**, preserving profile path and query. These checks used public reads/navigation only: no wallet connection, signature, passkey/vault action, upload, cast, follow or profile write. The temporary QA tab was closed. Screenshot: `/tmp/opencaster-lint-live-20261022.png`.
+
+Complete final local receipt (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   bca45a9  ⚠ working tree dirty (2 files)
+    shared    LINKED → 2.1.0-45 (c00c61e, clean)
+    sdk       LINKED → 2.1.1 (882d8e1, clean)
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/signer/renderer.tsx, desktop/hypersnap/src/App.test.tsx, desktop/hypersnap/src/App.tsx)
+            (… and 149 more)
+            (--base: desktop compared with b7e4bda020831496dee403111665a6462816aa3a)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  dependencies   PASS       1s
+  desktop  typecheck      PASS       9s
+  desktop  lint           PASS       25s
+  desktop  unit           PASS       56s    1915 passed (1915)
+  desktop  harness-offline PASS       7s     4 passed (4)
+  desktop  build          PASS       9s
+  desktop  hypersnap      PASS       23s    892 passed (892)
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  PASS (PARTIAL) — reduced scope, see the warnings below
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Repeatable full verification · 2026-10-22
 
 **The missing dependency failures are resolved.** `yarn setup:verify` restores the retained messenger's exact upstream verification sources: shared `2.1.0-45` at `c00c61e099fe9e682c982bc952b4e712c7a4a576` and SDK `2.1.1` at `882d8e1b520fc97c73be964013b06a57ca4f4a63`. Their clean, pinned checkouts live under ignored `.quorum-deps/`; frozen installs and source builds precede the two application installs. Setup refuses unexpected origins, revisions or local changes and records a create-only comparison ref. There are no global links, source resets or new baseline exemptions. Root lock changes contain the two local links and equivalent Yarn alias grouping; Hypersnap's dependency manifest and lockfile are unchanged. Earlier records below describe their historical missing-dependency state.
