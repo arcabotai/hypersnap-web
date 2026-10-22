@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'opencaster-name-and-domain',
+    date: '2026-10-22',
+    title: 'Welcome to Opencaster',
+    summary: 'An open source client for everyone, now at opencaster.org. Powered by Arca Computer and running on Hypersnap.',
+    changes: [
+      'Give the website its new name and mark, and move the public source repository to arcabotai/opencaster while preserving its history, AGPL license and Quorum attribution.',
+      'Redirect old quorum.arca.computer page and media links to the same path and query on opencaster.org. New cast shares and image uploads use the new domain; existing images stay in the same storage.',
+      'Reconnect your existing custody wallet on the new domain. Saved posting keys, passkeys, drafts and preferences remain with their original browser origin; recovery phrases stay inside your wallet.',
+      'Reject old-domain submissions with clear reconnect guidance, without forwarding signed requests across domains or widening origin checks.',
+      'Update the optional Arca Signer beta to v0.2.1 for the new website. The Apple Silicon download is Developer ID signed; Apple notarization remains pending and its original permission limits remain unchanged.',
+      'Keep the same Hypersnap node and protocol, wallet permissions and storage infrastructure. No Farcaster-operated authentication or API service was added.',
+    ],
+    commit: 'https://github.com/arcabotai/opencaster/commit/2ca6b5673869c7caab4a25c586a24edc8cdfb2be',
+    tag: 'Launch',
+  },
+  {
     id: 'social-links-preserve-source-conversation',
     date: '2026-10-22',
     title: 'Back takes you to the cast you came from',
