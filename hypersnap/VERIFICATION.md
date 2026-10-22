@@ -1,3 +1,51 @@
+# Arca Computer organization transfer · 2026-10-22
+
+**Live source: https://github.com/arcacomputer/opencaster.** The user authorized transferring the public repository from `arcabotai` to the `arcacomputer` organization and updating website/documentation source links. Organization membership and administrator access were verified before transfer. The repository retained ID `1425238416`, public visibility, default branch `main`, upstream fork relationship, history and admin access. Local `origin` now points to the organization; `upstream` remains the original Quorum repository. All three prior paths (`arcabotai/opencaster`, `arcabotai/hypersnap-web`, `arcabotai/opencast`) resolve to that same repository. Actions remain enabled and the existing WalletConnect project variable survived.
+
+Implementation `54b2f9fba115ca49fe1c06bbaa97b1c57c5415d4` and release-note source `c78fc2d898e9972c75fd22af42851d846316fd0f` were published to the organization. The pre-release deployment was source `dad011c4668459935d2dc38bf08e563bc388fe76`, Worker version `3e197425-aa59-4a1e-aea5-71d8a4820ce4`. The updated client was deployed as Worker **`1782c85d-fe54-41a3-9314-e6eefeca5cfa`** from `/tmp/opencaster-org-production-20261022`. Its 23 production files were inspected for fixture markers, duplicate filenames and former-owner source URLs; the exact directory's hashes were rechecked unchanged after deployment. Hosting, Hypersnap endpoint, protocol, authentication, wallet permissions, origin bindings, Worker/R2/Durable Object identities and legacy domain redirects remain unchanged.
+
+Both full local standalone gates passed **887 tests in 43 files**, TypeScript, browser production build and signer payload build. The new isolated Git-history regression checks a release against historical owner URLs while preserving milestone history. The dev-log guard accepts only the current organization repository and the exact two historical owner/repo combinations; negative owner/repository/lookalike cases remain rejected. The release guard used the actual pre-release source, retaining all original milestone IDs, dates and implementation SHAs while canonicalizing their source URLs. The new organization-transfer milestone brings the live count to **22**.
+
+[Main CI 39742138130](https://github.com/arcacomputer/opencaster/actions/runs/39742138130) and [feature-branch CI 39742138864](https://github.com/arcacomputer/opencaster/actions/runs/39742138864) both passed on their **first attempts**, including release-note enforcement, full verification and signer payload reproducibility. This release did not need a retry. The retained messenger gate still lacks its original dependencies and sibling repositories; its full failing receipt is retained below and is not represented as a pass.
+
+Current website source/license/privacy links, onboarding documentation, native download URLs, repository docs and all historical dev-log source links now use `arcacomputer/opencaster`. Both existing signer release descriptions were also updated to canonical source URLs. No signed asset was replaced: v0.2.1 retains ZIP digest `e122f121558a6570c3d6e909ee32900ec5e29f1339eaa553ab63fd7174fcf8cc`, manifests, checksums and notarization status. The signer source fingerprint remains `57fc9ce0b9d7fe47014603e410ebc2d3d651c3053eef1888e3b00d4dfed0cbe9`; an owner-only website-link change does not require a new native binary. Public HEAD checks returned 200 after normal redirects for old repository URLs, canonical signing docs, license, a historical implementation commit and the native ZIP.
+
+Chrome verified the new organization repository, live rail/footer source and license hrefs, all **22** dev-log source links pointing at canonical organization commit URLs, the new transfer entry, and the onboarding signing-documentation href. Hypersnap public reads remained connected. The legacy website still returns 308 to `https://opencaster.org/`. All production checks were read-only navigation/HEAD/GET; no wallet, passkey/vault, posting key, upload or social write was attempted. No local preview server was needed or left running. Screenshots retain the organization repository and the live transfer note.
+
+The retained messenger gate's full receipt follows (line-end padding omitted). Its production mint guard stayed enabled:
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   b65f995  ⚠ working tree dirty (10 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/scripts/check-devlog.mjs, desktop/hypersnap/scripts/check-devlog.test.mjs, desktop/hypersnap/src/App.tsx)
+            (… and 4 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Opencaster launch and domain migration · 2026-10-22
 
 **Live at https://opencaster.org.** The user confirmed the final Opencaster name and `opencaster.org` spelling. [Public source](https://github.com/arcacomputer/opencaster), repository homepage, local origin remote, current website links and metadata now use that name. The original `arcabotai/hypersnap-web` GitHub URL resolves to the renamed repository. The AGPL license, upstream Quorum attribution and all historical milestones are retained.
