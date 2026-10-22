@@ -19,6 +19,19 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'social-links-preserve-source-conversation',
+    date: '2026-10-22',
+    title: 'Back takes you to the cast you came from',
+    summary: 'Following a supported profile or cast link keeps your place, including when you start from a conversation opened directly.',
+    changes: [
+      'Give a linked conversation its own browser history entry, preserving the source cast behind it.',
+      'Keep that entry when a short link resolves to its full cast, so Back and Close return to the source and Forward reopens the destination.',
+      'Cover cast-text links, URL attachments and profile-bio links with isolated navigation regressions.',
+    ],
+    commit: 'https://github.com/arcabotai/hypersnap-web/commit/79ae4e3e10da981b3121bf6bd22b97883d0c03f8',
+    tag: 'Reliability',
+  },
+  {
     id: 'linked-profiles-and-casts-stay-on-quorum',
     date: '2026-10-22',
     title: 'Follow profile and cast links without leaving Quorum',
