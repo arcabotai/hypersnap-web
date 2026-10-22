@@ -4,7 +4,7 @@
 
 Opencaster is a public browser client for Hypersnap, forked from [Quorum Desktop](https://github.com/QuilibriumNetwork/quorum-desktop). The standalone entry lives in [`hypersnap/`](./hypersnap/); the original Quorum messenger source, AGPL license, and attribution are retained below.
 
-Website: **https://opencaster.org** · [Source](https://github.com/arcabotai/opencaster) · [Dev log](https://opencaster.org/devlog)
+Website: **https://opencaster.org** · [Source](https://github.com/arcacomputer/opencaster) · [Dev log](https://opencaster.org/devlog)
 
 ```sh
 cd hypersnap

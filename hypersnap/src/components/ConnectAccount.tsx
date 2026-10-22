@@ -10,7 +10,7 @@ import { ApiError, getUser } from '../lib/api';
 import { normalizeReviewIdentity, parseAccountLookup, sameReviewIdentity, type ReviewIdentity } from '../lib/accountLookup';
 import '../onboarding.scss';
 
-const sourceUrl = 'https://github.com/arcabotai/opencaster';
+const sourceUrl = 'https://github.com/arcacomputer/opencaster';
 const releaseTag = 'arca-signer-v0.2.1';
 const signerUrl = `${sourceUrl}/releases/download/${releaseTag}/Arca-Signer-mac-arm64.zip`;
 const approvalLimitBytes = 16 * 1024;

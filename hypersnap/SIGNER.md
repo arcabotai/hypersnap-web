@@ -70,7 +70,7 @@ Select **Ethereum Mainnet** in the wallet before approving: some wallets require
 
 1. Open [Opencaster](https://opencaster.org). Look up your public username, FID, or custody address.
 2. Download the public authorization request. Keep that browser tab open: its random posting key stays there.
-3. Download [Arca Signer v0.2.1](https://github.com/arcabotai/opencaster/releases/tag/arca-signer-v0.2.1). The supplied binary is for Apple Silicon Macs. Other platforms can build the source.
+3. Download [Arca Signer v0.2.1](https://github.com/arcacomputer/opencaster/releases/tag/arca-signer-v0.2.1). The supplied binary is for Apple Silicon Macs. Other platforms can build the source.
 4. Check the release's SHA-256 checksum and Developer ID signature. You may disconnect your computer from the network before opening the signer.
 5. Import the request into Arca Signer. Compare the FID, custody address, complete posting key, request checksum, and permissions with the browser. Requests expire after 15 minutes. The displayed website name is self-asserted, not proof of who created the request.
 6. Enter the matching 24-word English phrase only in the native app. Export the public approval, clear the app, and quit.
@@ -127,7 +127,7 @@ On a Mac with your own Developer ID certificate:
 yarn signer:package --sign-identity 'Developer ID Application: YOUR NAME (TEAMID)'
 ```
 
-Release packaging requires a clean, committed tree. An optional `--notary-profile PROFILE_NAME` uses an existing `notarytool` Keychain profile; no Apple credentials belong in source. See [native implementation](signer/README.md), [verification record](VERIFICATION.md), and [source](https://github.com/arcabotai/opencaster).
+Release packaging requires a clean, committed tree. An optional `--notary-profile PROFILE_NAME` uses an existing `notarytool` Keychain profile; no Apple credentials belong in source. See [native implementation](signer/README.md), [verification record](VERIFICATION.md), and [source](https://github.com/arcacomputer/opencaster).
 
 ## Boundaries
 

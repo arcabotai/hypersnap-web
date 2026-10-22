@@ -54,7 +54,7 @@ function localClick(event: MouseEvent<HTMLAnchorElement>, action: () => void) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault(); action();
 }
-const sourceUrl = 'https://github.com/arcabotai/opencaster';
+const sourceUrl = 'https://github.com/arcacomputer/opencaster';
 const message = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 const short = (value: number = 0) => Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 function safeUrl(value?: string): string | undefined {

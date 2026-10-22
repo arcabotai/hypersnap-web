@@ -4,7 +4,7 @@ import { DEV_LOG, PROJECT_STARTED_DATE, type DevLogMilestone } from '../lib/devL
 import { Button } from './ui';
 import '../devlog.scss';
 
-const source = 'https://github.com/arcabotai/opencaster';
+const source = 'https://github.com/arcacomputer/opencaster';
 const categories = ['Launch', 'Wallets', 'Security', 'Social', 'Reliability'] as const;
 const labels = { Launch: 'The beginning', Wallets: 'Wallets', Security: 'Security', Social: 'Features', Reliability: 'Reliability' };
 function dateLabel(date: string) {

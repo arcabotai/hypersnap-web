@@ -7,7 +7,7 @@ import { checkDevLog, needsReleaseNote, parseDevLog } from './check-devlog.mjs';
 
 const LOG = 'hypersnap/src/lib/devLog.ts';
 const ZERO = '0'.repeat(40);
-const URL_PREFIX = 'https://github.com/arcabotai/hypersnap-web/commit/';
+const URL_PREFIX = 'https://github.com/arcacomputer/opencaster/commit/';
 const directories = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
@@ -61,6 +61,14 @@ describe('release-note guard against real isolated Git history', () => {
     const release = recordedRelease(repo, [note, { ...repo.old[0], title: 'A factual correction' }, repo.old[1]], source);
     const result = checkDevLog({ base: repo.base, head: release.head, cwd: repo.cwd });
     expect(result).toMatchObject({ baseSha: repo.base, headSha: release.head, productFiles: ['hypersnap/src/App.tsx'], addedIds: ['new-release'] });
+  });
+
+  it('checks a transferred release against historical owner URLs and permits canonical source links without losing milestones', () => {
+    const repo = seeded();
+    repo.log(repo.old.map((note, index) => ({ ...note, commit: note.commit.replace('/arcacomputer/opencaster/', index ? '/arcabotai/hypersnap-web/' : '/arcabotai/opencaster/') })));
+    const historicalBase = repo.commit('Preserve the previous owner’s published source links');
+    const release = recordedRelease(repo);
+    expect(checkDevLog({ base: historicalBase, head: release.head, cwd: repo.cwd })).toMatchObject({ productFiles: ['hypersnap/src/App.tsx'], addedIds: ['new-release'] });
   });
 
   it.each(['nonexistent', 'nonancestor', 'wrong-date'])('rejects a new milestone whose source is %s', failure => {
@@ -121,12 +129,13 @@ describe('release-note guard against real isolated Git history', () => {
 });
 
 describe('release policy and static data validation', () => {
-  it('keeps historical repository links valid after the Opencaster rename and restricts new source URLs to this repository', () => {
-    const old = milestone('historical-release', 'a'.repeat(40));
-    const renamed = { ...old, id: 'renamed-release', commit: old.commit.replace('/hypersnap-web/', '/opencaster/') };
-    expect(parseDevLog(`export const DEV_LOG = ${JSON.stringify([renamed, old])};`)).toEqual([renamed, old]);
-    for (const commit of [renamed.commit.replace('/arcabotai/', '/someone-else/'), renamed.commit.replace('/opencaster/', '/other/'), renamed.commit.replace('github.com/', 'github.com.evil.invalid/')]) {
-      expect(() => parseDevLog(`export const DEV_LOG = ${JSON.stringify([{ ...renamed, commit }])};`)).toThrow('implementation commit URL');
+  it('accepts the organization’s repository and exact historical source URLs while rejecting other owners, repos and lookalikes', () => {
+    const current = milestone('organization-release', 'a'.repeat(40));
+    const renamed = { ...current, id: 'renamed-release', commit: current.commit.replace('/arcacomputer/', '/arcabotai/') };
+    const original = { ...current, id: 'original-release', commit: current.commit.replace('/arcacomputer/opencaster/', '/arcabotai/hypersnap-web/') };
+    expect(parseDevLog(`export const DEV_LOG = ${JSON.stringify([current, renamed, original])};`)).toEqual([current, renamed, original]);
+    for (const commit of [current.commit.replace('/arcacomputer/', '/someone-else/'), current.commit.replace('/opencaster/', '/other/'), current.commit.replace('/opencaster/', '/hypersnap-web/'), renamed.commit.replace('/opencaster/', '/other/'), current.commit.replace('github.com/', 'github.com.evil.invalid/'), current.commit.replace('/arcacomputer/', '/arcacomputer-evil/')]) {
+      expect(() => parseDevLog(`export const DEV_LOG = ${JSON.stringify([{ ...current, commit }])};`)).toThrow('implementation commit URL');
     }
   });
 

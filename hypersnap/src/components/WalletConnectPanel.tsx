@@ -109,7 +109,7 @@ export default function WalletConnectPanel({ request, onApproved, onBusy, onErro
     {error && <p className="error" role="alert">{error}</p>}
     {phase === 'error' && projectId && <Button variant="secondary" className="full-width" onClick={() => setAttempt(value => value + 1)}><IconRefresh size={16} />Retry wallet connection</Button>}
     <p className="walletconnect-privacy"><IconShieldLock size={16} />WalletConnect uses an external encrypted relay for connection and signing messages, with connection metadata. Your recovery phrase stays in your wallet. The wallet session disconnects when approval finishes; the separate posting key is submitted only when you choose Submit below.</p>
-    <p className="pairing-release">Portions © 2025 Reown, Inc. All Rights Reserved · <a href="/licenses/walletconnect-2.26.0-LICENSE.txt" target="_blank" rel="noopener noreferrer">Community license</a> · <a href="https://github.com/arcabotai/opencaster/blob/main/hypersnap/SIGNER.md" target="_blank" rel="noopener noreferrer">Connection privacy</a></p>
+    <p className="pairing-release">Portions © 2025 Reown, Inc. All Rights Reserved · <a href="/licenses/walletconnect-2.26.0-LICENSE.txt" target="_blank" rel="noopener noreferrer">Community license</a> · <a href="https://github.com/arcacomputer/opencaster/blob/main/hypersnap/SIGNER.md" target="_blank" rel="noopener noreferrer">Connection privacy</a></p>
     <Button variant="ghost" className="full-width" onClick={close}>{phase === 'error' ? 'Use another connection method' : 'Cancel wallet connection'}</Button>
   </div>;
 }

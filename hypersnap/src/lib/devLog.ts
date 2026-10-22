@@ -31,7 +31,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Update the optional Arca Signer beta to v0.2.1 for the new website. The Apple Silicon download is Developer ID signed; Apple notarization remains pending and its original permission limits remain unchanged.',
       'Keep the same Hypersnap node and protocol, wallet permissions and storage infrastructure. No Farcaster-operated authentication or API service was added.',
     ],
-    commit: 'https://github.com/arcabotai/opencaster/commit/2ca6b5673869c7caab4a25c586a24edc8cdfb2be',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/2ca6b5673869c7caab4a25c586a24edc8cdfb2be',
     tag: 'Launch',
   },
   {
@@ -44,7 +44,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Keep that entry when a short link resolves to its full cast, so Back and Close return to the source and Forward reopens the destination.',
       'Cover cast-text links, URL attachments and profile-bio links with isolated navigation regressions.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/79ae4e3e10da981b3121bf6bd22b97883d0c03f8',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/79ae4e3e10da981b3121bf6bd22b97883d0c03f8',
     tag: 'Reliability',
   },
   {
@@ -60,7 +60,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Discard tracking query and fragment data from recognized local destinations. Other sites and unsupported Farcaster pages retain their existing external behavior.',
       'Reuse the existing Hypersnap lookup and availability limits, without adding a Farcaster-operated resolver or changing wallet permissions.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/691a926458d6e89afff84798ba74f4cce086f4b0',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/691a926458d6e89afff84798ba74f4cce086f4b0',
     tag: 'Social',
   },
   {
@@ -76,7 +76,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Bound history reads, validate native pagination and distinguish incomplete searches, missing data and network failures. Changing a URL cannot restore deleted, pruned or unsynced casts.',
       'Resolve links through our Hypersnap gateway without a Farcaster-operated service. New shares use stable full hashes.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/861275562ecc0de6d5da041874342f5d75ac9752',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/861275562ecc0de6d5da041874342f5d75ac9752',
     tag: 'Social',
   },
   {
@@ -92,7 +92,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Support the node’s current single ASCII name label of 1–16 letters, digits or hyphens, starting with a letter or digit. Unicode, other suffixes and additional subdomains are not supported.',
       'Keep all resolution on our fixed Hypersnap gateway: no external Ethereum RPC, name registration or reverse lookup was added.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/4cb0ca9d9e0dde5f39629da752cdd31f0ae4e4c4',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/4cb0ca9d9e0dde5f39629da752cdd31f0ae4e4c4',
     tag: 'Wallets',
   },
   {
@@ -108,7 +108,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Preserve the existing account during permission upgrades, cancel pending attempts when leaving, and return to the page or conversation you started from.',
       'Improve narrow-screen layout and keyboard focus. Reload and direct links start with ordinary casting permissions; expanded permissions are never taken from a URL.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/ce2f09a55d212febb1fc8a757a7f69c11bdc4831',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/ce2f09a55d212febb1fc8a757a7f69c11bdc4831',
     tag: 'Wallets',
   },
   {
@@ -124,7 +124,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Preserved explicit local draft saving and replacement confirmation, upload cancellation and protection against late responses from another account or destination.',
       'Improved narrow-screen controls and local Escape handling so closing a tool keeps the surrounding composer open.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/a08075af81bb8bdb8664dea0178347ccf49ae5d8',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/a08075af81bb8bdb8664dea0178347ccf49ae5d8',
     tag: 'Social',
   },
   {
@@ -140,7 +140,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Clarified the two message signatures and separate Hypersnap submission. Sign-in does not mint an NFT or request an Ethereum transaction, token approval or asset transfer.',
       'Tested synthetic multi-wallet recovery and sign-in against an isolated Hypersnap node. Compatible Ethereum typed-data signing is required; every wallet and smart-account format is not supported.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/c0c9388c5bef4acc50446016c6606e63325b671c',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/c0c9388c5bef4acc50446016c6606e63325b671c',
     tag: 'Wallets',
   },
   {
@@ -156,7 +156,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Added focused search shortcuts, shortcut help and better literal web-link handling.',
       'Made Settings and Bookmarks reachable on narrow screens and kept the app usable when browser storage is unavailable.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/5bddf464c4f616a766a3bf90fc5dce5d96a496f3',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/5bddf464c4f616a766a3bf90fc5dce5d96a496f3',
     tag: 'Social',
   },
   {
@@ -169,7 +169,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'New milestones need a description and an existing source commit, while earlier history stays available.',
       'The release instructions require the same check before deployments, including hotfixes.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/54d9c051d5f10611a86dd25cbfa3e0ce6ea1c44b',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/54d9c051d5f10611a86dd25cbfa3e0ce6ea1c44b',
     tag: 'Reliability',
   },
   {
@@ -182,7 +182,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Read from the beginning or start with the latest changes, on desktop or mobile.',
       'Keep the project’s security model, infrastructure dependencies and beta limitations alongside its progress.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/4a70b32ebde73989cb222e55097c604235630b42',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/4a70b32ebde73989cb222e55097c604235630b42',
     tag: 'Launch',
   },
   {
@@ -194,7 +194,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Unavailable community avatars now fall back to initials.',
       'Profile links and account names remain usable when an image cannot load.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/d1e1502b658b4fc6828a21e8f292080fae0a243e',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/d1e1502b658b4fc6828a21e8f292080fae0a243e',
     tag: 'Reliability',
   },
   {
@@ -209,7 +209,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Added saved channel shortcuts, activity filters and bounded views of suggested people, channel participants and quotes.',
       'Kept uncertain reaction writes blocked until a fresh read shows their intended state.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/999fa270a5d5d2063465893e04e157b02c3ee069',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/999fa270a5d5d2063465893e04e157b02c3ee069',
     tag: 'Social',
   },
   {
@@ -222,7 +222,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Kept custody-wallet approval for the first connection, expired or revoked keys, and additional permissions.',
       'Preserved password-encrypted vaults and memory-only access. Passkey-provider synchronization does not synchronize this app’s local vault.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/911bbc4f30d0eb77b3b5d82fc43f3af60da1c7d9',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/911bbc4f30d0eb77b3b5d82fc43f3af60da1c7d9',
     tag: 'Security',
   },
   {
@@ -236,7 +236,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Added quote casts and confirmed deletion of the connected account’s own casts.',
       'Required a separate wallet permission upgrade and an explicit confirmation before deleting a cast.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/b5c1f0444efd09bf92ca630fb1b39ad299006908',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/b5c1f0444efd09bf92ca630fb1b39ad299006908',
     tag: 'Social',
   },
   {
@@ -250,7 +250,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Handled the node’s one-device-key-per-minute limit and kept unknown write outcomes from being retried automatically.',
       'Checked persistence across a cold node restart without submitting actions to production accounts.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/3b6805589c0be7b7a0cca4c8fcb104700c9eeb21',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/3b6805589c0be7b7a0cca4c8fcb104700c9eeb21',
     tag: 'Reliability',
   },
   {
@@ -264,7 +264,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Made expanded social permissions an explicit new wallet approval, keeping existing access until the new key is confirmed.',
       'Added authenticated public image uploads using Cloudflare R2 and a quota ledger. Uploaded images are persistent and retain photo metadata.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/71db400682d3b03ab1a119eca56fa7d0ee4e45bf',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/71db400682d3b03ab1a119eca56fa7d0ee4e45bf',
     tag: 'Social',
   },
   {
@@ -277,7 +277,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Prioritized the detected Rainbow extension and connected to its specific provider when several wallets were installed.',
       'The project owner reported a successful Rainbow browser-extension sign-in; automated checks continued to use synthetic identities.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/a0bc982419420fced22342f54ca536240325ff9d',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/a0bc982419420fced22342f54ca536240325ff9d',
     tag: 'Wallets',
   },
   {
@@ -290,7 +290,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Requested typed-data approval for the device key, leaving recovery phrases and custody keys inside the chosen wallet.',
       'Documented the external relay dependency and the SDK’s WalletConnect Community License.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/62d6c7844a03be1920b6c9af8114f069328aecc8',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/62d6c7844a03be1920b6c9af8114f069328aecc8',
     tag: 'Wallets',
   },
   {
@@ -303,7 +303,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Added optional password-encrypted local storage, locking, forgetting and device revocation.',
       'Introduced the optional Apple Silicon macOS signer beta. Its Developer ID signature does not replace an audit, and Apple notarization was deferred.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/ae8a469357cf77f70b129e5b2d1d3f39360ae3e2',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/ae8a469357cf77f70b129e5b2d1d3f39360ae3e2',
     tag: 'Security',
   },
   {
@@ -316,7 +316,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
       'Added casts, replies, reactions, local bookmarks and a fixed gateway to the Hypersnap node.',
       'Explored browser-local recovery-phrase-derived signing in the first prototype. The next milestone replaced it with wallet-first approval.',
     ],
-    commit: 'https://github.com/arcabotai/hypersnap-web/commit/52af2a579f7608df67974e72ae317c9794bd186b',
+    commit: 'https://github.com/arcacomputer/opencaster/commit/52af2a579f7608df67974e72ae317c9794bd186b',
     tag: 'Launch',
   },
 ];
