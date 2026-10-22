@@ -19,6 +19,20 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'arca-computer-organization-source',
+    date: '2026-10-22',
+    title: 'Opencaster joins the Arca Computer organization',
+    summary: 'The public repository now lives at github.com/arcacomputer/opencaster, making the team behind the client easier to find.',
+    changes: [
+      'Transfer the existing repository to Arca Computer, preserving its commits, releases, issues and public visibility. Previous repository links continue to redirect.',
+      'Update website source, license, signing/privacy documentation and signer download links to the organization repository.',
+      'Point every historical dev-log source link to its existing commit under the new organization, keeping the original milestone IDs, dates and history.',
+      'Keep Hypersnap, wallet approval and local key protection unchanged. Existing signed companion downloads retain the same binaries and checksums.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/54b2f9fba115ca49fe1c06bbaa97b1c57c5415d4',
+    tag: 'Launch',
+  },
+  {
     id: 'opencaster-name-and-domain',
     date: '2026-10-22',
     title: 'Welcome to Opencaster',
