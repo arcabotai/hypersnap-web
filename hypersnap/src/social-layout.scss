@@ -42,6 +42,34 @@
 
 .compose-fab { display: none; position: fixed; right: 1rem; bottom: calc(4.6rem + env(safe-area-inset-bottom)); z-index: 6; width: 3.5rem; height: 3.5rem; padding: 0; border-radius: 50%; place-items: center; box-shadow: 0 .4rem 1.2rem rgb(0 0 0 / .35); }
 
+// Whole cards open their conversation; the hover tint signals it.
+.cast--openable { cursor: pointer; transition: background .15s; }
+.cast--openable:hover { background: color-mix(in srgb, var(--surface-1) 55%, transparent); }
+
+// Conversations are pages in the main column, with a sticky back header.
+.conversation-page__head { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: .6rem; padding: .7rem 1.2rem; border-bottom: .0625rem solid var(--border); background: color-mix(in srgb, var(--surface-00) 88%, transparent); backdrop-filter: blur(.75rem); }
+.conversation-page__head h1 { margin: 0; font: 600 1.1rem Sen, sans-serif; letter-spacing: -.02rem; }
+.conversation-page__head h1:focus { outline: none; }
+.conversation-page__head .button { min-height: 2.5rem; width: 2.5rem; padding: 0; border-radius: 50%; }
+// Replies already sit under their parent here.
+.conversation-replies .cast-parent { display: none; }
+.conversation-page .thread-empty { padding: 1rem 1.75rem; color: var(--color-text-subtle); font-size: .75rem; }
+
+// Signed-out landing, shaped like the Farcaster and X front doors.
+.landing { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: center; max-width: 72rem; margin: 0 auto; padding: 2rem; gap: 2rem; }
+.landing__visual { position: relative; height: 22rem; display: grid; place-items: center; }
+.landing__visual .orbit { position: relative; right: auto; top: auto; transform: rotate(-25deg) scale(1.25); }
+.landing__panel { display: flex; flex-direction: column; max-width: 25rem; }
+.landing__panel .wordmark { padding-left: 0; margin-bottom: 2rem; }
+.landing__panel h1 { margin: 0 0 1rem; font: 650 2.4rem/1.15 Sen, sans-serif; letter-spacing: -.07rem; }
+.landing__panel > p { margin: 0 0 1.75rem; color: var(--color-text-subtle); font-size: .9rem; line-height: 1.7; }
+.landing__panel > .landing__note { margin: .7rem 0 0; color: var(--color-text-muted); font-size: .7rem; line-height: 1.6; }
+.landing__primary, .landing__secondary { width: 100%; min-height: 3rem; border-radius: 2rem; font-size: .9rem; }
+.landing__divider { display: flex; align-items: center; gap: .75rem; margin: 1.5rem 0; color: var(--color-text-muted); font-size: .7rem; }
+.landing__divider::before, .landing__divider::after { content: ''; flex: 1; height: .0625rem; background: var(--border); }
+.landing__footer { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; font-size: .7rem; }
+.landing__footer a { color: var(--color-text-subtle); }
+
 @media (max-width: 700px) {
   .page-header { gap: .7rem; padding: .75rem 1rem; min-height: 0; }
   .page-header__logo { display: grid; place-items: center; }
@@ -65,6 +93,13 @@
   .cast__text { font-size: .9rem; }
   .mobile-nav .button[aria-current="page"] { color: var(--accent-300); }
   .mobile-nav .avatar { width: 1.6rem; height: 1.6rem; font-size: .5rem; }
+  .conversation-page__head { padding: .6rem .75rem; }
+  .landing { grid-template-columns: minmax(0, 1fr); align-content: center; padding: 1.5rem 1.25rem; gap: 1rem; }
+  .landing__visual { height: 9rem; }
+  .landing__visual .orbit { transform: rotate(-25deg) scale(.55); }
+  .landing__panel { max-width: none; }
+  .landing__panel .wordmark { margin-bottom: 1.25rem; }
+  .landing__panel h1 { font-size: 1.8rem; }
 }
 @media (max-width: 420px) {
   .header-actions > .button--ghost.header-bookmarks { display: inline-flex; min-height: 2.5rem; min-width: 2.5rem; }

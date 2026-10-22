@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { IconSettings, IconKeyboard, IconBell, IconQuote, IconDots, IconTrash, IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconHash, IconHeart, IconHome, IconLock, IconPencil, IconMessageCircle, IconMoon, IconRefresh, IconRepeat, IconSearch, IconShare, IconShieldLock, IconSparkles, IconSun, IconUser, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
 import { Button, Input, Modal } from './components/ui';
 import { getFeed, getProfileFeed, hasImageEmbed, getCast, getChannels, getChannel, getUser, getInfo, getConversation, type Channel, type Cast, type User, type ConversationNode } from './lib/api';
@@ -119,13 +119,37 @@ function QuotedCast({ target, onThread }: { target: { fid: number; hash: string 
 function GuestPrompt({ children, onConnect }: { children: ReactNode; onConnect(): void }) {
   return <section className="guest-prompt"><span className="avatar"><IconUser size={18} /></span><p>{children}</p><Button onClick={onConnect}>Connect</Button></section>;
 }
+const exploreKey = 'opencaster.explore';
+function readExplore() { try { return localStorage.getItem(exploreKey) === '1'; } catch { return false; } }
+function Landing({ onSignIn, onExplore, onNavigate }: { onSignIn(): void; onExplore(): void; onNavigate(path: string): void }) {
+  return <main className="landing">
+    <div className="landing__visual" aria-hidden="true"><div className="orbit"><div className="orbit__ring orbit__ring--one" /><div className="orbit__ring orbit__ring--two" /><div className="orbit__ring orbit__ring--three" /><div className="orbit__core"><img src="/opencaster-symbol.svg" alt="" /></div><span className="orbit__point orbit__point--a" /><span className="orbit__point orbit__point--b" /><span className="orbit__point orbit__point--c" /><span className="orbit__star">✳</span></div></div>
+    <section className="landing__panel" aria-labelledby="landing-title">
+      <span className="wordmark"><img src="/opencaster-symbol.svg" alt="" />Opencaster</span>
+      <h1 id="landing-title">Your people, your identity, your voice.</h1>
+      <p>An open source client for the open social web. Powered by Arca Computer. Runs on Hypersnap.</p>
+      <Button className="landing__primary" onClick={onSignIn}>Sign in</Button>
+      <p className="landing__note">Use the wallet that holds your Farcaster account. Recovery phrases stay in your wallet; this site never asks for them.</p>
+      <div className="landing__divider"><span>or</span></div>
+      <Button variant="secondary" className="landing__secondary" onClick={onExplore}>Explore without an account</Button>
+      <p className="landing__note">New here? Opencaster can’t create accounts yet. You need an existing Farcaster account to sign in; anyone can read public casts.</p>
+    </section>
+    <footer className="landing__footer"><a href="/devlog" onClick={event => localClick(event, () => onNavigate('/devlog'))}>Dev log</a><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a><a href={sourceUrl} target="_blank" rel="noopener noreferrer">Source</a><a href={`${sourceUrl}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a></footer>
+  </main>;
+}
 function CastCard({ cast, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
   const urls = cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2) ?? [];
   const isImage = (url: string) => hasImageEmbed({ ...cast, embeds: [{ url }] });
   const images = urls.filter(embed => isImage(embed.url)).map((embed, index) => ({ url: embed.url, alt: `Image ${index + 1} attached to cast by @${cast.author.username || cast.author.fid}` }));
   const [expanded, setExpanded] = useState(false);
   const collapsed = !expanded && ((cast.text?.length ?? 0) > 420 || (cast.text?.split('\n').length ?? 0) > 9);
-  return <article className="cast">
+  function openFromCard(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if ((event.target as Element).closest('a, button, input, textarea, select, label, video, audio, dialog')) return;
+    if (window.getSelection?.()?.toString()) return;
+    onThread(cast);
+  }
+  return <article className="cast cast--openable" onClick={openFromCard}>
     <a className="button button--ghost avatar-button" href={profilePath(cast.author.fid)} aria-label={`View ${cast.author.username}'s profile`} onClick={event => localClick(event, () => onProfile(cast.author))}><Avatar user={cast.author} /></a>
     <div className="cast__body">
       {cast.reaction_context && <div className="cast-activity">{cast.reaction_context.type === 'like' ? <IconHeart size={14} aria-hidden="true" /> : <IconRepeat size={14} aria-hidden="true" />}<a href={profilePath(cast.reaction_context.fid)} onClick={event => { if (reactionActor) localClick(event, () => onProfile(reactionActor)); }}>{reactionActor?.display_name || reactionActor?.username || `FID ${cast.reaction_context.fid}`}</a>{cast.reaction_context.type === 'like' ? 'liked' : 'recasted'}<time dateTime={cast.reaction_context.timestamp} title={new Date(cast.reaction_context.timestamp).toLocaleString()}>{relativeTime(cast.reaction_context.timestamp)}</time></div>}
@@ -223,12 +247,14 @@ export default function App() {
     setRevealState({ scope: preferenceScope, hashes: new Set() });
   }, [preferenceScope, storedPreferences]);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [exploring, setExploring] = useState(() => route.kind !== 'discover' || readExplore());
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('quorum.theme') !== 'light'; } catch { return true; } });
   const feedGeneration = useRef(0);
   const feedMoreRead = useRef<AbortController | null>(null);
   const currentSession = useRef(session);
   const currentProfile = useRef(profile);
   const currentRoute = useRef(route);
+  const feedScroll = useRef(0);
   const currentBase = useRef(base);
   const profileCache = useRef(new Map<string, User>());
   const threadCache = useRef(new Map<string, Cast>());
@@ -244,6 +270,7 @@ export default function App() {
     const isThread = isConversationRoute(next);
     const wasThread = isConversationRoute(previous);
     const pushThread = isThread && options?.pushThread === true;
+    if (isThread && !wasThread) feedScroll.current = window.scrollY;
     const threadBackground: FeedRoute = currentBase.current.kind === 'connect' ? { kind: 'discover' } : currentBase.current;
     const state = isThread ? { quorumThread: pushThread || !wasThread || !!history.state?.quorumThread, quorumBackground: routePath(threadBackground) } : null;
     if (path !== location.pathname + location.search) {
@@ -264,6 +291,8 @@ export default function App() {
     setProfile(user); navigate(profilePath(user.fid));
   }, [navigate]);
   const openThread = useCallback((cast: Cast) => {
+    const current = currentRoute.current;
+    if (current.kind === 'cast' && bookmarkHash(current.hash) === bookmarkHash(cast.hash)) return;
     threadCache.current.set(castPath(cast.hash), cast); setThread(cast); navigate(castPath(cast.hash));
   }, [navigate]);
   const openResolvedAlias = useCallback((cast: Cast, sourcePath: string) => {
@@ -408,6 +437,15 @@ export default function App() {
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 6500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => currentSession.current?.dispose(), []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, channel, profile?.fid, profileTab]);
+  const threadOpen = isConversationRoute(route);
+  const threadPath = threadOpen ? routePath(route) : '';
+  const threadHeading = useRef<HTMLHeadingElement>(null);
+  const wasThreadOpen = useRef(threadOpen);
+  useLayoutEffect(() => {
+    if (threadOpen) { window.scrollTo({ top: 0, behavior: 'instant' }); threadHeading.current?.focus({ preventScroll: true }); }
+    else if (wasThreadOpen.current) window.scrollTo({ top: feedScroll.current, behavior: 'instant' });
+    wasThreadOpen.current = threadOpen;
+  }, [threadOpen, threadPath]);
   useEffect(() => {
     if (signIn) return;
     const controller = new AbortController();
@@ -514,6 +552,7 @@ export default function App() {
   const feedCandidates = view === 'bookmarks' ? filterBookmarks(bookmarks, bookmarkQuery, bookmarkSort) : casts;
   const visibleCasts = feedCandidates.filter(cast => revealed.has(bookmarkHash(cast.hash)!) || !getContentFilterReason(cast, preferences));
   const filteredCount = feedCandidates.length - visibleCasts.length;
+  if (!session && !exploring && route.kind === 'discover') return <Landing onSignIn={() => requestSignIn()} onExplore={() => { try { localStorage.setItem(exploreKey, '1'); } catch { /* Exploring still works for this tab. */ } setExploring(true); }} onNavigate={path => navigate(path)} />;
   return <ContentControls.Provider value={controls}><div className="app">
     <aside className="sidebar">
       <a href="/" onClick={event => localClick(event, () => navigate('/'))} className="wordmark"><img src="/opencaster-symbol.svg" alt="" />Opencaster</a>
@@ -536,6 +575,7 @@ export default function App() {
       <div className="sidebar__bottom"><div className="sidebar-links"><Button variant="ghost" aria-label={dark ? 'Use light theme' : 'Use dark theme'} onClick={() => setDark(!dark)}>{dark ? <IconSun size={19} /> : <IconMoon size={19} />}</Button><a href="/devlog" aria-current={view === 'devlog' ? 'page' : undefined} onClick={event => localClick(event, () => navigate('/devlog'))}>Dev log</a><a href={sourceUrl} target="_blank" rel="noopener noreferrer">Source</a><a href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a></div>{session ? <div className="session-card"><Button variant="ghost" className="session-user" onClick={() => navigate('/profile')}><Avatar user={session.user} /><span><strong>{session.user.display_name || session.user.username}</strong><small>@{session.user.username}</small></span></Button><Button variant="ghost" aria-label="Manage this device’s signing access" onClick={() => setDeviceSettings(true)}><IconShieldLock size={19} /></Button></div> : <><div className="sidebar-invite"><IconWorld size={21} /><p>The social web,<br /><strong>on your terms.</strong></p></div><Button className="full-width" onClick={() => requestSignIn()}>Connect Farcaster <IconArrowUpRight size={17} /></Button></>}<p className="sidebar-foot">OPEN PROTOCOL. OPEN POSSIBILITIES.</p></div>
     </aside>
     <main className="main">
+      <div className="main-base" hidden={threadOpen}>
       <header className="page-header"><a className="page-header__logo" href="/" aria-label="Opencaster home" onClick={event => localClick(event, () => navigate('/'))}><img src="/opencaster-symbol.svg" alt="" /></a><h1>{activeTitle}<span className="title-star">✳</span></h1><div className="header-actions">{networkError && <span className="live-pill"><span className="status-dot status-dot--offline" />Node unavailable</span>}{view !== 'devlog' && view !== 'settings' && <Button variant="ghost" aria-label="Refresh feed" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={19} className={loading ? 'spin' : ''} /></Button>}<a className="button button--ghost header-bookmarks" href="/bookmarks" aria-label="Bookmarks" aria-current={view === 'bookmarks' ? 'page' : undefined} onClick={event => localClick(event, () => navigate('/bookmarks'))}><IconBookmark size={19} /></a><Button variant="ghost" className="header-content-settings" aria-label="Settings" onClick={() => navigate('/settings')}><IconSettings size={19} /></Button><Button className="mobile-connect" variant="secondary" onClick={() => session ? navigate('/profile') : requestSignIn()}>{session ? 'My profile' : 'Connect'}</Button></div></header>
       {view !== 'devlog' && view !== 'settings' && <div className="compact-tools"><form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form><nav className="channel-chips" aria-label="Explore channels">{channels.map(item => <Button key={item.id} variant="ghost" className={view === 'channel' && channel === item.id ? 'active' : ''} onClick={() => navigate(`/channel/${item.id}`)}>/{item.id}</Button>)}<Button variant="ghost" onClick={() => navigate('/channels')}>All channels</Button></nav></div>}
       {(view === 'discover' || view === 'following') && <nav className="feature-tabs home-feed-tabs" aria-label="Home feeds"><a href="/" aria-current={view === 'discover' ? 'page' : undefined} onClick={event => localClick(event, () => navigate('/'))}>Discover</a><a href="/following" aria-current={view === 'following' ? 'page' : undefined} onClick={event => localClick(event, () => navigate('/following'))}>Following</a></nav>}
@@ -572,6 +612,8 @@ export default function App() {
       {view === 'not-found' ? <div className="empty"><IconCompass size={35} /><h3>That page does not exist.</h3><p>Check the profile or cast link, or return to Discover.</p><Button onClick={() => navigate('/')}>Open Discover</Button></div> : view === 'profile' && !profile ? <div className="empty" role={profileLoading ? 'status' : undefined}><IconUsers size={35} /><h3>{profileLoading ? 'Loading profile…' : profileError ? 'Profile unavailable' : 'Your profile on Hypersnap'}</h3><p>{profileError || (profileLoading ? 'Finding this public identity on Hypersnap.' : 'Connect your account to open your profile, or search for a username or FID.')}</p>{profileError ? <Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button> : !profileLoading && <Button onClick={() => requestSignIn()}>Connect your account</Button>}</div> : loading ? <div aria-label="Loading casts" role="status" className="skeleton-list">{[0, 1, 2].map(n => <div className="skeleton-cast" key={n}><span className="skeleton-avatar" /><div><span /><span /><span /></div></div>)}<p className="muted">Finding conversations on Hypersnap…</p></div> : error ? <div className="empty"><IconWorld size={35} /><h3>The network is taking a moment.</h3><p>{error}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={16} />Try again</Button></div> : view === 'following' && !session ? <div className="empty"><IconUsers size={35} /><h3>Your people are here.</h3><p>Connect your Farcaster wallet to see casts from the people you follow.</p><Button onClick={() => requestSignIn()}>Connect Farcaster <IconArrowUpRight size={16} /></Button></div> : visibleCasts.length ? <div className="feed">{visibleCasts.map(card)}{cursor && view !== 'bookmarks' && <Button variant="secondary" className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More conversations'}<IconArrowDown size={16} /></Button>}<p className="feed-end">You’re connected to the open social web. <IconWorld size={13} /></p></div> : <div className="empty"><IconBookmark size={35} /><h3>{filteredCount ? 'Your content controls are active.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'No saved casts match.' : view === 'bookmarks' ? 'A place for the good stuff.' : 'The conversation is open.'}</h3><p>{filteredCount ? 'Manage your filters or reveal the loaded casts for this view.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'Try another word, person or channel.' : view === 'bookmarks' ? 'Tap the bookmark on any cast to save it here.' : 'No casts returned for this feed yet. Try another channel or start a conversation.'}</p>{cursor && <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Check next page'}<IconArrowDown size={16} /></Button>}</div>}
       {view === 'following' && session && <SuggestedPeople fid={session.fid} onProfile={openProfile} />}
       </>}
+      </div>
+      {threadOpen && <section className="conversation-page" aria-labelledby="conversation-title"><header className="conversation-page__head"><Button variant="ghost" aria-label="Back" onClick={closeThread}><IconArrowLeft size={20} /></Button><h1 id="conversation-title" ref={threadHeading} tabIndex={-1}>Conversation</h1></header>{route.kind === 'cast-alias' ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={card} onOpen={cast => openResolvedAlias(cast, routePath(route))} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <>{session ? <Composer key={`${session.publicKey}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} /> : <GuestPrompt onConnect={() => requestSignIn()}>Connect your account to reply.</GuestPrompt>}{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</section>}
     </main>
     <aside className="rightbar">
       <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form>
@@ -590,7 +632,6 @@ export default function App() {
     ] as const).map(([label, path, icon, active]) => <Button key={path} variant="ghost" aria-label={label} aria-current={active ? 'page' : undefined} onClick={() => navigate(path)}>{icon}</Button>)}<Button variant="ghost" aria-label="Account" aria-current={view === 'profile' && session && profile?.fid === session.fid ? 'page' : undefined} onClick={() => session ? navigate('/profile') : requestSignIn()}>{session ? <Avatar user={session.user} /> : <IconUser />}</Button></nav>
     {toast && <div className="toast" role="status"><span>{toast}</span><Button variant="ghost" aria-label="Dismiss notification" onClick={() => setToast('')}><IconX size={17} /></Button></div>}
     {deviceSettings && session && <Suspense fallback={<Modal title="This device’s access" onClose={() => setDeviceSettings(false)}><p role="status">Loading device settings…</p></Modal>}><DeviceSettings session={session} onClose={() => setDeviceSettings(false)} onLock={revoked => lockSession(session, revoked)} notify={notify} /></Suspense>}
-    {isConversationRoute(route) && <Modal title="Conversation" onClose={closeThread} wide>{route.kind === 'cast-alias' ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={card} onOpen={cast => openResolvedAlias(cast, routePath(route))} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <><Composer key={`${session?.publicKey ?? 'guest'}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} />{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</Modal>}
     {followList && profile && <FollowListDialog key={`${profile.fid}:${followList}`} user={profile} kind={followList} loadPage={getFollows} onProfile={openProfile} onClose={() => setFollowList(null)} />}
     {editProfile && session && profile?.fid === session.fid && <EditProfileDialog key={profile.fid} user={profile} onSave={patch => session.updateProfile(patch)} onUpload={(file, signal) => uploadMedia(file, input => session.authorizeMediaUpload(input), signal)} onReload={() => session.refreshProfile()} onSaved={patch => {
       // An older profile read can finish after the session confirms this edit.
