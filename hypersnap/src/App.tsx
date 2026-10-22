@@ -1,5 +1,5 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
-import { IconSettings, IconKeyboard, IconBell, IconQuote, IconDots, IconTrash, IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconHash, IconHeart, IconHistory, IconHome, IconLock, IconPencil, IconMessageCircle, IconMoon, IconRefresh, IconRepeat, IconSearch, IconShare, IconShieldLock, IconSparkles, IconSun, IconUser, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
+import { IconSettings, IconKeyboard, IconBell, IconQuote, IconDots, IconTrash, IconArrowDown, IconArrowLeft, IconArrowUpRight, IconBookmark, IconChevronRight, IconCode, IconCompass, IconHash, IconHeart, IconHome, IconLock, IconPencil, IconMessageCircle, IconMoon, IconRefresh, IconRepeat, IconSearch, IconShare, IconShieldLock, IconSparkles, IconSun, IconUser, IconUsers, IconWorld, IconX } from '@tabler/icons-react';
 import { Button, Input, Modal } from './components/ui';
 import { getFeed, getProfileFeed, hasImageEmbed, getCast, getChannels, getChannel, getUser, getInfo, getConversation, type Channel, type Cast, type User, type ConversationNode } from './lib/api';
 import type { WalletSession } from './lib/auth';
