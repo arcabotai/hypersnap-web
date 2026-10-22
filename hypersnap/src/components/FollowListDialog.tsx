@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { IconChevronRight, IconRefresh, IconUsers } from '@tabler/icons-react';
 import type { User } from '../lib/api';
 import { profilePath } from '../lib/navigation';
@@ -34,7 +34,7 @@ export default function FollowListDialog({ user, kind, loadPage, onProfile, onCl
   const requesting = useRef(false);
   loader.current = loadPage;
 
-  async function load(nextCursor?: string | null, initial = false) {
+  const load = useCallback(async (nextCursor?: string | null, initial = false) => {
     if (requesting.current) return;
     requesting.current = true;
     const run = ++generation.current;
@@ -60,14 +60,14 @@ export default function FollowListDialog({ user, kind, loadPage, onProfile, onCl
     } finally {
       if (run === generation.current) { setBusy(false); requesting.current = false; }
     }
-  }
+  }, [kind, user.fid]);
 
   useEffect(() => {
     seenCursors.current.clear(); setUsers([]); setCursor(null); setLoaded(false);
     requesting.current = false;
     void load(undefined, true);
     return () => { generation.current += 1; controller.current?.abort(); requesting.current = false; };
-  }, [user.fid, kind]);
+  }, [load]);
 
   function close() { controller.current?.abort(); onClose(); }
   function visit(event: MouseEvent<HTMLAnchorElement>, person: User) {

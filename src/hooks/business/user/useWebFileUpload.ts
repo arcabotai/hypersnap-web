@@ -17,7 +17,7 @@ export const useWebFileUpload = () => {
   const [fileError, setFileError] = useState<string | null>(null);
 
   // Configure dropzone for image uploads
-  const { getRootProps, getInputProps, acceptedFiles, isDragActive } =
+  const { getRootProps, getInputProps, isDragActive } =
     useDropzone({
       accept: {
         'image/png': ['.png'],

@@ -344,6 +344,28 @@ describe('isolated App feature integration', () => {
     expect(container.querySelector('.toast')?.textContent).toContain('You’re connected to Hypersnap.'); expect(container.querySelector('.toast')?.textContent).not.toContain('@fid:');
   });
 
+  it('keeps confirmed profile metadata and the current feed when the same signing session receives a display update', async () => {
+    vi.mocked(getProfileFeed).mockResolvedValue({ casts: [ownCast], next: {} });
+    await start('/profile/10'); const connected = session(FULL_CLIENT_SCOPES); await connect(connected);
+    vi.mocked(connected.updateProfile).mockResolvedValue({ saved: ['displayName'] });
+    const userReads = vi.mocked(getUser).mock.calls.length;
+    const feedReads = vi.mocked(getProfileFeed).mock.calls.length;
+    const reactionReads = vi.mocked(getReactionStatus).mock.calls.length;
+    await click(button('Edit profile'));
+    const editor = dialog('Edit profile');
+    const name = editor.querySelector<HTMLInputElement>('input[type="text"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'Confirmed local name');
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button('Save changes', editor));
+    expect(connected.updateProfile).toHaveBeenCalledExactlyOnceWith({ displayName: 'Confirmed local name' });
+    expect(container.querySelector('.profile h2')?.textContent).toBe('Confirmed local name');
+    expect(container.textContent).toContain(ownCast.text); expect(button('Save changes', editor).disabled).toBe(true);
+    expect(getUser).toHaveBeenCalledTimes(userReads); expect(getProfileFeed).toHaveBeenCalledTimes(feedReads); expect(getReactionStatus).toHaveBeenCalledTimes(reactionReads);
+    expect(connected.dispose).not.toHaveBeenCalled();
+  });
+
   it('preserves query and result kind through profile navigation and Back/Forward', async () => {
     await start('/search?q=person&type=users');
     expect((container.querySelector('main input[type="search"]') as HTMLInputElement).value).toBe('person');

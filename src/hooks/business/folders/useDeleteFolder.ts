@@ -80,7 +80,7 @@ export const useDeleteFolder = () => {
           showError(t`Failed to delete folder`);
         });
     },
-    [config, queryClient, actionQueueService]
+    [config, queryClient, actionQueueService, keyset]
   );
 
   return { deleteFolder };

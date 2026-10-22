@@ -1,19 +1,4 @@
-import { QuorumApiClient } from '../../../api/baseTypes';
-
-const buildChannelFetcher =
-  ({
-    apiClient,
-    spaceId,
-    channelId,
-  }: {
-    apiClient: QuorumApiClient;
-    spaceId: string;
-    channelId: string;
-  }) =>
-  async () => {
-    // const response = await apiClient.getChannel({spaceId, channelId});
-
-    return []; //response.data;
-  };
+// The channel endpoint is not implemented by this retained query yet.
+const buildChannelFetcher = () => async () => [];
 
 export { buildChannelFetcher };

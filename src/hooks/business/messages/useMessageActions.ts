@@ -459,7 +459,7 @@ export function useMessageActions(options: UseMessageActionsOptions) {
       protipAction: t`delete`,
       onConfirm: performDelete,
     });
-  }, [message, spaceId, channelId, currentPasskeyInfo, queryClient, messageDB, actionQueueService, onSubmitMessage, showConfirmationModal, mapSenderToUser, stickers, spaceRoles, spaceChannels, onChannelClick, buildDmActionContext]);
+  }, [message, spaceId, channelId, currentPasskeyInfo, queryClient, messageDB, actionQueueService, onSubmitMessage, showConfirmationModal, mapSenderToUser, stickers, spaceRoles, spaceChannels, onChannelClick, buildDmActionContext, onBeforeDelete]);
 
   // Handle more reactions (emoji picker)
   const handleMoreReactions = useCallback(

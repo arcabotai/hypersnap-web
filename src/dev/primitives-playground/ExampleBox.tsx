@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Flex, Button } from '@/components/primitives';
-import { Icon } from '@/components/primitives';
 import { InteractivePropsPanel } from './InteractivePropsPanel';
 
 interface ExampleNote {

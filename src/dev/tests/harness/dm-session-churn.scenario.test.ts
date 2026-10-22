@@ -30,7 +30,7 @@
 // should cluster AROUND THE WIPE ROUND, not at the tail — that clustering is the
 // signature, and it is what distinguishes this from a stall.
 import { test, expect } from 'vitest';
-import { createBot, type HarnessBot } from './bot';
+import { createBot } from './bot';
 import { direction, subscribedInboxes } from './loss';
 import { missingReport, persistedNumbers } from './persistence';
 import { RunLog } from './log';

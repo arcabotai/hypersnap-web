@@ -1,11 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { t } from '@lingui/core/macro';
-import {
-  Input,
-  Button,
-  Icon,
-  Flex,
-} from '../primitives';
+import { Input, Button, Icon, Flex } from '../primitives';
 import {
   useSearchSuggestions,
   useKeyboardShortcuts,
@@ -68,7 +63,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     onHideSuggestions: clearSuggestions,
   });
 
-  const { maintainFocus, preventFocusSteal } = useSearchFocusManager({
+  const { preventFocusSteal } = useSearchFocusManager({
     searchInputRef: inputRef,
     isResultsVisible,
   });
@@ -128,7 +123,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           disabled={disabled}
         />
         {query && (
-          <Flex justify="center" align="center" className="search-clear-button-wrapper">
+          <Flex
+            justify="center"
+            align="center"
+            className="search-clear-button-wrapper"
+          >
             <Button
               type="subtle"
               size="small"
@@ -142,17 +141,15 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         )}
         {!query && (
           <span className="search-shortcut invisible">
-            {navigator.userAgent.toLowerCase().includes('mac') ? '⌘K' : 'Ctrl+K'}
+            {navigator.userAgent.toLowerCase().includes('mac')
+              ? '⌘K'
+              : 'Ctrl+K'}
           </span>
         )}
       </Flex>
 
       {showSuggestions && suggestions.length > 0 && (
-        <div
-          ref={suggestionsRef}
-          className="search-suggestions"
-          role="listbox"
-        >
+        <div ref={suggestionsRef} className="search-suggestions" role="listbox">
           {suggestions.map((suggestion, index) => (
             <Flex
               key={suggestion}

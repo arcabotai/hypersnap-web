@@ -1,9 +1,21 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
 import { Button, Flex, Tooltip, Icon, TextArea, Callout } from '../primitives';
 import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import type { AttachmentProcessingResult } from '../../utils/imageProcessing';
-import { useMentionInput, type MentionOption, useMentionPillEditor } from '../../hooks/business/mentions';
+import {
+  useMentionInput,
+  type MentionOption,
+  useMentionPillEditor,
+} from '../../hooks/business/mentions';
 import { MemberName, useNameResolver } from '../../identity';
 import { createIPFSCIDRegex } from '@quilibrium/quorum-shared';
 import type { Group } from '@quilibrium/quorum-shared';
@@ -13,11 +25,19 @@ import './MessageComposer.scss';
 import { MarkdownToolbar } from './MarkdownToolbar';
 import { MentionDropdown } from './MentionDropdown';
 import type { FormatFunction } from '@quilibrium/quorum-shared';
-import { toggleBold, toggleItalic, toggleStrikethrough, wrapCode } from '@quilibrium/quorum-shared';
+import {
+  toggleBold,
+  toggleItalic,
+  toggleStrikethrough,
+  wrapCode,
+} from '@quilibrium/quorum-shared';
 import { getTextareaSelectionRect } from '../../utils/toolbarPositioning';
 import { rectAnchor, type VirtualElement } from '../ui';
 import { ENABLE_MARKDOWN, ENABLE_MENTION_PILLS } from '../../config/features';
-import { getCaretCoordinates, type CaretCoordinates } from '../../utils/caretCoordinates';
+import {
+  getCaretCoordinates,
+  type CaretCoordinates,
+} from '../../utils/caretCoordinates';
 import { extractVisualTextWithNewlines } from '../../utils/mentionPillDom';
 import {
   readSelectionInsideEditor,
@@ -153,15 +173,18 @@ export const MessageComposer = forwardRef<
     const composerRef = useRef<HTMLDivElement>(null);
     const [cursorPosition, setCursorPosition] = useState(0);
     const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [caretCoords, setCaretCoords] = useState<CaretCoordinates | null>(null);
+    const [caretCoords, setCaretCoords] = useState<CaretCoordinates | null>(
+      null
+    );
     const [isTyping, setIsTyping] = useState(false);
     const [isMultiline, setIsMultiline] = useState(false);
-    const [responsivePlaceholder, setResponsivePlaceholder] = useState(placeholder);
+    const [responsivePlaceholder, setResponsivePlaceholder] =
+      useState(placeholder);
     const { isDesktop } = useResponsiveLayout();
 
     const { notifyKeystroke, notifyMessageSent } = useTypingNotifier(
       typingScope,
-      canSendMessage,
+      canSendMessage
     );
 
     // Bulk imperative resolver: a picked mention becomes a raw DOM pill
@@ -184,7 +207,13 @@ export const MessageComposer = forwardRef<
       onTextChange: onChange,
       resolveName: resolveMentionName,
     });
-    const { editorRef, extractVisualText, extractStorageText, getCursorPosition, insertPill } = pillEditor;
+    const {
+      editorRef,
+      extractVisualText,
+      extractStorageText,
+      getCursorPosition,
+      insertPill,
+    } = pillEditor;
 
     // Enrich every address already mentioned in THIS draft — bounded by the
     // mentions in one message, not the autocomplete candidate list (which
@@ -234,7 +263,9 @@ export const MessageComposer = forwardRef<
     // Markdown toolbar state. The anchor is a virtual element over the current
     // selection rect; FloatingPopover handles centering/flip/clamp.
     const [showMarkdownToolbar, setShowMarkdownToolbar] = useState(false);
-    const [toolbarAnchor, setToolbarAnchor] = useState<VirtualElement | null>(null);
+    const [toolbarAnchor, setToolbarAnchor] = useState<VirtualElement | null>(
+      null
+    );
     const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
 
     // Update placeholder for extra small screens (< 480px)
@@ -365,7 +396,6 @@ export const MessageComposer = forwardRef<
       onMentionSelect: handleMentionSelect,
     });
 
-
     // Track cursor position
     const handleTextareaChange = useCallback(
       (newValue: string) => {
@@ -407,21 +437,34 @@ export const MessageComposer = forwardRef<
       // Capture caret coordinates for dropdown positioning
       const coords = getCaretCoordinates(editorRef.current, true);
       setCaretCoords(coords);
-    }, [extractStorageText, onChange, getCursorPosition, notifyKeystroke, value]);
+    }, [
+      extractStorageText,
+      value,
+      onChange,
+      getCursorPosition,
+      editorRef,
+      notifyKeystroke,
+    ]);
 
     // Handle copy/paste for contentEditable
-    const handleEditorPaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const text = e.clipboardData.getData('text/plain');
-      document.execCommand('insertText', false, text);
-      handleEditorInput();
-    }, [handleEditorInput]);
+    const handleEditorPaste = useCallback(
+      (e: React.ClipboardEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text/plain');
+        document.execCommand('insertText', false, text);
+        handleEditorInput();
+      },
+      [handleEditorInput]
+    );
 
-    const handleEditorCopy = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const text = extractStorageText();
-      e.clipboardData.setData('text/plain', text);
-    }, [extractStorageText]);
+    const handleEditorCopy = useCallback(
+      (e: React.ClipboardEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const text = extractStorageText();
+        e.clipboardData.setData('text/plain', text);
+      },
+      [extractStorageText]
+    );
 
     // Handle key down for contentEditable (with pill deletion)
     const handleEditorKeyDown = useCallback(
@@ -444,14 +487,19 @@ export const MessageComposer = forwardRef<
 
           if (startContainer.nodeType === Node.TEXT_NODE && startOffset === 0) {
             const prevSibling = startContainer.previousSibling;
-            if (prevSibling && (prevSibling as HTMLElement).dataset?.mentionType) {
+            if (
+              prevSibling &&
+              (prevSibling as HTMLElement).dataset?.mentionType
+            ) {
               e.preventDefault();
               prevSibling.remove();
               handleEditorInput();
               return;
             }
           } else if (startContainer.nodeType === Node.ELEMENT_NODE) {
-            const prevChild = (startContainer as HTMLElement).childNodes[startOffset - 1];
+            const prevChild = (startContainer as HTMLElement).childNodes[
+              startOffset - 1
+            ];
             if (prevChild && (prevChild as HTMLElement).dataset?.mentionType) {
               e.preventDefault();
               prevChild.remove();
@@ -493,7 +541,10 @@ export const MessageComposer = forwardRef<
             const result = formatFn(value, start, end);
             onChange(result.newText);
             setTimeout(() => {
-              textareaRef.current?.setSelectionRange(result.newStart, result.newEnd);
+              textareaRef.current?.setSelectionRange(
+                result.newStart,
+                result.newEnd
+              );
               textareaRef.current?.focus();
             }, 0);
           };
@@ -593,12 +644,16 @@ export const MessageComposer = forwardRef<
         const preStart = range.cloneRange();
         preStart.selectNodeContents(editor);
         preStart.setEnd(range.startContainer, range.startOffset);
-        const start = extractVisualTextWithNewlines(preStart.cloneContents()).length;
+        const start = extractVisualTextWithNewlines(
+          preStart.cloneContents()
+        ).length;
 
         const preEnd = range.cloneRange();
         preEnd.selectNodeContents(editor);
         preEnd.setEnd(range.endContainer, range.endOffset);
-        const end = extractVisualTextWithNewlines(preEnd.cloneContents()).length;
+        const end = extractVisualTextWithNewlines(
+          preEnd.cloneContents()
+        ).length;
 
         setSelectionRange({ start, end });
 
@@ -622,7 +677,7 @@ export const MessageComposer = forwardRef<
       } else {
         setShowMarkdownToolbar(false);
       }
-    }, []);
+    }, [editorRef]);
 
     // Handle markdown formatting
     const handleMarkdownFormat = useCallback(
@@ -634,7 +689,11 @@ export const MessageComposer = forwardRef<
           // `white-space: pre-wrap` editor then renders the `\n`s in the single
           // text node we write below, and `extractStorageText()` reads them back.
           const visualText = extractVisualTextWithNewlines(editorRef.current);
-          const result = formatFn(visualText, selectionRange.start, selectionRange.end);
+          const result = formatFn(
+            visualText,
+            selectionRange.start,
+            selectionRange.end
+          );
 
           // For now, we'll just insert the formatted text as plain text
           // TODO: A more sophisticated approach would preserve pills while formatting
@@ -647,8 +706,14 @@ export const MessageComposer = forwardRef<
               const range = document.createRange();
               const textNode = editorRef.current.firstChild;
               if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-                range.setStart(textNode, Math.min(result.newStart, textNode.textContent?.length || 0));
-                range.setEnd(textNode, Math.min(result.newEnd, textNode.textContent?.length || 0));
+                range.setStart(
+                  textNode,
+                  Math.min(result.newStart, textNode.textContent?.length || 0)
+                );
+                range.setEnd(
+                  textNode,
+                  Math.min(result.newEnd, textNode.textContent?.length || 0)
+                );
                 selection.removeAllRanges();
                 selection.addRange(range);
               }
@@ -662,18 +727,32 @@ export const MessageComposer = forwardRef<
           }, 0);
         } else {
           // For textarea: original behavior
-          const result = formatFn(value, selectionRange.start, selectionRange.end);
+          const result = formatFn(
+            value,
+            selectionRange.start,
+            selectionRange.end
+          );
           onChange(result.newText);
 
           // Restore selection and focus (same pattern as handleMentionSelect)
           setTimeout(() => {
-            textareaRef.current?.setSelectionRange(result.newStart, result.newEnd);
+            textareaRef.current?.setSelectionRange(
+              result.newStart,
+              result.newEnd
+            );
             textareaRef.current?.focus();
             setShowMarkdownToolbar(false);
           }, 0);
         }
       },
-      [value, selectionRange, onChange, extractVisualText, extractStorageText]
+      [
+        editorRef,
+        selectionRange.start,
+        selectionRange.end,
+        extractStorageText,
+        onChange,
+        value,
+      ]
     );
 
     // Manage dropdown open state based on mentionInput
@@ -696,7 +775,7 @@ export const MessageComposer = forwardRef<
           }
         }
       }
-    }, [value]);
+    }, [editorRef, value]);
 
     // Update cursor position when contentEditable changes (for mention detection)
     useEffect(() => {
@@ -707,13 +786,16 @@ export const MessageComposer = forwardRef<
 
         // Update cursor on selection change
         document.addEventListener('selectionchange', updateCursor);
-        return () => document.removeEventListener('selectionchange', updateCursor);
+        return () =>
+          document.removeEventListener('selectionchange', updateCursor);
       }
-    }, [getCursorPosition]);
+    }, [editorRef, getCursorPosition]);
 
     // Auto-resize textarea/editor based on content
     useEffect(() => {
-      const element = ENABLE_MENTION_PILLS ? editorRef.current : textareaRef.current;
+      const element = ENABLE_MENTION_PILLS
+        ? editorRef.current
+        : textareaRef.current;
       if (element) {
         // For empty content, use fixed height that matches button height
         if (!value || value.trim() === '') {
@@ -737,7 +819,7 @@ export const MessageComposer = forwardRef<
         // Update multiline state based on height - consider multiline if height > 32px (single line)
         setIsMultiline(newHeight > 32);
       }
-    }, [value, isDesktop]);
+    }, [value, isDesktop, editorRef]);
     // If disabled, show a message instead of the composer
     if (disabled) {
       return (
@@ -762,7 +844,11 @@ export const MessageComposer = forwardRef<
     return (
       <div className="message-composer-container">
         {/* Error, processing indicator, character counter, and reply-to display */}
-        {(fileError || mentionError || inReplyTo || isProcessingImage || (messageValidation?.shouldShowCounter)) && (
+        {(fileError ||
+          mentionError ||
+          inReplyTo ||
+          isProcessingImage ||
+          messageValidation?.shouldShowCounter) && (
           <div className="message-composer-info-container">
             {isProcessingImage && (
               <div className="message-composer-callout">
@@ -778,7 +864,9 @@ export const MessageComposer = forwardRef<
               </div>
             )}
             {/* Combined character counter and errors */}
-            {((messageValidation?.shouldShowCounter && characterCount) || fileError || mentionError) && (
+            {((messageValidation?.shouldShowCounter && characterCount) ||
+              fileError ||
+              mentionError) && (
               <div className="message-composer-callout">
                 <div className="message-composer-errors-container">
                   {messageValidation?.shouldShowCounter && characterCount && (
@@ -790,25 +878,19 @@ export const MessageComposer = forwardRef<
                       {characterCount}
                     </div>
                   )}
-                  {messageValidation?.shouldShowCounter && characterCount && (fileError || mentionError) && (
-                    <div className="message-composer-error-separator">|</div>
-                  )}
+                  {messageValidation?.shouldShowCounter &&
+                    characterCount &&
+                    (fileError || mentionError) && (
+                      <div className="message-composer-error-separator">|</div>
+                    )}
                   <div className="message-composer-error-messages">
                     {fileError && (
-                      <Callout
-                        variant="error"
-                        layout="minimal"
-                        size="sm"
-                      >
+                      <Callout variant="error" layout="minimal" size="sm">
                         {fileError}
                       </Callout>
                     )}
                     {mentionError && (
-                      <Callout
-                        variant="error"
-                        layout="minimal"
-                        size="sm"
-                      >
+                      <Callout variant="error" layout="minimal" size="sm">
                         {mentionError}
                       </Callout>
                     )}
@@ -867,8 +949,12 @@ export const MessageComposer = forwardRef<
                 {processedImage.isLargeGif && processedImage.thumbnail && (
                   <div className="message-composer-gif-overlay">
                     <div className="message-composer-play-icon">
-                      <svg className="message-composer-play-svg" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z"/>
+                      <svg
+                        className="message-composer-play-svg"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z" />
                       </svg>
                     </div>
                   </div>
@@ -902,7 +988,12 @@ export const MessageComposer = forwardRef<
           ref={composerRef}
           className={`message-composer-row ${inReplyTo ? 'has-reply' : ''} ${isTyping ? 'typing' : ''} ${isMultiline ? 'multiline' : ''} ${messageValidation?.isOverLimit ? 'character-limit-exceeded' : ''}`}
         >
-          <Tooltip id="attach-image" content={t`attach image`} place="top" showOnTouch={false}>
+          <Tooltip
+            id="attach-image"
+            content={t`attach image`}
+            place="top"
+            showOnTouch={false}
+          >
             <div {...getRootProps()}>
               <input {...getInputProps()} />
               <Button
@@ -994,7 +1085,11 @@ export const MessageComposer = forwardRef<
 
           <Button
             type="unstyled"
-            onClick={messageValidation?.isOverLimit || isProcessingImage ? undefined : handleSubmit}
+            onClick={
+              messageValidation?.isOverLimit || isProcessingImage
+                ? undefined
+                : handleSubmit
+            }
             className={`message-composer-send-btn ${
               messageValidation?.isOverLimit || isProcessingImage
                 ? 'disabled'

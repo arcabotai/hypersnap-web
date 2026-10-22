@@ -1,4 +1,10 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { InfiniteData } from '@tanstack/react-query';
 import { Flex } from '../primitives';
@@ -7,17 +13,41 @@ import { MentionDropdown } from './MentionDropdown';
 import { getTextareaSelectionRect } from '../../utils/toolbarPositioning';
 import { rectAnchor, type VirtualElement } from '../ui';
 import type { FormatFunction } from '@quilibrium/quorum-shared';
-import type { Message as MessageType, PostMessage, Role, Channel } from '@quilibrium/quorum-shared';
+import type {
+  Message as MessageType,
+  PostMessage,
+  Role,
+  Channel,
+} from '@quilibrium/quorum-shared';
 import { t } from '@lingui/core/macro';
 import { buildMessagesKeyPrefix } from '../../hooks/queries/messages/buildMessagesKey';
 import { useMessageDB } from '../context/useMessageDB';
-import { usePasskeysContext, channel as secureChannel } from '@quilibrium/quilibrium-js-sdk-channels';
+import {
+  usePasskeysContext,
+  channel as secureChannel,
+} from '@quilibrium/quilibrium-js-sdk-channels';
 import { DefaultImages } from '../../utils';
 import { isTouchDevice } from '../../utils/platform';
-import { ENABLE_MARKDOWN, ENABLE_DM_ACTION_QUEUE, ENABLE_MENTION_PILLS } from '../../config/features';
-import { createIPFSCIDRegex, extractMentionsFromText, applyEdit, getConversationSetting } from '@quilibrium/quorum-shared';
-import { useMentionInput, type MentionOption, useMentionPillEditor } from '../../hooks/business/mentions';
-import { getCaretCoordinates, type CaretCoordinates } from '../../utils/caretCoordinates';
+import {
+  ENABLE_MARKDOWN,
+  ENABLE_DM_ACTION_QUEUE,
+  ENABLE_MENTION_PILLS,
+} from '../../config/features';
+import {
+  createIPFSCIDRegex,
+  extractMentionsFromText,
+  applyEdit,
+  getConversationSetting,
+} from '@quilibrium/quorum-shared';
+import {
+  useMentionInput,
+  type MentionOption,
+  useMentionPillEditor,
+} from '../../hooks/business/mentions';
+import {
+  getCaretCoordinates,
+  type CaretCoordinates,
+} from '../../utils/caretCoordinates';
 import { createPillElement, type PillData } from '../../utils/mentionPillDom';
 import { useNameResolver } from '../../identity';
 
@@ -45,9 +75,19 @@ interface MessageEditTextareaProps {
   /** Users for mention autocomplete */
   users?: Array<{ address: string; displayName?: string; userIcon?: string }>;
   /** Roles for mention autocomplete */
-  roles?: Array<{ roleId: string; roleTag: string; displayName: string; color: string }>;
+  roles?: Array<{
+    roleId: string;
+    roleTag: string;
+    displayName: string;
+    color: string;
+  }>;
   /** Channel groups for mention autocomplete */
-  groups?: Array<{ groupName: string; channels: Channel[]; icon?: string; iconColor?: string }>;
+  groups?: Array<{
+    groupName: string;
+    channels: Channel[];
+    icon?: string;
+    iconColor?: string;
+  }>;
   /** Whether @everyone is allowed */
   canUseEveryone?: boolean;
 }
@@ -126,12 +166,20 @@ export function MessageEditTextarea({
     onTextChange: setEditText,
     resolveName: resolveMentionName,
   });
-  const { editorRef, extractVisualText, extractStorageText, getCursorPosition, insertPill } = pillEditor;
+  const {
+    editorRef,
+    extractVisualText,
+    extractStorageText,
+    getCursorPosition,
+    insertPill,
+  } = pillEditor;
 
   // Markdown toolbar state. Anchor is a virtual element over the selection
   // rect; FloatingPopover centers/flips/clamps it.
   const [showMarkdownToolbar, setShowMarkdownToolbar] = useState(false);
-  const [toolbarAnchor, setToolbarAnchor] = useState<VirtualElement | null>(null);
+  const [toolbarAnchor, setToolbarAnchor] = useState<VirtualElement | null>(
+    null
+  );
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
 
   // Mention autocomplete state
@@ -170,12 +218,19 @@ export function MessageEditTextarea({
   // Handle markdown formatting
   const handleMarkdownFormat = useCallback(
     (formatFn: FormatFunction) => {
-      const result = formatFn(editText, selectionRange.start, selectionRange.end);
+      const result = formatFn(
+        editText,
+        selectionRange.start,
+        selectionRange.end
+      );
       setEditText(result.newText);
 
       // Restore selection and focus
       setTimeout(() => {
-        editTextareaRef.current?.setSelectionRange(result.newStart, result.newEnd);
+        editTextareaRef.current?.setSelectionRange(
+          result.newStart,
+          result.newEnd
+        );
         editTextareaRef.current?.focus();
         setShowMarkdownToolbar(false);
       }, 0);
@@ -203,7 +258,13 @@ export function MessageEditTextarea({
       let lastIndex = 0;
 
       // Collect all mentions
-      const mentions: Array<{ type: 'user' | 'role' | 'channel' | 'everyone'; displayName: string; address: string; index: number; length: number }> = [];
+      const mentions: Array<{
+        type: 'user' | 'role' | 'channel' | 'everyone';
+        displayName: string;
+        address: string;
+        index: number;
+        length: number;
+      }> = [];
 
       // User mentions: @<address> (legacy format only)
       const userRegex = new RegExp(`@<(${createIPFSCIDRegex().source})>`, 'g');
@@ -216,7 +277,13 @@ export function MessageEditTextarea({
         if (message.mentions?.memberIds?.includes(address)) {
           // Layer 1: Lookup real display name
           const displayName = resolveMentionName(address);
-          mentions.push({ type: 'user', displayName, address, index, length: match[0].length });
+          mentions.push({
+            type: 'user',
+            displayName,
+            address,
+            index,
+            length: match[0].length,
+          });
         }
       }
 
@@ -229,9 +296,15 @@ export function MessageEditTextarea({
         // Layer 2: Verify mention exists in message.mentions
         if (message.mentions?.channelIds?.includes(channelId)) {
           // Layer 1: Lookup real channel name
-          const channel = spaceChannels.find(c => c.channelId === channelId);
+          const channel = spaceChannels.find((c) => c.channelId === channelId);
           const displayName = channel?.channelName || 'Unknown Channel';
-          mentions.push({ type: 'channel', displayName, address: channelId, index, length: match[0].length });
+          mentions.push({
+            type: 'channel',
+            displayName,
+            address: channelId,
+            index,
+            length: match[0].length,
+          });
         }
       }
 
@@ -247,10 +320,18 @@ export function MessageEditTextarea({
         }
 
         // Layer 1: Find role to get roleId
-        const role = spaceRoles.find(r => r.roleTag.toLowerCase() === roleTag.toLowerCase());
+        const role = spaceRoles.find(
+          (r) => r.roleTag.toLowerCase() === roleTag.toLowerCase()
+        );
         if (role && message.mentions?.roleIds?.includes(role.roleId)) {
           // Layer 2: Verified - mention exists in message.mentions
-          mentions.push({ type: 'role', displayName: role.roleTag, address: role.roleTag, index, length: match[0].length });
+          mentions.push({
+            type: 'role',
+            displayName: role.roleTag,
+            address: role.roleTag,
+            index,
+            length: match[0].length,
+          });
         }
       }
 
@@ -261,7 +342,13 @@ export function MessageEditTextarea({
 
         // Layer 2: Verify @everyone exists in message.mentions
         if (message.mentions?.everyone) {
-          mentions.push({ type: 'everyone', displayName: 'everyone', address: 'everyone', index, length: match[0].length });
+          mentions.push({
+            type: 'everyone',
+            displayName: 'everyone',
+            address: 'everyone',
+            index,
+            length: match[0].length,
+          });
         }
       }
 
@@ -269,10 +356,12 @@ export function MessageEditTextarea({
       mentions.sort((a, b) => a.index - b.index);
 
       // Build fragment with pills and text nodes
-      mentions.forEach(mention => {
+      mentions.forEach((mention) => {
         // Add text before mention
         if (mention.index > lastIndex) {
-          fragment.appendChild(document.createTextNode(text.substring(lastIndex, mention.index)));
+          fragment.appendChild(
+            document.createTextNode(text.substring(lastIndex, mention.index))
+          );
         }
 
         // Add pill — same DOM builder the composer uses (mentionPillDom), so
@@ -290,7 +379,9 @@ export function MessageEditTextarea({
 
       // Add remaining text
       if (lastIndex < text.length) {
-        fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+        fragment.appendChild(
+          document.createTextNode(text.substring(lastIndex))
+        );
       }
 
       return fragment;
@@ -335,7 +426,7 @@ export function MessageEditTextarea({
         editTextareaRef.current?.focus();
       }, 0);
     },
-    [editText, insertPill]
+    [editText, editorRef, insertPill]
   );
 
   // Use mention input hook
@@ -361,7 +452,7 @@ export function MessageEditTextarea({
       const coords = getCaretCoordinates(editorRef.current, true);
       setCaretCoords(coords);
     }, 0);
-  }, [extractStorageText, getCursorPosition]);
+  }, [editorRef, extractStorageText, getCursorPosition]);
 
   // Handle key down for contentEditable (forward declaration needed)
   const handleEditorKeyDown = useCallback(
@@ -406,7 +497,7 @@ export function MessageEditTextarea({
         document.removeEventListener('selectionchange', updateCursor);
       };
     }
-  }, [getCursorPosition]);
+  }, [editorRef, getCursorPosition]);
 
   // Initialize contentEditable with pills on mount
   useEffect(() => {
@@ -436,7 +527,10 @@ export function MessageEditTextarea({
     if (containerRef.current) {
       // Use setTimeout to ensure DOM is fully rendered
       setTimeout(() => {
-        containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        containerRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
       }, 50);
     }
   }, []);
@@ -453,7 +547,9 @@ export function MessageEditTextarea({
   // Writing scrollTop directly is how the list's own scroll snapping works
   // (see MessageList.tsx), so this doesn't fight Virtuoso.
   useEffect(() => {
-    const input = ENABLE_MENTION_PILLS ? editorRef.current : editTextareaRef.current;
+    const input = ENABLE_MENTION_PILLS
+      ? editorRef.current
+      : editTextareaRef.current;
     if (!input) return;
 
     const scroller = findScrollableParent(input);
@@ -482,12 +578,14 @@ export function MessageEditTextarea({
     const editedAt = Date.now();
 
     // Extract text from contentEditable (with pills) or use textarea value
-    const editedTextString = ENABLE_MENTION_PILLS && editorRef.current
-      ? extractStorageText()
-      : editText;
+    const editedTextString =
+      ENABLE_MENTION_PILLS && editorRef.current
+        ? extractStorageText()
+        : editText;
 
     const editedTextArray = editedTextString.split('\n');
-    const editedText = editedTextArray.length === 1 ? editedTextArray[0] : editedTextArray;
+    const editedText =
+      editedTextArray.length === 1 ? editedTextArray[0] : editedTextArray;
 
     const currentSpaceId = message.spaceId;
     const currentChannelId = message.channelId;
@@ -496,8 +594,14 @@ export function MessageEditTextarea({
     // Extract mentions from edited text
     const mentions = extractMentionsFromText(editedTextString, {
       allowEveryone: canUseEveryone,
-      spaceRoles: spaceRoles.map(r => ({ roleId: r.roleId, roleTag: r.roleTag })),
-      spaceChannels: spaceChannels.map(c => ({ channelId: c.channelId, channelName: c.channelName })),
+      spaceRoles: spaceRoles.map((r) => ({
+        roleId: r.roleId,
+        roleTag: r.roleTag,
+      })),
+      spaceChannels: spaceChannels.map((c) => ({
+        channelId: c.channelId,
+        channelName: c.channelName,
+      })),
     });
 
     // Apply the edit optimistically via the shared helper (same logic as the
@@ -532,7 +636,12 @@ export function MessageEditTextarea({
 
     // Update React Query cache IMMEDIATELY
     queryClient.setQueriesData(
-      { queryKey: buildMessagesKeyPrefix({ spaceId: currentSpaceId, channelId: currentChannelId }) },
+      {
+        queryKey: buildMessagesKeyPrefix({
+          spaceId: currentSpaceId,
+          channelId: currentChannelId,
+        }),
+      },
       (oldData: InfiniteData<any>) => {
         if (!oldData?.pages) return oldData;
 
@@ -543,7 +652,10 @@ export function MessageEditTextarea({
               ...page,
               messages: [
                 ...page.messages.map((m: MessageType) => {
-                  if (m.messageId === message.messageId && m.content.type === 'post') {
+                  if (
+                    m.messageId === message.messageId &&
+                    m.content.type === 'post'
+                  ) {
                     return updatedMessage;
                   }
                   return m;
@@ -588,11 +700,16 @@ export function MessageEditTextarea({
             messageId: message.messageId,
           });
           preservedAuthenticatedSenderId = (
-            storedRow as (MessageType & { authenticatedSenderId?: string }) | undefined
+            storedRow as
+              | (MessageType & { authenticatedSenderId?: string })
+              | undefined
           )?.authenticatedSenderId;
         } catch (error) {
           // Fail closed: no marker rather than a wrong one.
-          console.error('Failed to read stored authorship marker before edit:', error);
+          console.error(
+            'Failed to read stored authorship marker before edit:',
+            error
+          );
         }
 
         // Check if saveEditHistory is enabled
@@ -615,8 +732,11 @@ export function MessageEditTextarea({
             if (typeof override !== 'undefined') {
               saveEditHistoryEnabled = override;
             } else {
-              const conversationData = await messageDB.getConversation({ conversationId });
-              saveEditHistoryEnabled = conversationData?.conversation?.saveEditHistory ?? false;
+              const conversationData = await messageDB.getConversation({
+                conversationId,
+              });
+              saveEditHistoryEnabled =
+                conversationData?.conversation?.saveEditHistory ?? false;
             }
           } else {
             const space = await messageDB.getSpace(currentSpaceId);
@@ -651,7 +771,12 @@ export function MessageEditTextarea({
 
           // Update React Query cache with corrected edits array
           queryClient.setQueriesData(
-            { queryKey: buildMessagesKeyPrefix({ spaceId: currentSpaceId, channelId: currentChannelId }) },
+            {
+              queryKey: buildMessagesKeyPrefix({
+                spaceId: currentSpaceId,
+                channelId: currentChannelId,
+              }),
+            },
             (oldData: InfiniteData<any>) => {
               if (!oldData?.pages) return oldData;
               return {
@@ -661,7 +786,10 @@ export function MessageEditTextarea({
                     ...page,
                     messages: [
                       ...page.messages.map((m: MessageType) => {
-                        if (m.messageId === message.messageId && m.content.type === 'post') {
+                        if (
+                          m.messageId === message.messageId &&
+                          m.content.type === 'post'
+                        ) {
                           return correctedMessage;
                         }
                         return m;
@@ -682,13 +810,18 @@ export function MessageEditTextarea({
 
         try {
           const conversationId = `${currentSpaceId}/${currentChannelId}`;
-          const conversationData = await messageDB.getConversation({ conversationId });
+          const conversationData = await messageDB.getConversation({
+            conversationId,
+          });
           if (conversationData?.conversation) {
-            conversationIcon = conversationData.conversation.icon || DefaultImages.UNKNOWN_USER;
-            conversationDisplayName = conversationData.conversation.displayName || t`Unknown User`;
+            conversationIcon =
+              conversationData.conversation.icon || DefaultImages.UNKNOWN_USER;
+            conversationDisplayName =
+              conversationData.conversation.displayName || t`Unknown User`;
           } else if (isDM) {
             const senderInfo = mapSenderToUser(message.content.senderId);
-            conversationIcon = senderInfo.userIcon || DefaultImages.UNKNOWN_USER;
+            conversationIcon =
+              senderInfo.userIcon || DefaultImages.UNKNOWN_USER;
             conversationDisplayName = senderInfo.displayName || t`Unknown User`;
           }
         } catch (error) {
@@ -848,7 +981,8 @@ export function MessageEditTextarea({
           >
             {t`CANCEL`}
           </span>
-          {' - '}{t`Enter to`}{' '}
+          {' - '}
+          {t`Enter to`}{' '}
           <span
             className="link"
             onClick={() => {
@@ -869,7 +1003,8 @@ export function MessageEditTextarea({
           >
             {t`SAVE`}
           </span>
-          {' - '}{t`Shift+Enter for new line`}
+          {' - '}
+          {t`Shift+Enter for new line`}
         </span>
       </Flex>
     </div>

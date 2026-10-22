@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ColorSwatch, Flex } from '@/components/primitives';
+import { ColorSwatch } from '@/components/primitives';
 import { ExampleBox } from '../ExampleBox';
 
 const config = {

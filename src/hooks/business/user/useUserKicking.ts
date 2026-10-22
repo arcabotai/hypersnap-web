@@ -12,7 +12,7 @@ export const useUserKicking = () => {
 
   const { actionQueueService } = useMessageDB();
   const { currentPasskeyInfo } = usePasskeysContext();
-  const { keyset } = useRegistrationContext();
+  useRegistrationContext();
   const { data: registration } = useRegistration({
     address: currentPasskeyInfo!.address,
   });
@@ -46,7 +46,7 @@ export const useUserKicking = () => {
         setKicking(false);
       }
     },
-    [actionQueueService, spaceId, keyset, registration]
+    [actionQueueService, spaceId, registration]
   );
 
   const handleKickClick = useCallback(

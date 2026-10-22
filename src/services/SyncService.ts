@@ -9,14 +9,8 @@ import type { Message } from '@quilibrium/quorum-shared';
 import {
   SyncService as SharedSyncService,
   SyncSummary,
-  SyncManifest,
-  SyncDeltaPayload,
   SyncManifestPayload,
   SyncInitiatePayload,
-  SyncRequestPayload,
-  SyncInfoPayload,
-  MemberDigest,
-  createMemberDigest,
   PeerEntry,
 } from '@quilibrium/quorum-shared';
 import { IndexedDBAdapter } from '../adapters/indexedDbAdapter';

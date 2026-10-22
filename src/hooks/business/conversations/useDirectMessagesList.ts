@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router';
 import { usePasskeysContext } from '@quilibrium/quilibrium-js-sdk-channels';
 import { useMessages } from '../../queries/messages/useMessages';
@@ -51,11 +51,18 @@ export function useDirectMessagesList(): UseDirectMessagesListReturn {
     }
   }, [messageList, user.currentPasskeyInfo]);
 
-  // Initial message loading
+  // This is mount-time pagination only; later empty pages must not repeatedly
+  // schedule requests. Keep the initial query and actions as one snapshot.
+  const initialMessageLoad = useRef({
+    isEmpty: (messages.pages[0] as any)?.messages?.length === 0,
+    fetchNextPage,
+    fetchPreviousPage,
+  });
   useEffect(() => {
-    if ((messages.pages[0] as any)?.messages?.length === 0) {
-      fetchNextPage();
-      fetchPreviousPage();
+    const initial = initialMessageLoad.current;
+    if (initial.isEmpty) {
+      initial.fetchNextPage();
+      initial.fetchPreviousPage();
     }
   }, []);
 

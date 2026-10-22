@@ -49,6 +49,17 @@ describe('read-only community panels', () => {
     expect(container.textContent).toContain('Person 4'); expect(container.textContent).not.toContain('Person 5');
     await click(button('Close')); expect(props.onClose).toHaveBeenCalledOnce();
   });
+  it('retains cancellation across same-channel rerenders and reloads only after an explicit retry', async () => {
+    const pending = deferred<{ users: User[]; next: {} }>();
+    vi.mocked(getChannelMembers).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ users: [person(6)], next: {} });
+    await render(<ChannelPeopleDialog channel={channel} onProfile={vi.fn()} onClose={vi.fn()} />);
+    await click(button('Cancel'));
+    await render(<ChannelPeopleDialog channel={{ ...channel, name: 'Updated channel name' }} onProfile={vi.fn()} onClose={vi.fn()} />);
+    expect(getChannelMembers).toHaveBeenCalledOnce(); expect(container.textContent).toContain('Loading cancelled.');
+    await act(async () => pending.resolve({ users: [person(5)], next: {} }));
+    expect(container.textContent).not.toContain('Person 5');
+    await click(button('Try again')); expect(getChannelMembers).toHaveBeenCalledTimes(2); expect(container.textContent).toContain('Person 6');
+  });
   it('shows quote-index uncertainty and offers only an explicit sample refresh, never fake pagination', async () => {
     vi.mocked(getCastQuotes).mockResolvedValueOnce({ casts: [], next: {} }).mockResolvedValueOnce({ casts: [{ ...cast, hash: 'b'.repeat(40), text: 'Real quote' }], next: {} });
     await render(<CastQuotesDialog cast={cast} onClose={vi.fn()} renderCast={value => <p>{value.text}</p>} />);

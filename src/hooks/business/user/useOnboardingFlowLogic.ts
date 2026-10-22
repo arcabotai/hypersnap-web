@@ -191,7 +191,6 @@ export const useOnboardingFlowLogic = (adapter: OnboardingAdapter) => {
       }
       hasRemoteConfig = true;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const decryptedConfig = (await decryptUserConfig(
         savedConfig.user_config,
         new Uint8Array(inner.identity.user_key.private_key)

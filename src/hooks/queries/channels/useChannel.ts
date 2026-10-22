@@ -11,11 +11,11 @@ const useChannel = ({
   spaceId: string;
   channelId: string;
 }) => {
-  const { apiClient } = useQuorumApiClient();
+  useQuorumApiClient();
 
   return useSuspenseQuery({
     queryKey: buildChannelKey({ spaceId, channelId }),
-    queryFn: buildChannelFetcher({ apiClient, spaceId, channelId }),
+    queryFn: buildChannelFetcher(),
     refetchOnMount: true,
   });
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FrontmatterData } from '../types/frontmatter';
 import {
   deriveEpic,
@@ -195,7 +195,7 @@ export const useMarkdownContent = (filePath: string) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     if (!filePath) return;
 
     try {
@@ -245,11 +245,11 @@ The dev dashboards are configured to read markdown files directly from your \`.a
     } finally {
       setLoading(false);
     }
-  };
+  }, [filePath]);
 
   useEffect(() => {
     loadContent();
-  }, [filePath]);
+  }, [loadContent]);
 
   return { content, loading, error, reload: loadContent };
 };

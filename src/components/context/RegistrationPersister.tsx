@@ -2,7 +2,6 @@ import React, {
   createContext,
   FC,
   ReactNode,
-  useContext,
   useEffect,
   useState,
 } from 'react';
@@ -102,7 +101,7 @@ const RegistrationProvider: FC<RegistrationContextProps> = ({ children }) => {
                   address: currentPasskeyInfo!.address,
                   registration: senderRegistration,
                 });
-              } catch (e) {
+              } catch {
                 const senderIdent = secureChannel.NewUserKeyset({
                   type: 'ed448',
                   private_key: [...user_key],
@@ -238,7 +237,10 @@ const RegistrationProvider: FC<RegistrationContextProps> = ({ children }) => {
         );
       }
     }
-  }, [init, registration]);
+  }, [
+    init, registration, apiClient, currentPasskeyInfo, exportKey, getConfig,
+    keyset, saveConfig, setKeyset, setSelfAddress, uploadRegistration,
+  ]);
 
   return (
     <RegistrationContext.Provider

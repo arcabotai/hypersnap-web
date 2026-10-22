@@ -77,7 +77,7 @@ export const useInviteValidation = () => {
           spaceId: space.spaceId,
           description: space.description,
         });
-      } catch (e) {
+      } catch {
         setValidationError(t`Could not verify invite`);
       } finally {
         setIsValidating(false);

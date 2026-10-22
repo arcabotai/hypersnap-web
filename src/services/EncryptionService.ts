@@ -1,7 +1,7 @@
 // EncryptionService.ts - Extracted from MessageDB.tsx with ZERO modifications
 // This service handles encryption state management and key operations
 
-import { MessageDB, EncryptionState } from '../db/messages';
+import { MessageDB } from '../db/messages';
 import { int64ToBytes } from '@quilibrium/quorum-shared';
 import type { Space } from '@quilibrium/quorum-shared';
 import { sha256, base58btc, hexToSpreadArray } from '../utils/crypto';
@@ -324,7 +324,7 @@ export class EncryptionService {
     space.spaceId = spaceAddress;
     await this.updateSpace(space);
     const spaces = await this.messageDB.getSpaces();
-    queryClient.setQueryData(buildSpacesKey({}), (oldData) => {
+    queryClient.setQueryData(buildSpacesKey({}), () => {
       return spaces;
     });
     queryClient.setQueryData(

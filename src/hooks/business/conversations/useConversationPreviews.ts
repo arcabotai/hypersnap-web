@@ -1,6 +1,5 @@
 import { logger, generateMessagePreview } from '@quilibrium/quorum-shared';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
 import type { Conversation } from '@quilibrium/quorum-shared';
 import { useMessageDB } from '../../../components/context/useMessageDB';
 
@@ -37,10 +36,10 @@ type PreviewInput = Pick<Conversation, 'conversationId' | 'lastMessageId'>;
 export function useConversationPreviews(conversations: PreviewInput[]) {
   const { messageDB } = useMessageDB();
 
-  // Create a stable reference for the query key - only changes when lastMessageIds change
-  const messageIdMap = useMemo(
-    () => Object.fromEntries(conversations.map((c) => [c.conversationId, c.lastMessageId])),
-    [conversations.map((c) => `${c.conversationId}:${c.lastMessageId}`).join(',')]
+  // React Query hashes query keys by value, so live row objects can change
+  // without refetching when their conversation/message IDs stay the same.
+  const messageIdMap = Object.fromEntries(
+    conversations.map((c) => [c.conversationId, c.lastMessageId])
   );
 
   return useQuery<ConversationPreviewMap>({

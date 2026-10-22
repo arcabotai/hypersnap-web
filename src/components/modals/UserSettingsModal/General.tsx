@@ -1,5 +1,13 @@
 import * as React from 'react';
-import { Input, Icon, Spacer, Tooltip, TextArea, Select, Callout } from '../../primitives';
+import {
+  Input,
+  Icon,
+  Spacer,
+  Tooltip,
+  TextArea,
+  Select,
+  Callout,
+} from '../../primitives';
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { ClickToCopyContent } from '../../ui';
@@ -72,8 +80,6 @@ const General: React.FunctionComponent<GeneralProps> = ({
   markedForDeletion,
   markForDeletion,
   getProfileImageUrl,
-  onSave,
-  isSaving,
   validationError,
   spaceTagId,
   setSpaceTagId,
@@ -85,7 +91,11 @@ const General: React.FunctionComponent<GeneralProps> = ({
   const hasImage = (() => {
     if (markedForDeletion) return false;
     if (fileData && currentFile) return true;
-    if (currentPasskeyInfo?.pfpUrl && !currentPasskeyInfo.pfpUrl.includes(DefaultImages.UNKNOWN_USER)) return true;
+    if (
+      currentPasskeyInfo?.pfpUrl &&
+      !currentPasskeyInfo.pfpUrl.includes(DefaultImages.UNKNOWN_USER)
+    )
+      return true;
     return false;
   })();
   return (
@@ -94,7 +104,9 @@ const General: React.FunctionComponent<GeneralProps> = ({
         <div
           id="user-icon-tooltip-target"
           className={`avatar-upload${!hasImage ? ' empty' : ''}${isUserIconDragActive ? ' drag-active' : ''}`}
-          style={hasImage ? { backgroundImage: `url(${getProfileImageUrl()})` } : {}}
+          style={
+            hasImage ? { backgroundImage: `url(${getProfileImageUrl()})` } : {}
+          }
           {...getRootProps()}
         >
           <input {...getInputProps()} />
@@ -104,7 +116,11 @@ const General: React.FunctionComponent<GeneralProps> = ({
             !hasImage && <Icon name="image" size="2xl" className="icon" />
           )}
           {hasImage && !isUserIconDragActive && (
-            <Tooltip id="user-avatar-delete" content={t`Delete this image`} place="bottom">
+            <Tooltip
+              id="user-avatar-delete"
+              content={t`Delete this image`}
+              place="bottom"
+            >
               <button
                 type="button"
                 className="image-upload-delete-btn"
@@ -144,7 +160,8 @@ const General: React.FunctionComponent<GeneralProps> = ({
         <div className="mt-4 px-5 max-md:px-4">
           <Callout variant="info" size="sm" className="w-full">
             <Trans>
-              Your QNS name <strong>{primaryUsername}.q</strong> is shown as your name.
+              Your QNS name <strong>{primaryUsername}.q</strong> is shown as
+              your name.
             </Trans>
           </Callout>
         </div>
@@ -192,13 +209,16 @@ const General: React.FunctionComponent<GeneralProps> = ({
             className="w-full"
             error={bioErrors.length > 0}
             errorMessage={
-              bioErrors.length > 0
-                ? bioErrors.join('. ')
-                : undefined
+              bioErrors.length > 0 ? bioErrors.join('. ') : undefined
             }
           />
         </div>
-        <Spacer size="md" direction="vertical" borderTop={true} className="mt-4" />
+        <Spacer
+          size="md"
+          direction="vertical"
+          borderTop={true}
+          className="mt-4"
+        />
         {userIconFileError && (
           <div className="mb-4">
             <div className="error-label flex items-center justify-between">
@@ -240,19 +260,22 @@ const General: React.FunctionComponent<GeneralProps> = ({
             </div>
             <div className="pt-2 text-label mb-4">
               <Trans>
-                Display a tag from one of your Spaces next to your username in messages.
+                Display a tag from one of your Spaces next to your username in
+                messages.
               </Trans>
             </div>
             <Select
               value={spaceTagId ?? ''}
               options={[
                 { value: '', label: t`None` },
-                ...eligibleSpaceTags.map((s): SelectOption => ({
-                  value: s.spaceId,
-                  label: s.spaceName,
-                  avatar: s.iconUrl,
-                  displayName: s.spaceName,
-                })),
+                ...eligibleSpaceTags.map(
+                  (s): SelectOption => ({
+                    value: s.spaceId,
+                    label: s.spaceName,
+                    avatar: s.iconUrl,
+                    displayName: s.spaceName,
+                  })
+                ),
               ]}
               onChange={(val: string | string[]) => {
                 const v = val as string;
@@ -261,17 +284,20 @@ const General: React.FunctionComponent<GeneralProps> = ({
               size="medium"
               className="w-full md:w-80"
             />
-            {spaceTagId && (() => {
-              const selected = eligibleSpaceTags.find(s => s.spaceId === spaceTagId);
-              return selected ? (
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-label">
-                    <Trans>Preview:</Trans>
-                  </span>
-                  <SpaceTag tag={selected.spaceTag} size="md" />
-                </div>
-              ) : null;
-            })()}
+            {spaceTagId &&
+              (() => {
+                const selected = eligibleSpaceTags.find(
+                  (s) => s.spaceId === spaceTagId
+                );
+                return selected ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-label">
+                      <Trans>Preview:</Trans>
+                    </span>
+                    <SpaceTag tag={selected.spaceTag} size="md" />
+                  </div>
+                ) : null;
+              })()}
           </>
         )}
       </div>

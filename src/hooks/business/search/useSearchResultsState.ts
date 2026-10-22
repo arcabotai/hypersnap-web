@@ -1,5 +1,4 @@
 import { useMemo, useCallback } from 'react';
-import { t } from '@lingui/core/macro';
 import { SearchResult } from '../../../db/messages';
 
 export interface UseSearchResultsStateProps {
@@ -27,10 +26,6 @@ export interface UseSearchResultsStateReturn {
  * This hook is platform-agnostic and handles search terms and navigation
  */
 export const useSearchResultsState = ({
-  results,
-  isLoading,
-  isError,
-  error,
   query,
   onNavigate,
   onClose,

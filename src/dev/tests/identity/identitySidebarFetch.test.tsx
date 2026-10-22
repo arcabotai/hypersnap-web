@@ -142,7 +142,6 @@ describe('member sidebar identity — enrich opt-in (design decision 3)', () => 
     await settle();
 
     const fetchCount = getPublicProfile.mock.calls.length;
-    // eslint-disable-next-line no-console
     console.log(
       `[identitySidebarFetch] scenario 1 — rows rendered=${rowAddresses.length} fetches=${fetchCount}`,
     );
@@ -163,7 +162,6 @@ describe('member sidebar identity — enrich opt-in (design decision 3)', () => 
     await settle();
 
     const calls = getPublicProfile.mock.calls;
-    // eslint-disable-next-line no-console
     console.log(
       `[identitySidebarFetch] scenario 2 — rows rendered=${rowAddresses.length} fetches=${calls.length} ` +
         `requested=${calls.map((c) => c[0]).join(',')}`,
@@ -222,7 +220,6 @@ describe('member sidebar identity — enrich opt-in (design decision 3)', () => 
     await settle();
     const afterFullRemount = getPublicProfile.mock.calls.length;
 
-    // eslint-disable-next-line no-console
     console.log(
       `[identitySidebarFetch] scenario 3 — distinct=${DISTINCT_COUNT} rows=${rowAddresses.length} ` +
         `after first mount=${afterFirstMount}, after scroll-sim=${afterScrollSim}, ` +

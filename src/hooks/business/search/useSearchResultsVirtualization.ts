@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, createElement } from 'react';
+import React, { useCallback, createElement } from 'react';
 import { SearchResult } from '../../../db/messages';
 
 export interface UseSearchResultsVirtualizationProps {

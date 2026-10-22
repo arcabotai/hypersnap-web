@@ -11,7 +11,7 @@ function Shield() { return <Icon><path d="m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6l
 function Folder() { return <Icon><path d="M3 6h6l2 2h10v12H3V6Z" /><path d="M3 6V4h6l2 2h8v2" /></Icon>; }
 function Arrow() { return <Icon><path d="M5 12h14m-5-5 5 5-5 5" /></Icon>; }
 
-function Signer() {
+export function Signer() {
   const [display, setDisplay] = useState<PairingDisplay | null>(null);
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState(false);

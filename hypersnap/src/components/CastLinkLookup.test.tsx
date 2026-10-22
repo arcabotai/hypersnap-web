@@ -51,6 +51,16 @@ describe('bounded author-scoped cast link lookup UI', () => {
     await act(async () => old.resolve(result({ complete: true, continuation: undefined })));
     expect(container.textContent).not.toContain('Candidate a'); expect(container.textContent).toContain('No cast matched'); expect(props.onResolved).not.toHaveBeenCalled();
   });
+  it('keeps the same lookup in flight across callback rerenders and delivers only to the current completion handler', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const signal = vi.mocked(resolveCastAlias).mock.calls[0][0].signal!;
+    const onResolved = vi.fn();
+    await render({ onResolved, renderCast: item => <p>Updated card: {item.text}</p> });
+    expect(resolveCastAlias).toHaveBeenCalledOnce(); expect(signal.aborted).toBe(false);
+    await act(async () => pending.resolve(result({ complete: true, continuation: undefined })));
+    expect(onResolved).toHaveBeenCalledExactlyOnceWith(one); expect(props.onResolved).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Updated card: Candidate a');
+  });
   it('retains matching candidates on a continuation failure and retries the failed page', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValueOnce(result()).mockRejectedValueOnce(new Error('The Hypersnap node is temporarily unavailable.')).mockResolvedValueOnce(result({ candidates: [one, two], complete: true, continuation: undefined }));
     await render(); await click(button('Search older casts'));

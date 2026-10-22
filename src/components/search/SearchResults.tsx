@@ -12,7 +12,10 @@ import {
   useBatchSearchResultsDisplay,
 } from '../../hooks';
 import { IdentityScopeProvider } from '../../identity';
-import { useMultiSpaceRosters, useLocalDmNames } from '../../hooks/business/identity';
+import {
+  useMultiSpaceRosters,
+  useLocalDmNames,
+} from '../../hooks/business/identity';
 import './SearchResults.scss';
 
 interface SearchResultsProps {
@@ -21,7 +24,12 @@ interface SearchResultsProps {
   isError: boolean;
   error?: Error | null;
   query: string;
-  onNavigate: (spaceId: string, channelId: string, messageId: string, threadId?: string) => void;
+  onNavigate: (
+    spaceId: string,
+    channelId: string,
+    messageId: string,
+    threadId?: string
+  ) => void;
   highlightTerms: (text: string) => string;
   onClose?: () => void;
   className?: string;
@@ -108,11 +116,9 @@ const SearchResultsInner: React.FC<SearchResultsProps> = ({
   isOpen = true,
   onQueryChange,
   onClear,
-  searchContext,
   placeholder,
 }) => {
   const isTouch = isTouchDevice();
-
 
   // Business logic hooks
   const { searchTerms, handleNavigate } = useSearchResultsState({
@@ -227,7 +233,9 @@ const SearchResultsInner: React.FC<SearchResultsProps> = ({
             <div className="mobile-drawer__item-list">
               <Virtuoso
                 data={results}
-                style={{ height: Math.min(window.innerHeight * 0.8, 600) - 100 }}
+                style={{
+                  height: Math.min(window.innerHeight * 0.8, 600) - 100,
+                }}
                 className="search-results-list"
                 itemContent={(index, result) => (
                   <div className="mobile-drawer__item-box mobile-drawer__item-box--interactive">
@@ -257,9 +265,13 @@ const SearchResultsInner: React.FC<SearchResultsProps> = ({
             <>
               <Virtuoso
                 data={results}
-                style={{ height: Math.min(window.innerHeight * 0.8, 600) - 100 }}
+                style={{
+                  height: Math.min(window.innerHeight * 0.8, 600) - 100,
+                }}
                 className="search-results-list"
-                components={{ Header: () => <div style={{ height: '16px' }} /> }}
+                components={{
+                  Header: () => <div style={{ height: '16px' }} />,
+                }}
                 itemContent={(index, result) => (
                   <div className="panel-item-box panel-item-box--interactive">
                     <SearchResultItem

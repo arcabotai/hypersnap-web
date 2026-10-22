@@ -1,5 +1,5 @@
 import { logger } from '@quilibrium/quorum-shared';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { usePasskeysContext } from '@quilibrium/quilibrium-js-sdk-channels';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,15 +60,24 @@ export const useSpaceManagement = (
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Keep the current query snapshot available without overwriting edits when
+  // the same Space refreshes. Hydrate only when the edited identity changes.
+  const initializationSpace = useRef(space);
+  useEffect(() => {
+    initializationSpace.current = space;
+  }, [space]);
+  const loadedSpaceId = space?.spaceId;
+
   // Update states when space data loads (only once)
   useEffect(() => {
+    const space = initializationSpace.current;
     if (space) {
       setSpaceName(space.spaceName || '');
       setIsRepudiable(space.isRepudiable || false);
       setSaveEditHistory(space.saveEditHistory ?? false);
       setAllowThreads(space.allowThreads ?? false);
     }
-  }, [space?.spaceId]); // Only run when space ID changes, not when state changes
+  }, [loadedSpaceId]); // Only run when space ID changes, not when state changes
 
   const saveChanges = useCallback(
     async (
@@ -154,7 +163,7 @@ export const useSpaceManagement = (
     } finally {
       setIsDeleting(false);
     }
-  }, [deleteSpace, spaceId, navigate, onClose, space]);
+  }, [deleteSpace, spaceId, navigate, onClose]);
 
   const clearDeleteError = useCallback(() => {
     setDeleteError(null);

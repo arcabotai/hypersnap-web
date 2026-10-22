@@ -62,6 +62,12 @@ describe('verified connected-user reactions', () => {
     expect(button('Like').disabled).toBe(true); expect(host.textContent).toContain('Waiting for confirmation.');
     expect(session.react).not.toHaveBeenCalled(); expect(getReactionStatus).not.toHaveBeenCalled();
     vi.mocked(session.reactionStatus).mockResolvedValue(true);
+    const metadataUpdate = { ...session, user: { ...session.user, display_name: 'Updated display name' } };
+    await act(async () => root.render(<CastReactions cast={{ ...cast, author: { ...cast.author, display_name: 'Updated author' } }} session={metadataUpdate} onSignIn={vi.fn()} notify={vi.fn()} />));
+    // Changing display metadata must not retry a quarantined write's status or
+    // silently enable another toggle, even if the next read could confirm it.
+    expect(session.reactionStatus).toHaveBeenCalledTimes(2);
+    expect(button('Like').disabled).toBe(true); expect(host.textContent).toContain('Waiting for confirmation.');
     await click([...host.querySelectorAll('button')].find(item => item.textContent === 'Check pending reaction')!);
     expect(button('Unlike').disabled).toBe(false); expect(session.react).not.toHaveBeenCalled();
   });

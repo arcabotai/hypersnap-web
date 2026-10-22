@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { IconArrowDown, IconArrowLeft, IconArrowUpRight, IconCheck, IconCode, IconDeviceDesktop, IconFileCheck, IconKey, IconLock, IconRefresh, IconShieldLock, IconTrash, IconWallet } from '@tabler/icons-react';
 import { Button, Input, Modal } from './ui';
 import WalletConnectLogo from './WalletConnectLogo';
@@ -60,14 +60,14 @@ function WalletApproval({ request, disabled, expired = false, onApproved, onBusy
     setWaiting(null); setProgress(''); setWalletError(''); setRetry(false);
     return () => { generation.current += 1; controller.current?.abort(); active.current = false; };
   }, [request.requestId]);
-  function cancel(message = 'Cancelled on this site. Reject any request still open in your wallet before retrying.') {
+  const cancel = useCallback((message = 'Cancelled on this site. Reject any request still open in your wallet before retrying.') => {
     const ownedBusy = active.current || walletConnect;
     generation.current += 1; controller.current?.abort(); controller.current = null; active.current = false;
     setWaiting(null); setWalletConnect(false); setProgress(message); setWalletError(''); setRetry(true); if (ownedBusy) onBusy(false); onError('');
-  }
+  }, [walletConnect, onBusy, onError]);
   useEffect(() => {
     if (expired && (active.current || walletConnect)) cancel('This approval request expired. Use another account to start again with a fresh request. Reject any request still open in your wallet.');
-  }, [expired, request.requestId]);
+  }, [expired, request.requestId, walletConnect, cancel]);
   async function approve(wallet: InjectedWallet) {
     if (disabled || active.current || isExpired.current) return;
     active.current = true; setSelection({ wallet, explicit: true }); setWalletConnect(false);
@@ -178,7 +178,7 @@ export default function ConnectAccount({ onClose, onConnect, requestedScopes, in
     const initialGeneration = generation.current;
     getSavedSessionMethod().then(value => { if (active && generation.current === initialGeneration) { setSavedMethod(value); setStorageUnreadable(false); if (!socialApproval) setUnlock(value !== undefined); } }).catch(() => { if (active && generation.current === initialGeneration) { setStorageUnreadable(true); setError('Your saved device key could not be read. You can reconnect with your custody wallet for this tab, or explicitly forget the unreadable vault.'); } });
     return () => { active = false; generation.current += 1; controller.current?.abort(); pending.current?.dispose(); provisionalSession.current?.dispose(); };
-  }, []);
+  }, [socialApproval]);
   useEffect(() => {
     if (!request) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);

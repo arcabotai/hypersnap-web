@@ -68,7 +68,9 @@ describe('the browser media upload boundary', () => {
     vi.stubGlobal('location', { origin: BASE });
     const fetch = vi.fn().mockRejectedValueOnce(new Error('Untrusted network text')).mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Untrusted server text' }), { status: 403 }));
     vi.stubGlobal('fetch', fetch);
-    await expect(uploadMedia(file(), authorize)).rejects.toThrow('status could not be confirmed');
+    const failure = await uploadMedia(file(), authorize).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ message: 'The upload status could not be confirmed. Check your attachment before trying again.' });
+    expect(failure).not.toHaveProperty('cause'); expect(String(failure)).not.toContain('Untrusted network text');
     expect(fetch).toHaveBeenCalledTimes(1);
     await expect(uploadMedia(file(), authorize)).rejects.toThrow('This device is not authorized');
     expect(fetch).toHaveBeenCalledTimes(2);

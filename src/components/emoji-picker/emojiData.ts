@@ -1,7 +1,7 @@
 // src/components/emoji-picker/emojiData.ts
 import emojiDataRaw from 'emoji-datasource-twitter/emoji.json';
 import type { EmojiItem, VirtualRow, CustomEmoji } from './types';
-import { EMOJI_CATEGORIES, CATEGORY_ICONS, SPRITE_SHEET } from './types';
+import { EMOJI_CATEGORIES, CATEGORY_ICONS } from './types';
 
 /** Raw entry shape from emoji-datasource-twitter */
 interface RawEmoji {
@@ -14,27 +14,30 @@ interface RawEmoji {
   sheet_x: number;
   sheet_y: number;
   has_img_twitter: boolean;
-  skin_variations?: Record<string, {
-    unified: string;
-    sheet_x: number;
-    sheet_y: number;
-    has_img_twitter: boolean;
-  }>;
+  skin_variations?: Record<
+    string,
+    {
+      unified: string;
+      sheet_x: number;
+      sheet_y: number;
+      has_img_twitter: boolean;
+    }
+  >;
 }
 
 // Representative emoji unified codes for each category tab icon
 const CATEGORY_ICON_CODES: Record<string, string> = {
-  'Frequently Used': '1F552',   // 🕒 clock three
-  'Custom': '2B50',             // ⭐ white medium star
+  'Frequently Used': '1F552', // 🕒 clock three
+  Custom: '2B50', // ⭐ white medium star
   'Smileys & Emotion': '1F600',
   'People & Body': '1F44B',
-  'Animals & Nature': '1F43A',  // 🐺 wolf (was 1F43B bear)
+  'Animals & Nature': '1F43A', // 🐺 wolf (was 1F43B bear)
   'Food & Drink': '1F354',
   'Travel & Places': '2708-FE0F',
-  'Activities': '26BD',
-  'Objects': '1F4BC',           // 💼 briefcase (was 1F4A1 light bulb)
-  'Symbols': '2049-FE0F',       // ‼️❓ interrobang (was 1F49B yellow heart)
-  'Flags': '1F3C1',
+  Activities: '26BD',
+  Objects: '1F4BC', // 💼 briefcase (was 1F4A1 light bulb)
+  Symbols: '2049-FE0F', // ‼️❓ interrobang (was 1F49B yellow heart)
+  Flags: '1F3C1',
 };
 
 let cachedEmojis: EmojiItem[] | null = null;
@@ -73,7 +76,10 @@ export function getEmojiImageUrl(unified: string): string {
 }
 
 /** Sheet coordinates for 🤟 (1F91F, "I love you" hand sign) at the given skin tone (or default) */
-export function getRockHandSprite(skinTone?: string | null): { sheetX: number; sheetY: number } {
+export function getRockHandSprite(skinTone?: string | null): {
+  sheetX: number;
+  sheetY: number;
+} {
   // cachedRockHand is populated inside buildEmojiIndex() — same pattern as CATEGORY_ICONS
   if (!cachedRockHand) buildEmojiIndex();
   const rock = cachedRockHand;
@@ -97,10 +103,14 @@ function buildEmojiIndex(): EmojiItem[] {
         ? Object.fromEntries(
             Object.entries(e.skin_variations)
               .filter(([key, v]) => v.has_img_twitter && !key.includes('-'))
-              .map(([key, v]) => [key, { sheetX: v.sheet_x, sheetY: v.sheet_y, unified: v.unified }])
+              .map(([key, v]) => [
+                key,
+                { sheetX: v.sheet_x, sheetY: v.sheet_y, unified: v.unified },
+              ])
           )
         : null;
-      const skinVariations = filtered && Object.keys(filtered).length > 0 ? filtered : undefined;
+      const skinVariations =
+        filtered && Object.keys(filtered).length > 0 ? filtered : undefined;
 
       return {
         unified: e.unified,
@@ -112,7 +122,8 @@ function buildEmojiIndex(): EmojiItem[] {
         sheetX: e.sheet_x,
         sheetY: e.sheet_y,
         searchString: [e.name, ...e.short_names].join(' ').toLowerCase(),
-        hasSkinVariations: !!skinVariations && Object.keys(skinVariations).length > 0,
+        hasSkinVariations:
+          !!skinVariations && Object.keys(skinVariations).length > 0,
         skinVariations,
       };
     })
@@ -122,7 +133,11 @@ function buildEmojiIndex(): EmojiItem[] {
   for (const [cat, code] of Object.entries(CATEGORY_ICON_CODES)) {
     const emoji = cachedEmojis.find((e) => e.unified === code);
     if (emoji) {
-      CATEGORY_ICONS[cat] = { unified: emoji.unified, sheetX: emoji.sheetX, sheetY: emoji.sheetY };
+      CATEGORY_ICONS[cat] = {
+        unified: emoji.unified,
+        sheetX: emoji.sheetX,
+        sheetY: emoji.sheetY,
+      };
     }
   }
 
@@ -139,7 +154,7 @@ function buildEmojiIndex(): EmojiItem[] {
 export function buildRowData(
   columnsCount: number,
   frequentUnifieds: string[],
-  customEmojis: CustomEmoji[],
+  customEmojis: CustomEmoji[]
 ): { rows: VirtualRow[]; categoryRowIndices: Map<string, number> } {
   const cols = Math.max(1, columnsCount);
   const emojis = buildEmojiIndex();
@@ -177,7 +192,11 @@ export function buildRowData(
 
     if (freqEmojis.length > 0) {
       categoryRowIndices.set('Frequently Used', rows.length);
-      rows.push({ type: 'header', category: 'Frequently Used', label: 'Frequently Used' });
+      rows.push({
+        type: 'header',
+        category: 'Frequently Used',
+        label: 'Frequently Used',
+      });
       chunkEmojis(freqEmojis);
     }
   }
@@ -211,7 +230,11 @@ export function searchEmojis(query: string): EmojiItem[] {
 }
 
 /** Build search result rows from a query */
-export function buildSearchRows(query: string, columnsCount: number, customEmojis: CustomEmoji[]): VirtualRow[] {
+export function buildSearchRows(
+  query: string,
+  columnsCount: number,
+  customEmojis: CustomEmoji[]
+): VirtualRow[] {
   const cols = Math.max(1, columnsCount);
   const results = searchEmojis(query);
   const rows: VirtualRow[] = [];
@@ -236,4 +259,3 @@ export function buildSearchRows(query: string, columnsCount: number, customEmoji
 
   return rows;
 }
-

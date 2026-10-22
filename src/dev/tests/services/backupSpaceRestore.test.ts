@@ -30,7 +30,6 @@ import { messages } from '@/i18n/en/messages';
 import { MessageDB } from '@/db/messages';
 import { ConfigService } from '@/services/ConfigService';
 import { BackupService } from '@/services/BackupService';
-import { getDefaultUserConfig } from '@/utils';
 import { QueryClient } from '@tanstack/react-query';
 
 vi.mock('@quilibrium/quilibrium-js-sdk-channels', () => ({

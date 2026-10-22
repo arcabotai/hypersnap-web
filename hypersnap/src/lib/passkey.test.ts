@@ -28,7 +28,7 @@ async function authenticator(rpId: string, flags: number, creation = false): Pro
 let create: ReturnType<typeof vi.fn>, get: ReturnType<typeof vi.fn>, fetch: ReturnType<typeof vi.fn>;
 let userHandle: ArrayBuffer;
 let first: Uint8Array<ArrayBuffer>, second: Uint8Array<ArrayBuffer>;
-let lastCreated: SyntheticCredential, lastAssertion: SyntheticCredential;
+let lastAssertion: SyntheticCredential;
 
 beforeEach(() => {
   vi.stubGlobal('PublicKeyCredential', SyntheticCredential);
@@ -43,7 +43,6 @@ beforeEach(() => {
     const data = await authenticator(requested.rp.id!, 0x45, true);
     result.response = { clientDataJSON: json({ type: 'webauthn.create', origin: ORIGIN, challenge: b64(new Uint8Array(requested.challenge as ArrayBuffer)), crossOrigin: false }), getAuthenticatorData: () => data };
     result.outputs = { prf: { enabled: true }, credProps: { rk: true } };
-    lastCreated = result;
     return result;
   });
   get = vi.fn().mockImplementation(async (options: CredentialRequestOptions) => {

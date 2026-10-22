@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { ExampleBox } from '../ExampleBox';
 
 /**
@@ -33,46 +33,12 @@ const MOCK_MENTIONS: MentionPill[] = [
   { id: 'pill-6', type: 'everyone', displayName: 'everyone', address: 'everyone' },
 ];
 
-const MentionPillComponent: React.FC<{ mention: MentionPill; onDelete: () => void }> = ({
-  mention,
-  onDelete
-}) => {
-  const colors = {
-    user: 'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-    role: 'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-    channel: 'bg-green-500/20 text-green-700 dark:text-green-300',
-    everyone: 'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-  };
-
-  const prefix = {
-    user: '@',
-    role: '@',
-    channel: '#',
-    everyone: '@',
-  };
-
-  return (
-    <span
-      contentEditable={false}
-      data-mention-id={mention.id}
-      data-mention-address={mention.address}
-      data-mention-type={mention.type}
-      className={`inline-flex items-center px-2 py-0.5 mx-0.5 rounded text-sm font-medium ${colors[mention.type]} cursor-pointer select-none`}
-      style={{ userSelect: 'none' }}
-      onClick={onDelete}
-      title={`${mention.type}: ${mention.address} (click to remove)`}
-    >
-      {prefix[mention.type]}{mention.displayName}
-    </span>
-  );
-};
-
 const ContentEditableDemo: React.FC<{
   placeholder?: string;
   initialPills?: MentionPill[];
 }> = ({ placeholder = 'Type here...', initialPills = [] }) => {
   const editorRef = useRef<HTMLDivElement>(null);
-  const [pills, setPills] = useState<MentionPill[]>(initialPills);
+  const [, setPills] = useState<MentionPill[]>(initialPills);
 
   // Insert a mention pill at cursor
   const insertPill = (mention: MentionPill) => {

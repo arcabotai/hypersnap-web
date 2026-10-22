@@ -1,4 +1,3 @@
-import { logger } from '@quilibrium/quorum-shared';
 import { useState, useEffect } from 'react';
 import type { Space } from '@quilibrium/quorum-shared';
 import { useMessageDB } from '../../../components/context/useMessageDB';

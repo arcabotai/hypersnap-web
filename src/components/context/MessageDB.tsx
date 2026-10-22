@@ -47,14 +47,8 @@ import {
 } from '@quilibrium/quilibrium-js-sdk-channels';
 import type {
   Conversation,
-  EmbedMessage,
   Message,
-  PostMessage,
-  ReactionMessage,
-  RemoveMessage,
-  RemoveReactionMessage,
   Space,
-  StickerMessage,
   UpdateProfileMessage,
   BroadcastSpaceTag,
 } from '@quilibrium/quorum-shared';
@@ -71,7 +65,6 @@ import {
   hasProfileContent,
   preferIncomingProfileField,
 } from '../../utils/conversationProfile';
-import { t } from '@lingui/core/macro';
 
 type MessageDBContextValue = {
   messageDB: MessageDB;
@@ -306,10 +299,6 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
   const queryClient = useQueryClient();
   const { apiClient } = useQuorumApiClient();
   const { setMessageHandler, enqueueOutbound, setResubscribe } = useWebSocket();
-  // Pending on-reconnect identity push, so a flapping socket replaces the
-  // pending broadcast instead of stacking another one behind it.
-  const dmProfilePushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const spaceProfileAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const invalidateConversation = useInvalidateConversation();
   const navigate = useNavigate();
 
@@ -336,7 +325,7 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
     };
   }>({});
 
-  const deleteInboxMessages = async (
+  const deleteInboxMessages = useCallback(async (
     inboxKeyset: secureChannel.InboxKeyset,
     timestamps: number[],
     apiClient: QuorumApiClient
@@ -376,9 +365,9 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
       });
       throw err;
     }
-  };
+  }, []);
 
-  const addOrUpdateConversation = async (
+  const addOrUpdateConversation = useCallback(async (
     queryClient: QueryClient,
     address: string,
     timestamp: number,
@@ -478,66 +467,7 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
       }
     );
     invalidateConversation({ conversationId });
-  };
-
-  const updateUserProfile = React.useCallback(
-    async (
-      displayName: string,
-      userIcon: string,
-      currentPasskeyInfo: {
-        credentialId: string;
-        address: string;
-        publicKey: string;
-        displayName?: string;
-        pfpUrl?: string;
-        completedOnboarding: boolean;
-      },
-      spaceTag?: BroadcastSpaceTag,
-      bio?: string
-    ) => {
-      const spaces = await messageDB.getSpaces();
-      for (const space of spaces) {
-        // Two-slot design (see identity-resolution doc): the global editor
-        // broadcasts the user's GLOBAL identity via the global* slots, NOT the
-        // per-space override fields. Sending the override fields here is what
-        // used to freeze every space to the global value and fake per-space
-        // overrides. Receivers store global* separately and render
-        // override-else-global. Empty string = deliberate global clear.
-        submitChannelMessage(
-          space.spaceId,
-          space.defaultChannelId,
-          {
-            type: 'update-profile',
-            senderId: currentPasskeyInfo.address,
-            globalDisplayName: displayName,
-            globalUserIcon: userIcon,
-            ...(bio !== undefined ? { globalBio: bio } : {}),
-            ...(spaceTag ? { spaceTag } : {}),
-            // Global-only broadcast: the override fields (incl. the required
-            // `userIcon`) are intentionally absent. Single cast to satisfy that
-            // one required field, matching the tag-rotation rebroadcast site.
-          } as UpdateProfileMessage,
-          queryClient,
-          currentPasskeyInfo,
-          undefined, // inReplyTo
-          undefined, // skipSigning
-          undefined  // isSpaceOwner - not needed for profile updates
-        );
-      }
-
-      // DM equivalent: push the new profile to every existing DM partner.
-      // Fire-and-forget; per-partner failures are logged inside the service.
-      const ks = actionQueueServiceRef.current?.getUserKeyset();
-      if (ks) {
-        messageServiceRef.current
-          ?.broadcastProfileToAllDMs(displayName, userIcon, bio, currentPasskeyInfo.address, ks)
-          .catch((err) => {
-            logger.warn('[DMProfile] broadcastProfileToAllDMs failed', { err });
-          });
-      }
-    },
-    []
-  );
+  }, [messageDB, invalidateConversation]);
 
   // Ensure selfAddress is derived when key material is available
   useEffect(() => {
@@ -556,138 +486,8 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
         }
       } catch { /* ignore */ }
     })();
-  }, [selfAddress, keyset]);
+  }, [selfAddress, keyset, messageDB]);
 
-
-  useEffect(() => {
-    if (keyset?.deviceKeyset?.identity_key && selfAddress) {
-      setMessageHandler((message) =>
-        handleNewMessage(selfAddress, keyset, message)
-      );
-      // Push our identity to every DM partner. An established DM session
-      // carries no sender profile, so a partner whose row is still a
-      // placeholder cannot learn who we are from ordinary traffic — this is
-      // their only recovery path when they have no public profile to fall back
-      // on. The per-partner dedup gate makes an unchanged identity a wire
-      // no-op, so repeated calls cost nothing. Mirrors mobile.
-      //
-      // Deliberately NOT wired only into setResubscribe: on a fresh page load
-      // the socket opens before this effect registers that callback, so
-      // resubscribe fires on later RE-connects but never on startup. The
-      // listen-frame block below has the same race and works around it the
-      // same way (a startup timer that duplicates the resubscribe work).
-      const fireDmProfileRebroadcast = () => {
-        const ks = actionQueueServiceRef.current?.getUserKeyset();
-        // Either ref being unset means we ran before init finished; the other
-        // scheduled call (startup vs reconnect) covers it.
-        if (!ks || !messageServiceRef.current) return;
-        messageServiceRef.current
-          .rebroadcastProfileToAllDMsOnConnect(selfAddress, ks)
-          .catch((err) =>
-            logger.warn('[DMProfile] identity push failed', { err })
-          );
-      };
-
-      // Same idea for spaces, and the same startup race. A space member's name
-      // and avatar exist on your device only because someone announced them,
-      // and desktop announced only at join and on tag rotation — so a member
-      // who joined while you were offline stayed a truncated address forever.
-      // Bounded by its own gate (3 attempts per identity, then silent), because
-      // past the bootstrap the member digest exchange is the repair path.
-      const fireSpaceProfileAnnounce = () => {
-        if (!messageServiceRef.current) {
-          // Realistically unreachable today (the service is built
-          // unconditionally in the same render pass), but a silent return here
-          // would disable the announce for the whole session with nothing to
-          // explain why — and "renders as an address" is already a symptom with
-          // no signal of its own.
-          logger.warn('[SpaceProfile] announce skipped — service not ready');
-          return;
-        }
-        messageServiceRef.current
-          .announceProfileToAllSpacesOnConnect(selfAddress)
-          .catch((err) =>
-            logger.warn('[SpaceProfile] identity announce failed', { err })
-          );
-      };
-
-      setResubscribe(async () => {
-        enqueueOutbound(async () => {
-          const conversations = await messageDB.getAllEncryptionStates();
-          return [
-            JSON.stringify({
-              type: 'listen',
-              inbox_addresses: conversations
-                .map((c) => c.inboxId)
-                .concat(keyset.deviceKeyset.inbox_keyset.inbox_address),
-            }),
-          ];
-        });
-        // Staggered so it never competes with the listen frame above. Reconnects
-        // fire on a flat 1s retry, so without clearing the previous timer a
-        // flapping socket stacks up independent pending broadcasts.
-        if (dmProfilePushTimerRef.current !== null) {
-          clearTimeout(dmProfilePushTimerRef.current);
-        }
-        dmProfilePushTimerRef.current = setTimeout(
-          fireDmProfileRebroadcast,
-          4000
-        );
-        if (spaceProfileAnnounceTimerRef.current !== null) {
-          clearTimeout(spaceProfileAnnounceTimerRef.current);
-        }
-        spaceProfileAnnounceTimerRef.current = setTimeout(
-          fireSpaceProfileAnnounce,
-          6000
-        );
-      });
-
-      // Startup path — see the race note above. Runs alongside the existing
-      // 10s space-sync block so a cold load also pushes identity.
-      setTimeout(fireDmProfileRebroadcast, 10000);
-      setTimeout(async () => {
-        enqueueOutbound(async () => {
-          const conversations = await messageDB.getAllEncryptionStates();
-          return [
-            JSON.stringify({
-              type: 'listen',
-              inbox_addresses: conversations
-                .map((c) => c.inboxId)
-                .concat(keyset.deviceKeyset.inbox_keyset.inbox_address),
-            }),
-          ];
-        });
-      }, 1000);
-
-      setTimeout(async () => {
-        const spaces = await messageDB.getSpaces();
-        const config = await messageDB.getUserConfig({ address: selfAddress });
-        for (const space of spaces.filter((s) =>
-          config.spaceIds.includes(s.spaceId)
-        )) {
-          requestSync(space.spaceId);
-          // Re-announce this device's per-space signing key on connect so
-          // receivers that missed a prior announce self-heal. Idempotent,
-          // fire-and-forget; behaviour-neutral until the send-side flip is
-          // live on both platforms (per-device-signing task, Option A).
-          messageServiceRef.current
-            ?.announceDeviceKeys(space.spaceId, keyset)
-            .catch((err) =>
-              logger.warn('[DeviceKeys] announce on connect failed', {
-                err,
-                spaceId: space.spaceId,
-              })
-            );
-        }
-      }, 10000);
-
-      // Startup path for the space announce — see the race note above. Trails
-      // the requestSync block so the digest exchange, which repairs rows that
-      // already exist, gets the quieter moment; the announce only has to reach
-      // members who have no row for us at all.
-      setTimeout(fireSpaceProfileAnnounce, 12000);
-    }
-  }, [keyset, selfAddress]);
 
   // Forward declare SpaceService functions for circular dependency resolution
   // These will be defined after SpaceService instantiation
@@ -913,20 +713,6 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
     [syncService]
   );
 
-  const updateSyncCacheWithMember = React.useCallback(
-    (spaceId: string, channelId: string, member: any) => {
-      syncService.updateCacheWithMember(spaceId, channelId, member);
-    },
-    [syncService]
-  );
-
-  const removeSyncCacheMessage = React.useCallback(
-    (spaceId: string, channelId: string, messageId: string) => {
-      syncService.removeCacheMessage(spaceId, channelId, messageId);
-    },
-    [syncService]
-  );
-
   // InvitationService (depends on requestSync, sendHubMessage)
   const invitationService = useMemo(() => {
     return new InvitationService({
@@ -1036,6 +822,7 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
   }, [
     messageDB,
     enqueueOutbound,
+    addOrUpdateConversation,
     apiClient,
     deleteEncryptionStates,
     deleteInboxMessages,
@@ -1095,7 +882,7 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
     skipSigning
   );
 
-  const saveMessage = async (
+  const saveMessage = useCallback(async (
     decryptedContent: Message,
     messageDB: MessageDB,
     spaceId: string,
@@ -1122,9 +909,9 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
     updateSyncCacheWithMessage(spaceId, channelId, decryptedContent);
 
     return result;
-  };
+  }, [messageService, updateSyncCacheWithMessage]);
 
-  const addMessage = async (
+  const addMessage = useCallback(async (
     queryClient: QueryClient,
     spaceId: string,
     channelId: string,
@@ -1136,7 +923,7 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
       channelId,
       decryptedContent
     );
-  };
+  }, [messageService]);
 
   // SpaceService (depends on saveMessage, addMessage)
   const spaceService = useMemo(() => {
@@ -1419,6 +1206,112 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
     actionQueueServiceRef.current = actionQueueService;
   }, [actionQueueService]);
 
+  // Service callbacks can change after navigation or cache updates. Keep their
+  // latest committed implementations without restarting authenticated startup
+  // timers: only a keyset/self-address transition opens a new connection scope.
+  const connectionActions = useRef({
+    setMessageHandler, setResubscribe, enqueueOutbound, handleNewMessage, messageDB, requestSync,
+  });
+  useEffect(() => {
+    connectionActions.current = {
+      setMessageHandler, setResubscribe, enqueueOutbound, handleNewMessage, messageDB, requestSync,
+    };
+  }, [setMessageHandler, setResubscribe, enqueueOutbound, handleNewMessage, messageDB, requestSync]);
+
+  useEffect(() => {
+    if (!keyset?.deviceKeyset?.identity_key || !selfAddress) return;
+    let active = true;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    let dmProfilePushTimer: ReturnType<typeof setTimeout> | null = null;
+    let spaceProfileAnnounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = (callback: () => void | Promise<void>, delay: number) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        if (active) void callback();
+      }, delay);
+      timers.add(timer);
+      return timer;
+    };
+
+    connectionActions.current.setMessageHandler(async (message) => {
+      if (!active) return;
+      await connectionActions.current.handleNewMessage(selfAddress, keyset, message);
+    });
+
+    const enqueueListen = () => {
+      if (!active) return;
+      connectionActions.current.enqueueOutbound(async () => {
+        if (!active) return [];
+        const conversations = await connectionActions.current.messageDB.getAllEncryptionStates();
+        // A queued producer may finish after sign-out or an identity change.
+        if (!active) return [];
+        return [JSON.stringify({
+          type: 'listen',
+          inbox_addresses: conversations.map((c) => c.inboxId)
+            .concat(keyset.deviceKeyset.inbox_keyset.inbox_address),
+        })];
+      });
+    };
+
+    // Startup covers the socket-open-before-registration race; reconnect pushes
+    // use the same service gates and replace pending pushes when the socket flaps.
+    const fireDmProfileRebroadcast = () => {
+      if (!active) return;
+      const ks = actionQueueServiceRef.current?.getUserKeyset();
+      if (!ks || !messageServiceRef.current) return;
+      messageServiceRef.current.rebroadcastProfileToAllDMsOnConnect(selfAddress, ks)
+        .catch((err) => logger.warn('[DMProfile] identity push failed', { err }));
+    };
+    const fireSpaceProfileAnnounce = () => {
+      if (!active) return;
+      if (!messageServiceRef.current) {
+        logger.warn('[SpaceProfile] announce skipped — service not ready');
+        return;
+      }
+      messageServiceRef.current.announceProfileToAllSpacesOnConnect(selfAddress)
+        .catch((err) => logger.warn('[SpaceProfile] identity announce failed', { err }));
+    };
+
+    connectionActions.current.setResubscribe(async () => {
+      if (!active) return;
+      enqueueListen();
+      if (dmProfilePushTimer !== null) {
+        clearTimeout(dmProfilePushTimer);
+        timers.delete(dmProfilePushTimer);
+      }
+      dmProfilePushTimer = schedule(fireDmProfileRebroadcast, 4000);
+      if (spaceProfileAnnounceTimer !== null) {
+        clearTimeout(spaceProfileAnnounceTimer);
+        timers.delete(spaceProfileAnnounceTimer);
+      }
+      spaceProfileAnnounceTimer = schedule(fireSpaceProfileAnnounce, 6000);
+    });
+
+    schedule(enqueueListen, 1000);
+    schedule(fireDmProfileRebroadcast, 10000);
+    schedule(async () => {
+      const spaces = await connectionActions.current.messageDB.getSpaces();
+      if (!active) return;
+      const config = await connectionActions.current.messageDB.getUserConfig({ address: selfAddress });
+      if (!active) return;
+      for (const space of spaces.filter((candidate) => config.spaceIds.includes(candidate.spaceId))) {
+        if (!active) return;
+        connectionActions.current.requestSync(space.spaceId);
+        // Keep key capture bound to this connection scope; never announce an
+        // old identity through a later session's live service reference.
+        messageServiceRef.current?.announceDeviceKeys(space.spaceId, keyset)
+          .catch((err) => logger.warn('[DeviceKeys] announce on connect failed', { err, spaceId: space.spaceId }));
+      }
+    }, 10000);
+    schedule(fireSpaceProfileAnnounce, 12000);
+
+    return () => {
+      active = false;
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, [keyset, selfAddress]);
+
   const typingService = useMemo(() => {
     if (!selfAddress) return null;
     return new TypingService({
@@ -1438,7 +1331,6 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
       },
     });
     // Intentionally only depends on selfAddress — see note above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selfAddress]);
 
   // Stable ref to the current TypingService so the setTypingConfig callback
@@ -1580,6 +1472,65 @@ const MessageDBProvider: FC<MessageDBContextProps> = ({ children }) => {
       );
     },
     [messageService]
+  );
+
+  const updateUserProfile = React.useCallback(
+    async (
+      displayName: string,
+      userIcon: string,
+      currentPasskeyInfo: {
+        credentialId: string;
+        address: string;
+        publicKey: string;
+        displayName?: string;
+        pfpUrl?: string;
+        completedOnboarding: boolean;
+      },
+      spaceTag?: BroadcastSpaceTag,
+      bio?: string
+    ) => {
+      const spaces = await messageDB.getSpaces();
+      for (const space of spaces) {
+        // Two-slot design (see identity-resolution doc): the global editor
+        // broadcasts the user's GLOBAL identity via the global* slots, NOT the
+        // per-space override fields. Sending the override fields here is what
+        // used to freeze every space to the global value and fake per-space
+        // overrides. Receivers store global* separately and render
+        // override-else-global. Empty string = deliberate global clear.
+        submitChannelMessage(
+          space.spaceId,
+          space.defaultChannelId,
+          {
+            type: 'update-profile',
+            senderId: currentPasskeyInfo.address,
+            globalDisplayName: displayName,
+            globalUserIcon: userIcon,
+            ...(bio !== undefined ? { globalBio: bio } : {}),
+            ...(spaceTag ? { spaceTag } : {}),
+            // Global-only broadcast: the override fields (incl. the required
+            // `userIcon`) are intentionally absent. Single cast to satisfy that
+            // one required field, matching the tag-rotation rebroadcast site.
+          } as UpdateProfileMessage,
+          queryClient,
+          currentPasskeyInfo,
+          undefined, // inReplyTo
+          undefined, // skipSigning
+          undefined  // isSpaceOwner - not needed for profile updates
+        );
+      }
+
+      // DM equivalent: push the new profile to every existing DM partner.
+      // Fire-and-forget; per-partner failures are logged inside the service.
+      const ks = actionQueueServiceRef.current?.getUserKeyset();
+      if (ks) {
+        messageServiceRef.current
+          ?.broadcastProfileToAllDMs(displayName, userIcon, bio, currentPasskeyInfo.address, ks)
+          .catch((err) => {
+            logger.warn('[DMProfile] broadcastProfileToAllDMs failed', { err });
+          });
+      }
+    },
+    [messageDB, queryClient, submitChannelMessage]
   );
 
   const retryMessage = React.useCallback(

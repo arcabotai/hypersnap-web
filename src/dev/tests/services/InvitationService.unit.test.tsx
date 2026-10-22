@@ -7,8 +7,11 @@
  * APPROACH: Unit tests with vi.fn() mocks - NOT integration tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { i18n } from '@lingui/core';
+import { messages } from '@/i18n/en/messages';
 import { InvitationService } from '@/services/InvitationService';
+import { HandledFetchError } from '@/api/baseTypes';
 import { broadcastSpaceManifest } from '@/services/spaceManifestBroadcast';
 import { channel_raw as chRaw } from '@quilibrium/quilibrium-js-sdk-channels';
 import { QueryClient } from '@tanstack/react-query';
@@ -76,6 +79,11 @@ vi.mock('@quilibrium/quilibrium-js-sdk-channels', () => ({
     js_encrypt_inbox_message: vi.fn().mockReturnValue('encrypted-ciphertext'),
   },
 }));
+
+beforeAll(() => {
+  i18n.load('en', messages);
+  i18n.activate('en');
+});
 
 describe('InvitationService - Unit Tests', () => {
   let invitationService: InvitationService;
@@ -301,6 +309,40 @@ describe('InvitationService - Unit Tests', () => {
   });
 
   describe('4. joinInviteLink() - Join Space via Invite', () => {
+    it('maps a missing public invite without retaining transport metadata or submitting writes', async () => {
+      const transportError = new HandledFetchError({
+        message: 'synthetic transport detail', status: 404,
+        body: 'synthetic signed request', responseData: { detail: 'synthetic upstream detail' },
+      } as any);
+      mockDeps.apiClient.getSpaceInviteEval.mockRejectedValueOnce(transportError);
+      const result = await invitationService.joinInviteLink(
+        'https://qm.one/invite/#spaceId=space-123&configKey=aabbcc',
+        { userKeyset: {} as any, deviceKeyset: {} as any },
+        { credentialId: 'fixture', address: 'address-self', publicKey: 'fixture', completedOnboarding: true }
+      ).catch(error => error);
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toBe('This public invite link is no longer valid.');
+      expect(result).not.toHaveProperty('cause');
+      expect(result).not.toHaveProperty('body');
+      expect(result).not.toHaveProperty('responseData');
+      expect(mockDeps.enqueueOutbound).not.toHaveBeenCalled();
+      expect(mockDeps.apiClient.postHubAdd).not.toHaveBeenCalled();
+      expect(mockDeps.messageDB.saveSpace).not.toHaveBeenCalled();
+    });
+
+    it('propagates another lookup failure unchanged without submitting writes', async () => {
+      const transportError = new Error('synthetic unavailable response');
+      mockDeps.apiClient.getSpaceInviteEval.mockRejectedValueOnce(transportError);
+      await expect(invitationService.joinInviteLink(
+        'https://qm.one/invite/#spaceId=space-123&configKey=aabbcc',
+        { userKeyset: {} as any, deviceKeyset: {} as any },
+        { credentialId: 'fixture', address: 'address-self', publicKey: 'fixture', completedOnboarding: true }
+      )).rejects.toBe(transportError);
+      expect(mockDeps.enqueueOutbound).not.toHaveBeenCalled();
+      expect(mockDeps.apiClient.postHubAdd).not.toHaveBeenCalled();
+      expect(mockDeps.messageDB.saveSpace).not.toHaveBeenCalled();
+    });
+
     it('should return undefined for invalid invite link format', async () => {
       const invalidLink = 'invalid-link';
       const mockKeyset = {

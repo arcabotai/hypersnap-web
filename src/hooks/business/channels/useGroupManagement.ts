@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useSpace } from '../../queries';
 import { useMessageDB } from '../../../components/context/useMessageDB';
@@ -49,8 +49,17 @@ export function useGroupManagement({
   // State for validation
   const [validationError, setValidationError] = useState<string | undefined>(undefined);
 
+  // Keep the current query snapshot available without overwriting edits when
+  // the same Space refreshes. Hydrate only when the edited identity changes.
+  const initializationSpace = useRef(space);
+  useEffect(() => {
+    initializationSpace.current = space;
+  }, [space]);
+  const loadedSpaceId = space?.spaceId;
+
   // Sync group data when space data loads
   useEffect(() => {
+    const space = initializationSpace.current;
     if (groupName && space) {
       const group = space.groups.find((g) => g.groupName === groupName);
       if (group) {
@@ -62,7 +71,7 @@ export function useGroupManagement({
         });
       }
     }
-  }, [groupName, space?.spaceId]);
+  }, [groupName, loadedSpaceId]);
 
   // Check if group has channels and if any channel in the group has messages
   useEffect(() => {
@@ -159,24 +168,6 @@ export function useGroupManagement({
     }
   }, [space, groupData, groupName, updateSpace]);
 
-  // Handle delete confirmation
-  const handleDeleteClick = useCallback(() => {
-    // First check if group has channels - block deletion if it does
-    if (hasChannels) {
-      setShowChannelError(true);
-      return;
-    }
-    
-    // If no channels, proceed with simple double-click confirmation
-    if (deleteConfirmationStep === 0) {
-      setDeleteConfirmationStep(1);
-      // Reset confirmation after 5 seconds
-      setTimeout(() => setDeleteConfirmationStep(0), 5000);
-    } else {
-      deleteGroup();
-    }
-  }, [deleteConfirmationStep, hasChannels]);
-
   // Delete group
   const deleteGroup = useCallback(async () => {
     if (!groupName || !space) return;
@@ -214,6 +205,24 @@ export function useGroupManagement({
       onDeleteComplete();
     }
   }, [groupName, space, channelId, navigate, updateSpace, onDeleteComplete]);
+
+  // Handle delete confirmation
+  const handleDeleteClick = useCallback(() => {
+    // First check if group has channels - block deletion if it does
+    if (hasChannels) {
+      setShowChannelError(true);
+      return;
+    }
+
+    // If no channels, proceed with simple double-click confirmation
+    if (deleteConfirmationStep === 0) {
+      setDeleteConfirmationStep(1);
+      // Reset confirmation after 5 seconds
+      setTimeout(() => setDeleteConfirmationStep(0), 5000);
+    } else {
+      deleteGroup();
+    }
+  }, [deleteConfirmationStep, hasChannels, deleteGroup]);
 
   // Reset delete confirmation state
   const resetDeleteConfirmation = useCallback(() => {

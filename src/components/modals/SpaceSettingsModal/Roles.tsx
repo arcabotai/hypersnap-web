@@ -1,5 +1,12 @@
 import * as React from 'react';
-import { Button, Select, Icon, Tooltip, ScrollContainer, Callout } from '../../primitives';
+import {
+  Button,
+  Select,
+  Icon,
+  Tooltip,
+  ScrollContainer,
+  Callout,
+} from '../../primitives';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import type { Permission } from '@quilibrium/quorum-shared';
@@ -35,8 +42,6 @@ const Roles: React.FunctionComponent<RolesProps> = ({
   updateRolePermissions,
   toggleRolePublic,
   roleValidationError,
-  onSave,
-  isSaving,
 }) => {
   return (
     <>
@@ -47,23 +52,20 @@ const Roles: React.FunctionComponent<RolesProps> = ({
             <Trans>Roles</Trans>
           </div>
           <div className="pt-2 text-body">
-            <Trans>
-              Click on the role name and tag to edit them.
-            </Trans>
+            <Trans>Click on the role name and tag to edit them.</Trans>
           </div>
           <div className="pt-3">
             <Callout variant="info" size="sm" dismissible>
               <Trans>
-                You must assign yourself a role for moderation actions (except kicking). Grant delete and mute permissions carefully.{' '}
+                You must assign yourself a role for moderation actions (except
+                kicking). Grant delete and mute permissions carefully.{' '}
                 <Tooltip
                   id="role-privacy-info"
                   content={t`For privacy, your ownership is hidden from other clients. This means: Delete permission holders can delete your messages permanently, Mute permission holders can mute you (reversible). Only grant these to trusted users. Also note: if you're the only one with a role, your actions may reveal you as the owner—consider sharing roles with other trusted users.`}
                   place="top"
                   className="!w-[400px]"
                 >
-                  <span className="underline cursor-help">
-                    Learn more
-                  </span>
+                  <span className="underline cursor-help">Learn more</span>
                 </Tooltip>
               </Trans>
             </Callout>
@@ -83,150 +85,144 @@ const Roles: React.FunctionComponent<RolesProps> = ({
         {roles.length > 0 && (
           <ScrollContainer height="md" className="!border-subtle">
             {roles.map((r, i) => {
-            return (
-              <div
-                key={'space-editor-role-' + i}
-                className="modal-list-item text-main px-3"
-              >
+              return (
                 <div
-                  className="flex flex-col gap-4 py-4 sm:grid sm:grid-cols-[1fr_1fr_auto_auto]"
+                  key={'space-editor-role-' + i}
+                  className="modal-list-item text-main px-3"
                 >
-                  {/* Cell 1: Role name and tag */}
-                  <div className="flex flex-col">
-                    <div>
-                      <span
-                        className="font-mono modal-role transition-shadow focus-within:ring-2 focus-within:ring-black/20 dark:focus-within:ring-white/40"
-                        style={{ backgroundColor: getRoleColorHex(r.color) }}
-                      >
+                  <div className="flex flex-col gap-4 py-4 sm:grid sm:grid-cols-[1fr_1fr_auto_auto]">
+                    {/* Cell 1: Role name and tag */}
+                    <div className="flex flex-col">
+                      <div>
+                        <span
+                          className="font-mono modal-role transition-shadow focus-within:ring-2 focus-within:ring-black/20 dark:focus-within:ring-white/40"
+                          style={{ backgroundColor: getRoleColorHex(r.color) }}
+                        >
+                          <input
+                            className="border-0 bg-transparent outline-none focus-visible:outline-none"
+                            style={{
+                              width:
+                                Math.max((r.displayName.length || 3) * 8, 60) +
+                                'px',
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) =>
+                              updateRoleDisplayName(i, e.target.value)
+                            }
+                            value={r.displayName}
+                          />
+                        </span>
+                      </div>
+                      <div className="mt-1">
+                        @
                         <input
-                          className="border-0 bg-transparent outline-none focus-visible:outline-none"
+                          className="border-0 bg-transparent outline-none focus-visible:outline-none focus:bg-surface-1 focus:px-2 focus:py-1 focus:rounded transition-all font-mono"
                           style={{
                             width:
-                              Math.max(
-                                (r.displayName.length || 3) * 8,
-                                60
-                              ) + 'px',
+                              (roles.find((_, pi) => i == pi)?.roleTag.length ??
+                                0) *
+                                11 +
+                              11 +
+                              'px',
                           }}
                           onFocus={(e) => e.target.select()}
-                          onChange={(e) =>
-                            updateRoleDisplayName(
+                          onChange={(e) => updateRoleTag(i, e.target.value)}
+                          value={r.roleTag}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Cell 2: Permissions */}
+                    <div className="flex flex-col">
+                      <div className="text-sm font-normal">
+                        <Trans>Permissions:</Trans>
+                      </div>
+                      <div className="mt-1">
+                        <Select
+                          multiple
+                          variant="bordered"
+                          value={
+                            roles.find((_, pi) => i == pi)?.permissions || []
+                          }
+                          onChange={(selectedPermissions: string | string[]) =>
+                            updateRolePermissions(
                               i,
-                              e.target.value
+                              selectedPermissions as Permission[]
                             )
                           }
-                          value={r.displayName}
+                          placeholder={t`Select permissions`}
+                          selectAllLabel={t`All`}
+                          clearAllLabel={t`Clear`}
+                          width="200px"
+                          options={[
+                            {
+                              value: 'mention:everyone',
+                              label: t`Mention Everyone`,
+                            },
+                            {
+                              value: 'message:pin',
+                              label: t`Pin Messages`,
+                            },
+                            {
+                              value: 'user:mute',
+                              label: t`Mute Users`,
+                            },
+                            {
+                              value: 'message:delete',
+                              label: t`Delete Messages`,
+                            },
+                          ]}
                         />
-                      </span>
+                      </div>
                     </div>
-                    <div className="mt-1">
-                      @
-                      <input
-                        className="border-0 bg-transparent outline-none focus-visible:outline-none focus:bg-surface-1 focus:px-2 focus:py-1 focus:rounded transition-all font-mono"
-                        style={{
-                          width:
-                            (roles.find((_, pi) => i == pi)
-                              ?.roleTag.length ?? 0) *
-                              11 +
-                            11 +
-                            'px',
-                        }}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) =>
-                          updateRoleTag(i, e.target.value)
-                        }
-                        value={r.roleTag}
-                      />
-                    </div>
-                  </div>
 
-                  {/* Cell 2: Permissions */}
-                  <div className="flex flex-col">
-                    <div className="text-sm font-normal">
-                      <Trans>Permissions:</Trans>
+                    {/* Cell 3: Visibility toggle */}
+                    <div className="flex flex-col">
+                      <div className="flex justify-start sm:justify-end">
+                        <Tooltip
+                          id={`toggle-visibility-role-${i}`}
+                          content={
+                            r.isPublic !== false
+                              ? t`Make role invisible`
+                              : t`Make role public`
+                          }
+                          place="left"
+                          showOnTouch={false}
+                        >
+                          <Icon
+                            name={r.isPublic !== false ? 'eye' : 'eye-off'}
+                            className="cursor-pointer text-main hover:text-strong"
+                            onClick={() => toggleRolePublic(i)}
+                          />
+                        </Tooltip>
+                      </div>
+                      <div className="mt-1">
+                        {/* Empty space for alignment */}
+                      </div>
                     </div>
-                    <div className="mt-1">
-                      <Select
-                        multiple
-                        variant="bordered"
-                        value={
-                          roles.find((_, pi) => i == pi)
-                            ?.permissions || []
-                        }
-                        onChange={(selectedPermissions: string | string[]) =>
-                          updateRolePermissions(
-                            i,
-                            selectedPermissions as Permission[]
-                          )
-                        }
-                        placeholder={t`Select permissions`}
-                        selectAllLabel={t`All`}
-                        clearAllLabel={t`Clear`}
-                        width="200px"
-                        options={[
-                          {
-                            value: 'mention:everyone',
-                            label: t`Mention Everyone`,
-                          },
-                          {
-                            value: 'message:pin',
-                            label: t`Pin Messages`,
-                          },
-                          {
-                            value: 'user:mute',
-                            label: t`Mute Users`,
-                          },
-                          {
-                            value: 'message:delete',
-                            label: t`Delete Messages`,
-                          },
-                        ]}
-                      />
-                    </div>
-                  </div>
 
-                  {/* Cell 3: Visibility toggle */}
-                  <div className="flex flex-col">
-                    <div className="flex justify-start sm:justify-end">
-                      <Tooltip
-                        id={`toggle-visibility-role-${i}`}
-                        content={r.isPublic !== false ? t`Make role invisible` : t`Make role public`}
-                        place="left"
-                        showOnTouch={false}
-                      >
-                        <Icon
-                          name={r.isPublic !== false ? "eye" : "eye-off"}
-                          className="cursor-pointer text-main hover:text-strong"
-                          onClick={() => toggleRolePublic(i)}
-                        />
-                      </Tooltip>
-                    </div>
-                    <div className="mt-1">
-                      {/* Empty space for alignment */}
-                    </div>
-                  </div>
-
-                  {/* Cell 4: Delete button */}
-                  <div className="flex flex-col">
-                    <div className="flex justify-start sm:justify-end">
-                      <Tooltip
-                        id={`delete-role-${i}`}
-                        content={t`Delete role`}
-                        place="left"
-                        showOnTouch={false}
-                      >
-                        <Icon
-                          name="trash"
-                          className="cursor-pointer text-danger hover:text-danger-hover"
-                          onClick={(e: React.MouseEvent) => deleteRole(e, i)}
-                        />
-                      </Tooltip>
-                    </div>
-                    <div className="mt-1">
-                      {/* Empty space for alignment */}
+                    {/* Cell 4: Delete button */}
+                    <div className="flex flex-col">
+                      <div className="flex justify-start sm:justify-end">
+                        <Tooltip
+                          id={`delete-role-${i}`}
+                          content={t`Delete role`}
+                          place="left"
+                          showOnTouch={false}
+                        >
+                          <Icon
+                            name="trash"
+                            className="cursor-pointer text-danger hover:text-danger-hover"
+                            onClick={(e: React.MouseEvent) => deleteRole(e, i)}
+                          />
+                        </Tooltip>
+                      </div>
+                      <div className="mt-1">
+                        {/* Empty space for alignment */}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
               );
             })}
           </ScrollContainer>

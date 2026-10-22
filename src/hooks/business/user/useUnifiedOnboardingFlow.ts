@@ -128,7 +128,6 @@ export function useUnifiedOnboardingFlow(
   const [importError, setImportError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
-  const [isFetchingUser, setIsFetchingUser] = useState(false);
 
   // Ref to track current step inside callbacks (avoids stale closures)
   const stepRef = useRef<OnboardingStep>(step);
@@ -178,18 +177,37 @@ export function useUnifiedOnboardingFlow(
     },
   });
 
+  // These services and SDK wrapper objects are recreated on render. Reading
+  // their latest value must not restart credential export/profile lookups;
+  // the effects below are scheduled only by their original flow transitions.
+  const profileLookupContext = useRef({ adapter, apiClient, setUser, importMode, passkeyStep: passkeyFlow.step });
+  useEffect(() => {
+    profileLookupContext.current = { adapter, apiClient, setUser, importMode, passkeyStep: passkeyFlow.step };
+  }, [adapter, apiClient, setUser, importMode, passkeyFlow.step]);
+  const currentAddress = adapter.currentPasskeyInfo?.address;
+
+  const {
+    isPasskeySupported,
+    proceedWithoutPasskey,
+    startRegistration,
+    completeRegistration,
+    retry,
+    importKeyFile,
+  } = passkeyFlow;
+  const { downloadKey } = keyBackup;
+
   // --- Profile sync after key import ---
   // When an imported key completes registration (SDK 'success'), credentials are now stored.
   // We set step back to 'loading' to show a spinner while we check for a remote profile.
   // This effect watches step + importMode so it fires when we re-enter 'loading' in import mode.
   useEffect(() => {
     if (step !== 'loading' || !importMode || passkeyFlow.step !== 'success') return;
+    const { adapter, apiClient, setUser } = profileLookupContext.current;
 
     const syncImportedProfile = async () => {
       const info = adapter.currentPasskeyInfo;
       if (!info?.address || !adapter.exportKey) return;
 
-      setIsFetchingUser(true);
       try {
         const userKeyHex = await adapter.exportKey(info.address);
         const userKey = new Uint8Array(Buffer.from(userKeyHex, 'hex'));
@@ -217,7 +235,6 @@ export function useUnifiedOnboardingFlow(
           return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const decryptedConfig = (await decryptUserConfig(
           savedConfig.user_config,
           new Uint8Array(inner.identity.user_key.private_key)
@@ -250,8 +267,6 @@ export function useUnifiedOnboardingFlow(
         }
       } catch {
         setStep('backup-key');
-      } finally {
-        setIsFetchingUser(false);
       }
     };
 
@@ -261,7 +276,8 @@ export function useUnifiedOnboardingFlow(
   // --- Returning user detection (initial mount only, not post-import) ---
   useEffect(() => {
     // Skip if we're in post-import profile sync (handled by the effect above)
-    if (step !== 'loading' || (importMode && passkeyFlow.step === 'success')) return;
+    const { adapter, apiClient, setUser, importMode, passkeyStep } = profileLookupContext.current;
+    if (step !== 'loading' || (importMode && passkeyStep === 'success')) return;
 
     const checkReturningUser = async () => {
       const info = adapter.currentPasskeyInfo;
@@ -291,7 +307,6 @@ export function useUnifiedOnboardingFlow(
         return;
       }
 
-      setIsFetchingUser(true);
       try {
         const userKeyHex = await adapter.exportKey(info.address);
         const userKey = new Uint8Array(Buffer.from(userKeyHex, 'hex'));
@@ -320,7 +335,6 @@ export function useUnifiedOnboardingFlow(
           return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const decryptedConfig = (await decryptUserConfig(
           savedConfig.user_config,
           new Uint8Array(inner.identity.user_key.private_key)
@@ -360,13 +374,11 @@ export function useUnifiedOnboardingFlow(
           t`Couldn't load your saved profile. Please re-enter your name and profile image.`
         );
         setStep('welcome');
-      } finally {
-        setIsFetchingUser(false);
       }
     };
 
     checkReturningUser();
-  }, [step, adapter.currentPasskeyInfo?.address]);
+  }, [step, currentAddress]);
 
   // Computed values
   const dotIndex = getDotIndex(step);
@@ -378,14 +390,14 @@ export function useUnifiedOnboardingFlow(
     setImportMode(false);
     setImportError(null);
 
-    if (!passkeyFlow.isPasskeySupported) {
+    if (!isPasskeySupported) {
       // Electron / unsupported browser: skip passkey steps entirely
-      await passkeyFlow.proceedWithoutPasskey();
+      await proceedWithoutPasskey();
       setStep('backup-key');
     } else {
       setStep('create-passkey-1a');
     }
-  }, [passkeyFlow.isPasskeySupported, passkeyFlow.proceedWithoutPasskey]);
+  }, [isPasskeySupported, proceedWithoutPasskey]);
 
   const startImportAccount = useCallback(() => {
     setImportMode(true);
@@ -396,42 +408,42 @@ export function useUnifiedOnboardingFlow(
   // --- Actions: Passkey ---
 
   const createPasskey = useCallback(async () => {
-    await passkeyFlow.startRegistration();
-  }, [passkeyFlow.startRegistration]);
+    await startRegistration();
+  }, [startRegistration]);
 
   const saveToPasskey = useCallback(async () => {
-    await passkeyFlow.completeRegistration();
-  }, [passkeyFlow.completeRegistration]);
+    await completeRegistration();
+  }, [completeRegistration]);
 
   const continueWithoutPasskey = useCallback(async () => {
-    await passkeyFlow.proceedWithoutPasskey();
+    await proceedWithoutPasskey();
     setStep('backup-key');
-  }, [passkeyFlow.proceedWithoutPasskey]);
+  }, [proceedWithoutPasskey]);
 
   const retryPasskey = useCallback(() => {
-    passkeyFlow.retry();
-  }, [passkeyFlow.retry]);
+    retry();
+  }, [retry]);
 
   const handleImportKeyFile = useCallback(async (file: File) => {
     setImportError(null);
     try {
-      await passkeyFlow.importKeyFile(file);
+      await importKeyFile(file);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     }
-  }, [passkeyFlow.importKeyFile]);
+  }, [importKeyFile]);
 
   // --- Actions: Onboarding ---
 
   const handleDownloadKey = useCallback(async () => {
     try {
-      await keyBackup.downloadKey();
+      await downloadKey();
       setStep('security-warning');
     } catch (error) {
       // downloadKey handles its own error display; stay on backup-key step
       console.error('Key download failed:', error);
     }
-  }, [keyBackup.downloadKey]);
+  }, [downloadKey]);
 
   const skipKeyBackup = useCallback(() => {
     setStep('display-name');

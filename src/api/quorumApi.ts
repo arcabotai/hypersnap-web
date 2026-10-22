@@ -1,4 +1,3 @@
-import { getConfig } from '../config/config';
 
 // Desktop-only API parameter types
 export type GetChannelParams = {

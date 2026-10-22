@@ -83,7 +83,6 @@ test(
       await device1.messageService.deleteConversation(
         convId,
         passkeyInfo,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {} as any,
         device1.identity.keyset,
         device1.messageService.submitMessage.bind(device1.messageService)

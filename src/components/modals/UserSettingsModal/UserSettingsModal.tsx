@@ -1,10 +1,5 @@
 import * as React from 'react';
-import {
-  Button,
-  Modal,
-  Callout,
-  Spacer,
-} from '../../primitives';
+import { Button, Modal, Callout } from '../../primitives';
 import '../../../styles/_modal_common.scss';
 import ModalSaveOverlay from '../ModalSaveOverlay';
 import { t } from '@lingui/core/macro';
@@ -22,7 +17,10 @@ import { buildSpacesFetcher } from '../../../hooks/queries/spaces/buildSpacesFet
 import { buildSpacesKey } from '../../../hooks/queries/spaces/buildSpacesKey';
 import { useMessageDB } from '../../context/useMessageDB';
 import { useResolvedMemberName } from '../../../identity';
-import { validateDisplayName, validateUserBio } from '../../../hooks/business/validation';
+import {
+  validateDisplayName,
+  validateUserBio,
+} from '../../../hooks/business/validation';
 import type { BroadcastSpaceTag } from '@quilibrium/quorum-shared';
 import General from './General';
 import Privacy from './Privacy';
@@ -66,7 +64,10 @@ const UserSettingsModal: React.FunctionComponent<{
   // scrolled. Reaching Security from the sidebar leaves it false, so the jump
   // happens for the user who asked for it and nobody else.
   const [focusBackup, setFocusBackup] = React.useState(false);
-  const handleBackupFocused = React.useCallback(() => setFocusBackup(false), []);
+  const handleBackupFocused = React.useCallback(
+    () => setFocusBackup(false),
+    []
+  );
 
   // Use our extracted hooks
   const {
@@ -97,7 +98,6 @@ const UserSettingsModal: React.FunctionComponent<{
     saveChanges: saveUserChanges,
     currentPasskeyInfo,
     stagedRegistration,
-    setStagedRegistration,
     removeDevice,
     downloadKey,
     exportBackup,
@@ -122,12 +122,17 @@ const UserSettingsModal: React.FunctionComponent<{
   //
   // Self is not exempt from the check. A name you have not registered does not
   // become yours because you are the one looking at it.
-  const selfResolved = useResolvedMemberName(currentPasskeyInfo?.address ?? '', {
-    enrich: true,
-    global: true,
-    surface: 'UserSettingsModal',
-  });
-  const primaryUsername = selfResolved.isQnsVerified ? selfResolved.name : undefined;
+  const selfResolved = useResolvedMemberName(
+    currentPasskeyInfo?.address ?? '',
+    {
+      enrich: true,
+      global: true,
+      surface: 'UserSettingsModal',
+    }
+  );
+  const primaryUsername = selfResolved.isQnsVerified
+    ? selfResolved.name
+    : undefined;
 
   // Spaces for Space Tag selector (using useQuery to avoid Suspense requirement)
   const { messageDB } = useMessageDB();
@@ -149,7 +154,10 @@ const UserSettingsModal: React.FunctionComponent<{
         spaceId: space.spaceId,
         spaceName: space.spaceName,
         iconUrl: space.iconUrl,
-        spaceTag: { ...space.spaceTag!, spaceId: space.spaceId } as BroadcastSpaceTag,
+        spaceTag: {
+          ...space.spaceTag!,
+          spaceId: space.spaceId,
+        } as BroadcastSpaceTag,
       }));
   }, [spaces]);
 
@@ -219,7 +227,16 @@ const UserSettingsModal: React.FunctionComponent<{
       });
       // Modal will close automatically via onSaveComplete callback
     });
-  }, [saveUntilComplete, saveUserChanges, fileData, currentFile, setUser, displayName, currentPasskeyInfo, markedForDeletion]);
+  }, [
+    saveUntilComplete,
+    saveUserChanges,
+    fileData,
+    currentFile,
+    setUser,
+    displayName,
+    currentPasskeyInfo,
+    markedForDeletion,
+  ]);
 
   // Determine if current category needs save button
   const categoryNeedsSave =
@@ -254,7 +271,9 @@ const UserSettingsModal: React.FunctionComponent<{
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div
+          style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+        >
           <div className="modal-complex-layout-with-footer">
             <Navigation
               selectedCategory={selectedCategory}
@@ -393,7 +412,9 @@ const UserSettingsModal: React.FunctionComponent<{
                     >
                       <div>
                         <div className="font-medium">{t`Save Failed`}</div>
-                        <div className="text-sm opacity-90 mt-1">{saveError}</div>
+                        <div className="text-sm opacity-90 mt-1">
+                          {saveError}
+                        </div>
                       </div>
                     </Callout>
                   </div>
@@ -401,7 +422,9 @@ const UserSettingsModal: React.FunctionComponent<{
                 <Button
                   type="primary"
                   onClick={saveChanges}
-                  disabled={isSaving || !!displayNameError || bioErrors.length > 0}
+                  disabled={
+                    isSaving || !!displayNameError || bioErrors.length > 0
+                  }
                 >
                   {t`Save Changes`}
                 </Button>

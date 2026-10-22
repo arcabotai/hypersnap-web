@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Button, Icon, Tooltip, ScrollContainer, Callout } from '../../primitives';
+import { Icon, Tooltip, ScrollContainer, Callout } from '../../primitives';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 
@@ -32,8 +32,6 @@ const Emojis: React.FunctionComponent<EmojisProps> = ({
   clearEmojiFileError,
   updateEmoji,
   removeEmoji,
-  onSave,
-  isSaving,
 }) => {
   return (
     <>
@@ -45,9 +43,9 @@ const Emojis: React.FunctionComponent<EmojisProps> = ({
           </div>
           <div className="pt-2 text-body">
             <Trans>
-              Add up to 50 custom emoji. Custom emojis can only
-              be used within a Space. You can upload PNG, JPG or
-              GIF, max 5MB (automatically optimized).
+              Add up to 50 custom emoji. Custom emojis can only be used within a
+              Space. You can upload PNG, JPG or GIF, max 5MB (automatically
+              optimized).
             </Trans>
           </div>
         </div>
@@ -79,42 +77,48 @@ const Emojis: React.FunctionComponent<EmojisProps> = ({
         {emojis.length > 0 && (
           <ScrollContainer height="md" className="mt-4 !border-subtle">
             {emojis.map((em, i) => {
-            return (
-              <div
-                key={'space-editor-emoji-' + i}
-                className="modal-list-item text-main flex flex-row px-3 py-2 items-center"
-              >
-                <img width="24" height="24" src={em.imgUrl} alt={em.name} className="rounded-md" />
-                <div className="flex flex-col justify-around font-mono font-medium mx-2">
-                  <span>
-                    <input
-                      className="border-0 bg-[rgba(0,0,0,0)] max-w-48 truncate outline-none focus:bg-surface-1 focus:px-2 focus:py-1 focus:rounded transition-all"
-                      title={em.name}
-                      onChange={(e) => {
-                        const sanitizedName = e.target.value
-                          .toLowerCase()
-                          .replace(/[^a-z0-9_]/gi, '');
-                        updateEmoji(i, { name: sanitizedName });
-                      }}
-                      value={em.name}
-                    />
-                  </span>
+              return (
+                <div
+                  key={'space-editor-emoji-' + i}
+                  className="modal-list-item text-main flex flex-row px-3 py-2 items-center"
+                >
+                  <img
+                    width="24"
+                    height="24"
+                    src={em.imgUrl}
+                    alt={em.name}
+                    className="rounded-md"
+                  />
+                  <div className="flex flex-col justify-around font-mono font-medium mx-2">
+                    <span>
+                      <input
+                        className="border-0 bg-[rgba(0,0,0,0)] max-w-48 truncate outline-none focus:bg-surface-1 focus:px-2 focus:py-1 focus:rounded transition-all"
+                        title={em.name}
+                        onChange={(e) => {
+                          const sanitizedName = e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_]/gi, '');
+                          updateEmoji(i, { name: sanitizedName });
+                        }}
+                        value={em.name}
+                      />
+                    </span>
+                  </div>
+                  <div className="flex flex-col grow justify-around items-end">
+                    <Tooltip
+                      id={`delete-emoji-${i}`}
+                      content={t`Delete`}
+                      place="left"
+                      showOnTouch={false}
+                    >
+                      <Icon
+                        name="trash"
+                        className="cursor-pointer text-danger hover:text-danger-hover"
+                        onClick={() => removeEmoji(i)}
+                      />
+                    </Tooltip>
+                  </div>
                 </div>
-                <div className="flex flex-col grow justify-around items-end">
-                  <Tooltip
-                    id={`delete-emoji-${i}`}
-                    content={t`Delete`}
-                    place="left"
-                    showOnTouch={false}
-                  >
-                    <Icon
-                      name="trash"
-                      className="cursor-pointer text-danger hover:text-danger-hover"
-                      onClick={() => removeEmoji(i)}
-                    />
-                  </Tooltip>
-                </div>
-              </div>
               );
             })}
           </ScrollContainer>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { IconChevronRight, IconRefresh } from '@tabler/icons-react';
 import { getCastReactionPeople, type Cast, type CastReactionPeopleType, type User } from '../lib/api';
 import { profilePath } from '../lib/navigation';
@@ -40,7 +40,7 @@ export default function CastReactionPeople({ cast, initialType = 'likes', onClos
   const seen = useRef(new Set<string>());
   const pageCount = useRef(0);
   const lastAttempt = useRef<{ cursor?: string; replace: boolean }>({ replace: true });
-  async function load(cursor?: string, replace = true) {
+  const load = useCallback(async (cursor?: string, replace = true) => {
     if (requesting.current) return;
     requesting.current = true;
     const request = new AbortController(); controller.current?.abort(); controller.current = request;
@@ -62,15 +62,15 @@ export default function CastReactionPeople({ cast, initialType = 'likes', onClos
     } catch (cause) {
       if (!request.signal.aborted && run === generation.current && currentKey.current === capturedKey) setState(current => ({ ...current, busy: false, error: cause instanceof Error ? cause.message.slice(0, 240) : 'These public profiles are unavailable.' }));
     } finally { if (run === generation.current) requesting.current = false; }
-  }
+  }, [cast.author.fid, cast.hash, key, type]);
   useEffect(() => {
-    generation.current++; controller.current?.abort(); requesting.current = false; seen.current.clear(); pageCount.current = 0;
+    generation.current += 1; controller.current?.abort(); requesting.current = false; seen.current.clear(); pageCount.current = 0;
     setState({ key, users: [], cursor: undefined, busy: true, loaded: false, error: '', status: '' });
     void load();
-    return () => { generation.current++; controller.current?.abort(); requesting.current = false; };
-  }, [key]);
+    return () => { generation.current += 1; controller.current?.abort(); requesting.current = false; };
+  }, [key, load]);
   function cancel() {
-    generation.current++; controller.current?.abort(); requesting.current = false;
+    generation.current += 1; controller.current?.abort(); requesting.current = false;
     setState(current => ({ ...current, busy: false, status: 'Loading cancelled.' }));
   }
   function refresh() { if (!requesting.current) { seen.current.clear(); pageCount.current = 0; void load(); } }

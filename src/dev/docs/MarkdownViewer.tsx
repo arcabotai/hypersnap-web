@@ -27,7 +27,6 @@ interface MarkdownViewerProps {
 export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
   filePath,
   onBack,
-  title,
   file,
 }) => {
   const { content, loading, error } = useMarkdownContent(filePath);
@@ -124,7 +123,7 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
               Prism.languages[normalizedLang],
               normalizedLang
             );
-          } catch (e) {
+          } catch {
             // Fallback to plain text if highlighting fails
             highlightedCode = cleanCode;
           }

@@ -515,7 +515,7 @@ export class MessageDB {
 
       const request = store.get(messageId);
 
-      request.onsuccess = (event) => {
+      request.onsuccess = () => {
         const message = request.result;
 
         if (message?.channelId === channelId && message?.spaceId === spaceId) {

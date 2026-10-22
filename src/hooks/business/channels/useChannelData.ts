@@ -158,7 +158,7 @@ export function useChannelData({ spaceId, channelId }: UseChannelDataProps) {
       return [...realRoles, ...mockRoles];
     }
     return realRoles;
-  }, [space, mockUsers]);
+  }, [space, mockUsers, mockUtils]);
 
   const noRoleMembers = useMemo(() => {
     // Pre-compute set of all PUBLIC role members for O(1) lookup instead of O(n) for each user

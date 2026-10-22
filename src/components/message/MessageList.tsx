@@ -24,7 +24,10 @@ import type { VirtuosoHandle } from 'react-virtuoso';
 import React from 'react';
 import { DefaultImages } from '../../utils';
 import { useMessageHighlight } from '../../hooks/business/messages/useMessageHighlight';
-import { shouldShowDateSeparator, shouldShowCompactHeader } from '@quilibrium/quorum-shared';
+import {
+  shouldShowDateSeparator,
+  shouldShowCompactHeader,
+} from '@quilibrium/quorum-shared';
 import { useScrollTracking } from '../../hooks/ui/useScrollTracking';
 import { Button as ButtonBase } from '../primitives';
 // Cast to work around React type version mismatch between quorum-shared and quorum-desktop
@@ -96,9 +99,19 @@ interface MessageListProps {
   /** Users for mention autocomplete in message edit mode */
   users?: Array<{ address: string; displayName?: string; userIcon?: string }>;
   /** Roles for mention autocomplete in message edit mode (note: this is different from the roles prop which is for rendering) */
-  mentionRoles?: Array<{ roleId: string; roleTag: string; displayName: string; color: string }>;
+  mentionRoles?: Array<{
+    roleId: string;
+    roleTag: string;
+    displayName: string;
+    color: string;
+  }>;
   /** Channel groups for mention autocomplete in message edit mode */
-  groups?: Array<{ groupName: string; channels: Channel[]; icon?: string; iconColor?: string }>;
+  groups?: Array<{
+    groupName: string;
+    channels: Channel[];
+    icon?: string;
+    iconColor?: string;
+  }>;
   /** Whether @everyone is allowed in message edit mode */
   canUseEveryone?: boolean;
   /** Thread action callback */
@@ -122,32 +135,7 @@ interface MessageListProps {
   anchorQueryKeyPrefix?: readonly unknown[];
 }
 
-// SECURITY: the membership/kicked GATE for message-body mention pills and
-// (via `mapSenderToUser`) message headers. Reads ONLY the raw `members`
-// roster passed into <MessageList> — never `src/identity`, which knows
-// nothing about kicks and would silently let a kicked member's mention
-// render as interactive again if this logic were ever routed through it.
-//
-// Pure and exported so it is unit-testable on its own (see
-// `src/dev/tests/identity/migrated/MessageList.test.tsx`) without mounting
-// the virtualized list. Answers ONLY "is this address a current, non-kicked
-// member" — the NAME shown for a resolved mention comes from `src/identity`
-// separately (`useNameResolver` in MessageMarkdownRenderer, `<MemberName>` /
-// `useResolvedMemberName` in the header). Earlier this function's non-null
-// branch returned `mapSenderToUser(senderId) ?? m` — an identity-enriched
-// object — but every consumer only ever checked the result for null/non-null
-// (see MessageMarkdownRenderer's `isResolved = resolvedUser != null`), so
-// dropping the merge and returning the raw roster row is behaviorally
-// identical for every caller while removing the gate's only dependency on
-// the identity layer. Phase D row 22.
-export function resolveMessageListSenderGate(
-  members: Record<string, unknown>,
-  senderId: string,
-): unknown | null {
-  const m = members[senderId] as { isKicked?: boolean } | undefined;
-  if (!m || m.isKicked) return null;
-  return m;
-}
+import { resolveMessageListSenderGate } from './messageListSenderGate';
 
 function useWindowSize() {
   const [size, setSize] = React.useState([0, 0]);
@@ -226,7 +214,8 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
     const queryClient = useQueryClient();
     const [hoverTarget, setHoverTarget] = useState<string>();
     const [emojiPickerOpen, setEmojiPickerOpen] = useState<string>();
-    const [emojiPickerPosition, setEmojiPickerPosition] = useState<EmojiPickerAnchorRect | null>(null);
+    const [emojiPickerPosition, setEmojiPickerPosition] =
+      useState<EmojiPickerAnchorRect | null>(null);
 
     // Reset emoji picker position when picker closes
     useEffect(() => {
@@ -239,7 +228,8 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
     useEffect(() => {
       const handleClose = () => setEmojiPickerOpen(undefined);
       document.addEventListener('quorum:close-emoji-picker', handleClose);
-      return () => document.removeEventListener('quorum:close-emoji-picker', handleClose);
+      return () =>
+        document.removeEventListener('quorum:close-emoji-picker', handleClose);
     }, [setEmojiPickerOpen]);
 
     // Close emoji picker when focus moves to the message composer (textarea or contenteditable)
@@ -304,7 +294,12 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
           fetchNextPage();
         }
       },
-      [handleAtBottomStateChange, anchorOnAtBottomStateChange, fetchNextPage, init]
+      [
+        handleAtBottomStateChange,
+        anchorOnAtBottomStateChange,
+        fetchNextPage,
+        init,
+      ]
     );
 
     // Bypass Virtuoso's scrollToIndex — our snap writes scrollTop directly,
@@ -376,11 +371,18 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
     const messageDisplayInfo = useMemo(() => {
       return messageList.map((message, index) => {
         const previousMessage = index > 0 ? messageList[index - 1] : null;
-        const needsDateSeparator = shouldShowDateSeparator(message, previousMessage);
-        const needsNewMessagesSeparator = newMessagesSeparator &&
+        const needsDateSeparator = shouldShowDateSeparator(
+          message,
+          previousMessage
+        );
+        const needsNewMessagesSeparator =
+          newMessagesSeparator &&
           message.messageId === newMessagesSeparator.firstUnreadMessageId;
         const isCompact = shouldShowCompactHeader(
-          message, previousMessage, needsDateSeparator, !!needsNewMessagesSeparator
+          message,
+          previousMessage,
+          needsDateSeparator,
+          !!needsNewMessagesSeparator
         );
         return { needsDateSeparator, needsNewMessagesSeparator, isCompact };
       });
@@ -399,9 +401,10 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
         const displayInfo = messageDisplayInfoRef.current[index];
         if (!message || !displayInfo) return null;
 
-        const gapClass = index === 0 || displayInfo.isCompact
-          ? 'message-row message-row-first'
-          : 'message-row';
+        const gapClass =
+          index === 0 || displayInfo.isCompact
+            ? 'message-row message-row-first'
+            : 'message-row';
 
         return (
           <div className={gapClass}>
@@ -453,7 +456,9 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
               roles={mentionRoles}
               groups={groups}
               canUseEveryone={canUseEveryone}
-              onStartThread={onStartThread ? () => onStartThread(message) : undefined}
+              onStartThread={
+                onStartThread ? () => onStartThread(message) : undefined
+              }
               onBeforeDelete={() => {
                 deletionInProgressRef.current = true;
                 // Clear after delay to allow for follow-up operations
@@ -506,9 +511,8 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
       if (!init) {
         setTimeout(() => setInit(true), 200);
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
 
     // Track if we've already processed a hash navigation to prevent re-navigation on messageList changes
     const [hasProcessedHash, setHasProcessedHash] = useState(false);
@@ -558,9 +562,16 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
           }
         }
       }
-    // hasProcessedHash excluded — including it would loop on each set.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [init, location.hash, scrollToMessage, highlightMessage, messageList, onHashMessageNotFound]);
+      // hasProcessedHash excluded — including it would loop on each set.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+      init,
+      location.hash,
+      scrollToMessage,
+      highlightMessage,
+      messageList,
+      onHashMessageNotFound,
+    ]);
 
     // Programmatic scrollToMessageId (e.g. auto-jump to first unread).
     useEffect(() => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import React from 'react';
 import { useNavigate, useParams } from 'react-router';
 import type { Channel } from '@quilibrium/quorum-shared';
@@ -64,8 +64,17 @@ export function useChannelManagement({
   const [channelNameValidationError, setChannelNameValidationError] = useState<string | undefined>(undefined);
   const [channelTopicValidationError, setChannelTopicValidationError] = useState<string | undefined>(undefined);
 
+  // Keep the current query snapshot available without overwriting edits when
+  // the same Space refreshes. Hydrate only when the edited identity changes.
+  const initializationSpace = useRef(space);
+  useEffect(() => {
+    initializationSpace.current = space;
+  }, [space]);
+  const loadedSpaceId = space?.spaceId;
+
   // Sync channel data when space data loads
   useEffect(() => {
+    const space = initializationSpace.current;
     if (channelId && space) {
       const channel = space.groups
         .find((g) => g.groupName === groupName)
@@ -84,7 +93,7 @@ export function useChannelManagement({
         });
       }
     }
-  }, [channelId, space?.spaceId, groupName]);
+  }, [channelId, loadedSpaceId, groupName]);
 
   // Check if channel has messages and get count
   useEffect(() => {
@@ -249,32 +258,6 @@ export function useChannelManagement({
   // Is this channel the space default? Used to block deletion everywhere.
   const isDefaultChannel = !!channelId && space?.defaultChannelId === channelId;
 
-  // Handle delete with smart escalation
-  const handleDeleteClick = useCallback((e?: React.MouseEvent) => {
-    // Default channel cannot be deleted; the user must reassign it first
-    // in Space Settings → General.
-    if (isDefaultChannel) return;
-
-    const performDelete = () => {
-      deleteChannel();
-      setDeleteConfirmationStep(0);
-    };
-
-    if (e) {
-      // Event-based call (from button click) - use new confirmation system
-      deleteConfirmation.handleClick(e, performDelete);
-    } else {
-      // Legacy call without event - fall back to old double-click system
-      if (deleteConfirmationStep === 0) {
-        setDeleteConfirmationStep(1);
-        // Reset confirmation after 5 seconds
-        setTimeout(() => setDeleteConfirmationStep(0), 5000);
-      } else {
-        performDelete();
-      }
-    }
-  }, [isDefaultChannel, deleteConfirmation, deleteConfirmationStep]);
-
   // Delete channel
   const deleteChannel = useCallback(async () => {
     if (!channelId || !space) return;
@@ -318,6 +301,32 @@ export function useChannelManagement({
     updateSpace,
     onDeleteComplete,
   ]);
+
+  // Handle delete with smart escalation
+  const handleDeleteClick = useCallback((e?: React.MouseEvent) => {
+    // Default channel cannot be deleted; the user must reassign it first
+    // in Space Settings → General.
+    if (isDefaultChannel) return;
+
+    const performDelete = () => {
+      deleteChannel();
+      setDeleteConfirmationStep(0);
+    };
+
+    if (e) {
+      // Event-based call (from button click) - use new confirmation system
+      deleteConfirmation.handleClick(e, performDelete);
+    } else {
+      // Legacy call without event - fall back to old double-click system
+      if (deleteConfirmationStep === 0) {
+        setDeleteConfirmationStep(1);
+        // Reset confirmation after 5 seconds
+        setTimeout(() => setDeleteConfirmationStep(0), 5000);
+      } else {
+        performDelete();
+      }
+    }
+  }, [isDefaultChannel, deleteConfirmation, deleteConfirmationStep, deleteChannel]);
 
   // Reset delete confirmation state
   const resetDeleteConfirmation = useCallback(() => {

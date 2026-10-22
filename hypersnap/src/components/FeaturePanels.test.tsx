@@ -57,6 +57,8 @@ describe('isolated feature panels', () => {
     const signal = vi.mocked(searchCasts).mock.calls[0][0].signal!;
     await click(button('Cancel'));
     expect(signal.aborted).toBe(true); expect(container.textContent).toContain('Loading cancelled.');
+    await render(<SearchView query="query" kind="casts" onSearch={vi.fn()} onProfile={vi.fn()} renderCast={item => <p>Updated card: {item.text}</p>} />);
+    expect(searchCasts).toHaveBeenCalledOnce(); expect(container.textContent).toContain('Loading cancelled.');
     await click(button('Try again'));
     expect(container.textContent).toContain('Retried result');
     await act(async () => pending.resolve({ casts: [cast('d', 'Cancelled result')], next: {} }));

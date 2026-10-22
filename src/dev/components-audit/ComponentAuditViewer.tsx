@@ -307,7 +307,7 @@ export const ComponentAuditViewer: React.FC = () => {
 
   const filteredComponents = useMemo(() => {
     const filtered = Object.entries(data.components).filter(
-      ([key, component]) => {
+      ([, component]) => {
         const matchesSearch =
           component.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           component.path.toLowerCase().includes(searchTerm.toLowerCase()) ||

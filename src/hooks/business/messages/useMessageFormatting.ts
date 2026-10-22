@@ -363,7 +363,7 @@ export function useMessageFormatting(options: UseMessageFormattingOptions) {
         text: token,
       };
     },
-    [resolve, message.mentions, spaceRoles, spaceChannels, disableMentionInteractivity, currentSpaceId, everyoneAuthorized]
+    [resolve, message.mentions, message.content, spaceRoles, spaceChannels, disableMentionInteractivity, currentSpaceId, everyoneAuthorized]
   );
 
   return {

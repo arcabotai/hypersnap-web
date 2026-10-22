@@ -169,7 +169,6 @@ describe('mention autocomplete identity — enrich opt-in, fetch cost (design de
 
       const total = getPublicProfile.mock.calls.length;
       const delta = total - runningTotal;
-      // eslint-disable-next-line no-console
       console.log(
         `[mentionDropdownFetch] scenario 1 — step "${step.label}": total fetches=${total} (delta=${delta}, expected delta=${step.expectedNewFetches})`,
       );
@@ -217,7 +216,6 @@ describe('mention autocomplete identity — enrich opt-in, fetch cost (design de
     await settle();
 
     const afterReopen = getPublicProfile.mock.calls.length;
-    // eslint-disable-next-line no-console
     console.log(
       `[mentionDropdownFetch] scenario 2 — after first open=${afterFirstOpen}, after close+reopen=${afterReopen}`,
     );

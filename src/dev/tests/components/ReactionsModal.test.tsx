@@ -34,8 +34,6 @@ import { i18n } from '@lingui/core';
 import { messages } from '@/i18n/en/messages';
 import { ReactionsModal } from '@/components/modals/ReactionsModal';
 import type { MemberInfo } from '@/components/modals/ReactionsModal';
-import { buildSpaceMembersKey } from '@/hooks/queries/spaceMembers/buildSpaceMembersKey';
-import { publicProfileQueryKey } from '@/hooks/business/user/useUserPublicProfile';
 
 beforeAll(() => {
   i18n.load('en', messages);

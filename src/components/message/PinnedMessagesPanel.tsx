@@ -1,14 +1,14 @@
 import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Virtuoso } from 'react-virtuoso';
-import type { Message as MessageType, Channel, Sticker, Role } from '@quilibrium/quorum-shared';
+import type {
+  Message as MessageType,
+  Channel,
+  Sticker,
+  Role,
+} from '@quilibrium/quorum-shared';
 import MessagePreview from './MessagePreview';
-import {
-  Flex,
-  Button,
-  Tooltip,
-  Icon,
-} from '../primitives';
+import { Flex, Button, Tooltip, Icon } from '../primitives';
 import { DropdownPanel } from '../ui';
 import { t } from '@lingui/core/macro';
 import { usePinnedMessages } from '../../hooks';
@@ -68,10 +68,7 @@ const PinnedMessageItem: React.FC<PinnedMessageItemProps> = ({
   const senderId = message.content?.senderId ?? '';
 
   return (
-    <div
-      key={message.messageId}
-      className="pinned-message-item"
-    >
+    <div key={message.messageId} className="pinned-message-item">
       <div className="result-header">
         <Flex justify="between" className="result-meta-container">
           <Flex className="result-meta items-center min-w-0 flex-1 mr-2">
@@ -81,7 +78,10 @@ const PinnedMessageItem: React.FC<PinnedMessageItemProps> = ({
               enrich
               className="result-sender mr-2 truncate flex-shrink min-w-0"
             />
-            <Icon name="calendar-alt" className="result-date-icon flex-shrink-0 ml-1" />
+            <Icon
+              name="calendar-alt"
+              className="result-date-icon flex-shrink-0 ml-1"
+            />
             <span className="result-date flex-shrink-0 whitespace-nowrap ml-1">
               {formatMessageDate(message.createdDate, compactDate)}
             </span>
@@ -91,7 +91,9 @@ const PinnedMessageItem: React.FC<PinnedMessageItemProps> = ({
           >
             <Button
               type="secondary"
-              onClick={() => onJumpToMessage(message.messageId, message.threadId)}
+              onClick={() =>
+                onJumpToMessage(message.messageId, message.threadId)
+              }
               iconName="arrow-right"
               size="small"
               className="gap-1"
@@ -145,8 +147,6 @@ export const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
   channelId,
   channel,
   mapSenderToUser,
-  virtuosoRef,
-  messageList,
   stickers,
   spaceRoles,
   spaceChannels,
@@ -154,7 +154,16 @@ export const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
 }) => {
   const navigate = useNavigate();
   const { pinnedMessages, canPinMessages, isLoading, togglePin } =
-    usePinnedMessages(spaceId, channelId, channel, mapSenderToUser, stickers, spaceRoles, spaceChannels, onChannelClick);
+    usePinnedMessages(
+      spaceId,
+      channelId,
+      channel,
+      mapSenderToUser,
+      stickers,
+      spaceRoles,
+      spaceChannels,
+      onChannelClick
+    );
 
   const handleJumpToMessage = useCallback(
     (messageId: string, threadId?: string) => {
@@ -227,7 +236,9 @@ export const PinnedMessagesPanel: React.FC<PinnedMessagesPanelProps> = ({
             <div className="mobile-drawer__item-list">
               <Virtuoso
                 data={pinnedMessages}
-                style={{ height: Math.min(window.innerHeight * 0.8, 600) - 100 }}
+                style={{
+                  height: Math.min(window.innerHeight * 0.8, 600) - 100,
+                }}
                 className="pinned-messages-list"
                 itemContent={(index, message) => (
                   <div className="mobile-drawer__item-box mobile-drawer__item-box--interactive">

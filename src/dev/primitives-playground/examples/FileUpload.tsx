@@ -1,4 +1,3 @@
-import { logger } from '@quilibrium/quorum-shared';
 import React, { useState } from 'react';
 import { FileUpload, Icon } from '@/components/primitives';
 import { ExampleBox } from '../ExampleBox';

@@ -256,7 +256,7 @@ async function readStore(db: IDBDatabase, storeName: string): Promise<unknown[]>
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(new Error(`Failed to read ${storeName}: ${req.error?.message}`));
-    } catch (err) {
+    } catch {
       // Store might not exist
       resolve([]);
     }
@@ -274,7 +274,7 @@ async function countStore(db: IDBDatabase, storeName: string): Promise<number> {
       const req = store.count();
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(new Error(`Failed to count ${storeName}: ${req.error?.message}`));
-    } catch (err) {
+    } catch {
       resolve(0);
     }
   });

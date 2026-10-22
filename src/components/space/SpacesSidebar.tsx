@@ -6,7 +6,6 @@ import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core';
 import { SortableContext } from '@dnd-kit/sortable';
 import { usePasskeysContext } from '@quilibrium/quilibrium-js-sdk-channels';
 import { Button, Icon, Tooltip, useTheme } from '../primitives';
-import SpaceIcon from './SpaceIcon';
 import { ListSearchInput } from '../ui';
 import ContextMenu, { type MenuItem } from '../ui/ContextMenu';
 import { SpacesSidebarRow } from './SpacesSidebarRow';
@@ -29,7 +28,10 @@ import type { NavItem } from '../../db/messages';
 import type { IconColor } from './IconPicker/types';
 import { useConfig } from '../../hooks/queries/config';
 import { useModals } from '../context/ModalProvider';
-import { DragStateProvider, useOptionalDragStateContext } from '../../context/DragStateContext';
+import {
+  DragStateProvider,
+  useOptionalDragStateContext,
+} from '../../context/DragStateContext';
 import { useShellState } from '../shell/useShellState';
 import './SpacesSidebar.scss';
 
@@ -63,7 +65,9 @@ interface SpacesSidebarProps {
   forceExpanded?: boolean;
 }
 
-export const SpacesSidebar: React.FunctionComponent<SpacesSidebarProps> = (props) => {
+export const SpacesSidebar: React.FunctionComponent<SpacesSidebarProps> = (
+  props
+) => {
   // DragStateProvider must wrap everything that reads dnd state
   // (SpacesSidebarFolder, SpacesSidebarRow, useFolderDragAndDrop). Mounted here
   // so DM/Channels sidebars never see the provider.
@@ -74,7 +78,11 @@ export const SpacesSidebar: React.FunctionComponent<SpacesSidebarProps> = (props
   );
 };
 
-const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAddSpace, onCreateSpace, forceExpanded }) => {
+const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({
+  onAddSpace,
+  onCreateSpace,
+  forceExpanded,
+}) => {
   const navigate = useNavigate();
   const { spaceId: currentSpaceId } = useParams<{ spaceId: string }>();
   const { data: realSpaces = [] } = useSpaces({});
@@ -110,9 +118,13 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
       ? mockUtils.generateMockFolderSpaces()
       : [];
   }, [mockUtils]);
-  const mockFolderNavItem = React.useMemo<(NavItem & { type: 'folder' }) | null>(
+  const mockFolderNavItem = React.useMemo<
+    (NavItem & { type: 'folder' }) | null
+  >(
     () =>
-      ENABLE_MOCK_SPACES && mockUtils ? mockUtils.generateMockFolderNavItem() : null,
+      ENABLE_MOCK_SPACES && mockUtils
+        ? mockUtils.generateMockFolderNavItem()
+        : null,
     [mockUtils]
   );
   const mockFolderCounts = React.useMemo(
@@ -136,11 +148,17 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
   // Mentions + replies are merged for the badge — that's the "needs attention"
   // count distinct from generic unreads. Demo-folder spaces get a deterministic
   // overlay so the folder mention bubble always shows in dev.
-  const spaceMentionPlusReplyCounts = React.useMemo<Record<string, number>>(() => {
+  const spaceMentionPlusReplyCounts = React.useMemo<
+    Record<string, number>
+  >(() => {
     const result: Record<string, number> = {};
-    const keys = new Set([...Object.keys(spaceMentionCounts), ...Object.keys(spaceReplyCounts)]);
+    const keys = new Set([
+      ...Object.keys(spaceMentionCounts),
+      ...Object.keys(spaceReplyCounts),
+    ]);
     keys.forEach((spaceId) => {
-      const total = (spaceMentionCounts[spaceId] || 0) + (spaceReplyCounts[spaceId] || 0);
+      const total =
+        (spaceMentionCounts[spaceId] || 0) + (spaceReplyCounts[spaceId] || 0);
       if (total > 0) result[spaceId] = total;
     });
     for (const [spaceId, count] of Object.entries(mockFolderCounts.mention)) {
@@ -176,7 +194,8 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
   const { sidebarLiveCollapsed } = useShellState();
   const renderCollapsed = sidebarLiveCollapsed && !forceExpanded;
   const { mutedSpacesSet } = useMutedSpacesSet();
-  const { openContextMenu: openRowContextMenu, contextMenu: rowContextMenu } = useSpaceContextMenu();
+  const { openContextMenu: openRowContextMenu, contextMenu: rowContextMenu } =
+    useSpaceContextMenu();
 
   // Folder + DnD wiring. Config drives navItems (folders interleaved with
   // standalone spaces). Folder-states keep expand/collapse in localStorage.
@@ -207,7 +226,13 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
   const dragState = useOptionalDragStateContext();
   const activeDragItem = dragState?.activeItem ?? null;
 
-  const { handleDragStart, handleDragMove, handleDragEnd, sensors, sortingStrategy } = useFolderDragAndDrop({
+  const {
+    handleDragStart,
+    handleDragMove,
+    handleDragEnd,
+    sensors,
+    sortingStrategy,
+  } = useFolderDragAndDrop({
     config,
     onFolderCreated: (folderId) => openFolderEditor(folderId),
   });
@@ -257,7 +282,12 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
         },
       },
     ];
-  }, [folderContextMenu.folder, openFolderEditor, closeFolderContextMenu, deleteFolder]);
+  }, [
+    folderContextMenu.folder,
+    openFolderEditor,
+    closeFolderContextMenu,
+    deleteFolder,
+  ]);
 
   // Top-level sortable IDs: folders + standalone spaces only. Spaces inside a
   // folder get their own nested SortableContext inside SpacesSidebarFolder so
@@ -294,12 +324,21 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
   // "+" button context menu: anchored to the button's bounding rect so it
   // appears below the trigger regardless of how it was activated (click,
   // keyboard). ContextMenu auto-flips if it would overflow the viewport.
-  const [addMenuPosition, setAddMenuPosition] = React.useState<{ x: number; y: number } | null>(null);
-  const handleOpenAddMenu = React.useCallback((e: React.MouseEvent<HTMLElement>) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setAddMenuPosition({ x: rect.left, y: rect.bottom + 4 });
-  }, []);
-  const handleCloseAddMenu = React.useCallback(() => setAddMenuPosition(null), []);
+  const [addMenuPosition, setAddMenuPosition] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const handleOpenAddMenu = React.useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setAddMenuPosition({ x: rect.left, y: rect.bottom + 4 });
+    },
+    []
+  );
+  const handleCloseAddMenu = React.useCallback(
+    () => setAddMenuPosition(null),
+    []
+  );
   const addMenuItems = React.useMemo<MenuItem[]>(
     () => [
       {
@@ -386,7 +425,11 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
         return (
           <div
             className={overlayClass}
-            style={{ ['--folder-color' as string]: folderColor } as React.CSSProperties}
+            style={
+              {
+                ['--folder-color' as string]: folderColor,
+              } as React.CSSProperties
+            }
           >
             <FolderButton
               folder={folder}
@@ -400,7 +443,9 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
       return (
         <div
           className={overlayClass}
-          style={{ ['--folder-color' as string]: folderColor } as React.CSSProperties}
+          style={
+            { ['--folder-color' as string]: folderColor } as React.CSSProperties
+          }
         >
           <div className="folder-header folder-header--row">
             <div className="folder-header__icon">
@@ -454,73 +499,88 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
           <SortableContext items={sortableIds} strategy={sortingStrategy}>
             <div className="spaces-sidebar__list list-fade-content">
               {navItems.map((nav) => {
-            if (nav.item.type === 'folder') {
-              return (
-                <SpacesSidebarFolder
-                  key={nav.item.id}
-                  folder={nav.item}
-                  spaces={nav.spaces ?? []}
-                  isExpanded={isExpanded(nav.item.id)}
-                  collapsed
-                  currentSpaceId={currentSpaceId}
-                  spaceUnreadCounts={spaceUnreadCounts}
-                  spaceMentionCounts={spaceMentionPlusReplyCounts}
-                  mutedSpacesSet={mutedSpacesSet}
-                  onToggleExpand={() => toggleFolder(nav.item.id)}
-                  onEdit={() => openFolderEditor(nav.item.id)}
-                  onSpaceClick={handleRowClick}
-                  onContextMenu={(e) => handleFolderContextMenu(nav.item as NavItem & { type: 'folder' }, e)}
-                  onSpaceContextMenu={(spaceId, spaceName, iconUrl, e, hasNotifications) => {
-                    void openRowContextMenu({
-                      spaceId,
-                      spaceName,
-                      iconUrl,
-                      event: e,
-                      hasNotifications,
-                    });
-                  }}
-                  sortingStrategy={sortingStrategy}
-                />
-              );
-            }
-            const space = spaces.find((s) => s.spaceId === nav.item.id);
-            if (!space) return null;
-            const unread = spaceUnreadCounts[space.spaceId] || 0;
-            const mention = spaceMentionPlusReplyCounts[space.spaceId] || 0;
-            const active = space.spaceId === currentSpaceId;
-            return (
-              <Tooltip
-                key={space.spaceId}
-                id={`spaces-sidebar-collapsed-${space.spaceId}`}
-                content={space.spaceName}
-                place="right"
-                showOnTouch={false}
-                className="tooltip-text-large"
-              >
-                <SpacesSidebarRow
-                  space={space}
-                  active={active}
-                  unread={unread}
-                  mentionCount={mention}
-                  isMuted={mutedSpacesSet.has(space.spaceId)}
-                  compact
-                  onClick={() => handleRowClick(space.spaceId, space.defaultChannelId)}
-                  onContextMenu={(e) => {
-                    void openRowContextMenu({
-                      spaceId: space.spaceId,
-                      spaceName: space.spaceName,
-                      iconUrl: space.iconUrl,
-                      event: e,
-                      hasNotifications: unread > 0,
-                    });
-                  }}
-                />
-              </Tooltip>
-            );
-          })}
+                if (nav.item.type === 'folder') {
+                  return (
+                    <SpacesSidebarFolder
+                      key={nav.item.id}
+                      folder={nav.item}
+                      spaces={nav.spaces ?? []}
+                      isExpanded={isExpanded(nav.item.id)}
+                      collapsed
+                      currentSpaceId={currentSpaceId}
+                      spaceUnreadCounts={spaceUnreadCounts}
+                      spaceMentionCounts={spaceMentionPlusReplyCounts}
+                      mutedSpacesSet={mutedSpacesSet}
+                      onToggleExpand={() => toggleFolder(nav.item.id)}
+                      onEdit={() => openFolderEditor(nav.item.id)}
+                      onSpaceClick={handleRowClick}
+                      onContextMenu={(e) =>
+                        handleFolderContextMenu(
+                          nav.item as NavItem & { type: 'folder' },
+                          e
+                        )
+                      }
+                      onSpaceContextMenu={(
+                        spaceId,
+                        spaceName,
+                        iconUrl,
+                        e,
+                        hasNotifications
+                      ) => {
+                        void openRowContextMenu({
+                          spaceId,
+                          spaceName,
+                          iconUrl,
+                          event: e,
+                          hasNotifications,
+                        });
+                      }}
+                      sortingStrategy={sortingStrategy}
+                    />
+                  );
+                }
+                const space = spaces.find((s) => s.spaceId === nav.item.id);
+                if (!space) return null;
+                const unread = spaceUnreadCounts[space.spaceId] || 0;
+                const mention = spaceMentionPlusReplyCounts[space.spaceId] || 0;
+                const active = space.spaceId === currentSpaceId;
+                return (
+                  <Tooltip
+                    key={space.spaceId}
+                    id={`spaces-sidebar-collapsed-${space.spaceId}`}
+                    content={space.spaceName}
+                    place="right"
+                    showOnTouch={false}
+                    className="tooltip-text-large"
+                  >
+                    <SpacesSidebarRow
+                      space={space}
+                      active={active}
+                      unread={unread}
+                      mentionCount={mention}
+                      isMuted={mutedSpacesSet.has(space.spaceId)}
+                      compact
+                      onClick={() =>
+                        handleRowClick(space.spaceId, space.defaultChannelId)
+                      }
+                      onContextMenu={(e) => {
+                        void openRowContextMenu({
+                          spaceId: space.spaceId,
+                          spaceName: space.spaceName,
+                          iconUrl: space.iconUrl,
+                          event: e,
+                          hasNotifications: unread > 0,
+                        });
+                      }}
+                    />
+                  </Tooltip>
+                );
+              })}
             </div>
           </SortableContext>
-          <DragOverlay zIndex={1100}>{renderDragOverlay('compact')}</DragOverlay>
+          <DragOverlay zIndex={1100}>
+            {renderDragOverlay('compact')}
+          </DragOverlay>
         </DndContext>
         {rowContextMenu}
         {folderContextMenu.folder && (
@@ -529,7 +589,8 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
               type: 'folder',
               icon: folderContextMenu.folder.icon || 'folder',
               iconVariant: folderContextMenu.folder.iconVariant || 'outline',
-              iconColor: (folderContextMenu.folder.color as IconColor) || 'default',
+              iconColor:
+                (folderContextMenu.folder.color as IconColor) || 'default',
               name: folderContextMenu.folder.name,
             }}
             items={folderContextMenuItems}
@@ -608,9 +669,7 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
             </div>
           </div>
           {filteredSpaces.length === 0 && searchInput && (
-            <div className="text-xs text-subtle mt-2">
-              {t`No Spaces found`}
-            </div>
+            <div className="text-xs text-subtle mt-2">{t`No Spaces found`}</div>
           )}
         </div>
       )}
@@ -624,92 +683,107 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
       >
         <SortableContext items={sortableIds} strategy={sortingStrategy}>
           <div className="spaces-sidebar__list">
-            {isFlatView ? (
-              // Filter / search active: render a flat list, folders collapsed away.
-              filteredSpaces.map((space) => {
-                const unread = spaceUnreadCounts[space.spaceId] || 0;
-                const mention = spaceMentionPlusReplyCounts[space.spaceId] || 0;
-                const active = space.spaceId === currentSpaceId;
-                return (
-                  <SpacesSidebarRow
-                    key={space.spaceId}
-                    space={space}
-                    active={active}
-                    unread={unread}
-                    mentionCount={mention}
-                    isMuted={mutedSpacesSet.has(space.spaceId)}
-                    hideCornerMentionBubble
-                      onClick={() => handleRowClick(space.spaceId, space.defaultChannelId)}
-                    onContextMenu={(e) => {
-                      void openRowContextMenu({
-                        spaceId: space.spaceId,
-                        spaceName: space.spaceName,
-                        iconUrl: space.iconUrl,
-                        event: e,
-                        hasNotifications: unread > 0,
-                      });
-                    }}
-                  />
-                );
-              })
-            ) : (
-              navItems.map((nav) => {
-                if (nav.item.type === 'folder') {
+            {isFlatView
+              ? // Filter / search active: render a flat list, folders collapsed away.
+                filteredSpaces.map((space) => {
+                  const unread = spaceUnreadCounts[space.spaceId] || 0;
+                  const mention =
+                    spaceMentionPlusReplyCounts[space.spaceId] || 0;
+                  const active = space.spaceId === currentSpaceId;
                   return (
-                    <SpacesSidebarFolder
-                      key={nav.item.id}
-                      folder={nav.item}
-                      spaces={nav.spaces ?? []}
-                      isExpanded={isExpanded(nav.item.id)}
-                      currentSpaceId={currentSpaceId}
-                      spaceUnreadCounts={spaceUnreadCounts}
-                      spaceMentionCounts={spaceMentionPlusReplyCounts}
-                      mutedSpacesSet={mutedSpacesSet}
-                          onToggleExpand={() => toggleFolder(nav.item.id)}
-                      onEdit={() => openFolderEditor(nav.item.id)}
-                      onSpaceClick={handleRowClick}
-                      onContextMenu={(e) => handleFolderContextMenu(nav.item as NavItem & { type: 'folder' }, e)}
-                      onSpaceContextMenu={(spaceId, spaceName, iconUrl, e, hasNotifications) => {
+                    <SpacesSidebarRow
+                      key={space.spaceId}
+                      space={space}
+                      active={active}
+                      unread={unread}
+                      mentionCount={mention}
+                      isMuted={mutedSpacesSet.has(space.spaceId)}
+                      hideCornerMentionBubble
+                      onClick={() =>
+                        handleRowClick(space.spaceId, space.defaultChannelId)
+                      }
+                      onContextMenu={(e) => {
                         void openRowContextMenu({
+                          spaceId: space.spaceId,
+                          spaceName: space.spaceName,
+                          iconUrl: space.iconUrl,
+                          event: e,
+                          hasNotifications: unread > 0,
+                        });
+                      }}
+                    />
+                  );
+                })
+              : navItems.map((nav) => {
+                  if (nav.item.type === 'folder') {
+                    return (
+                      <SpacesSidebarFolder
+                        key={nav.item.id}
+                        folder={nav.item}
+                        spaces={nav.spaces ?? []}
+                        isExpanded={isExpanded(nav.item.id)}
+                        currentSpaceId={currentSpaceId}
+                        spaceUnreadCounts={spaceUnreadCounts}
+                        spaceMentionCounts={spaceMentionPlusReplyCounts}
+                        mutedSpacesSet={mutedSpacesSet}
+                        onToggleExpand={() => toggleFolder(nav.item.id)}
+                        onEdit={() => openFolderEditor(nav.item.id)}
+                        onSpaceClick={handleRowClick}
+                        onContextMenu={(e) =>
+                          handleFolderContextMenu(
+                            nav.item as NavItem & { type: 'folder' },
+                            e
+                          )
+                        }
+                        onSpaceContextMenu={(
                           spaceId,
                           spaceName,
                           iconUrl,
+                          e,
+                          hasNotifications
+                        ) => {
+                          void openRowContextMenu({
+                            spaceId,
+                            spaceName,
+                            iconUrl,
+                            event: e,
+                            hasNotifications,
+                          });
+                        }}
+                        sortingStrategy={sortingStrategy}
+                      />
+                    );
+                  }
+                  const space = spaces.find((s) => s.spaceId === nav.item.id);
+                  if (!space) return null;
+                  const unread = spaceUnreadCounts[space.spaceId] || 0;
+                  const mention =
+                    spaceMentionPlusReplyCounts[space.spaceId] || 0;
+                  const active = space.spaceId === currentSpaceId;
+                  return (
+                    <SpacesSidebarRow
+                      key={space.spaceId}
+                      space={space}
+                      active={active}
+                      unread={unread}
+                      mentionCount={mention}
+                      isMuted={mutedSpacesSet.has(space.spaceId)}
+                      hideCornerMentionBubble
+                      onClick={() =>
+                        handleRowClick(space.spaceId, space.defaultChannelId)
+                      }
+                      onContextMenu={(e) => {
+                        void openRowContextMenu({
+                          spaceId: space.spaceId,
+                          spaceName: space.spaceName,
+                          iconUrl: space.iconUrl,
                           event: e,
-                          hasNotifications,
+                          hasNotifications: unread > 0,
                         });
                       }}
-                      sortingStrategy={sortingStrategy}
                     />
                   );
-                }
-                const space = spaces.find((s) => s.spaceId === nav.item.id);
-                if (!space) return null;
-                const unread = spaceUnreadCounts[space.spaceId] || 0;
-                const mention = spaceMentionPlusReplyCounts[space.spaceId] || 0;
-                const active = space.spaceId === currentSpaceId;
-                return (
-                  <SpacesSidebarRow
-                    key={space.spaceId}
-                    space={space}
-                    active={active}
-                    unread={unread}
-                    mentionCount={mention}
-                    isMuted={mutedSpacesSet.has(space.spaceId)}
-                    hideCornerMentionBubble
-                      onClick={() => handleRowClick(space.spaceId, space.defaultChannelId)}
-                    onContextMenu={(e) => {
-                      void openRowContextMenu({
-                        spaceId: space.spaceId,
-                        spaceName: space.spaceName,
-                        iconUrl: space.iconUrl,
-                        event: e,
-                        hasNotifications: unread > 0,
-                      });
-                    }}
-                  />
-                );
-              })
-            )}
+                })}
           </div>
         </SortableContext>
         <DragOverlay zIndex={1100}>{renderDragOverlay('expanded')}</DragOverlay>
@@ -721,7 +795,8 @@ const SpacesSidebarInner: React.FunctionComponent<SpacesSidebarProps> = ({ onAdd
             type: 'folder',
             icon: folderContextMenu.folder.icon || 'folder',
             iconVariant: folderContextMenu.folder.iconVariant || 'outline',
-            iconColor: (folderContextMenu.folder.color as IconColor) || 'default',
+            iconColor:
+              (folderContextMenu.folder.color as IconColor) || 'default',
             name: folderContextMenu.folder.name,
           }}
           items={folderContextMenuItems}

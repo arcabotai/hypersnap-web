@@ -32,7 +32,7 @@ export const useAddressValidation = (address: string) => {
       try {
         await apiClient.getUser(addressToLookup);
         return true;
-      } catch (e) {
+      } catch {
         return false;
       } finally {
         setValidationResult((prev) => ({ ...prev, isValidating: false }));

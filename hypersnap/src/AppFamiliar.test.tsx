@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { getCast, getCastReactionPeople, getChannel, getChannelMembers, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getReactionStatus, getSuggestedUsers, getUser, searchCasts, searchUsers, type Cast, type FeedResponse, type User } from './lib/api';
+import { getCast, getCastReactionPeople, getChannelMembers, getChannels, getConversation, getFeed, getFollowStatus, getInfo, getProfileFeed, getReactionStatus, getSuggestedUsers, getUser, searchCasts, searchUsers, type Cast, type FeedResponse, type User } from './lib/api';
 import type { WalletSession } from './lib/auth';
 import { BOOKMARK_STORAGE_KEY, LEGACY_BOOKMARK_STORAGE_KEY } from './lib/bookmarks';
 import { contentPreferencesKey, emptyContentPreferences, readContentPreferences } from './lib/contentPreferences';

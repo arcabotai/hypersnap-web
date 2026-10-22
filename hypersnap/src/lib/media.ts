@@ -88,7 +88,8 @@ export async function uploadMedia(file: File, authorize: (input: MediaUploadInpu
       method: 'POST', headers: { 'Content-Type': file.type, [MEDIA_UPLOAD_HEADER]: JSON.stringify(grant) },
       body: bytes.buffer, credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal,
     });
-  } catch (error) {
+  } catch {
+    // Keep transport errors and signed upload metadata out of the public error.
     if (signal?.aborted) throw new DOMException('Upload cancelled.', 'AbortError');
     throw new Error('The upload status could not be confirmed. Check your attachment before trying again.');
   }

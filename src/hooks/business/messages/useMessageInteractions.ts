@@ -1,9 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Message as MessageType } from '@quilibrium/quorum-shared';
 import { useResponsiveLayout } from '../../useResponsiveLayout';
-import { useLongPress } from '../../useLongPress';
 import { isTouchDevice as detectTouchDevice } from '../../../utils/platform';
-import { hapticMedium } from '../../../utils/haptic';
 
 interface UseMessageInteractionsOptions {
   message: MessageType;
@@ -23,7 +21,6 @@ export function useMessageInteractions(options: UseMessageInteractionsOptions) {
     hoverTarget,
     setHoverTarget,
     onCloseEmojiPickers,
-    onMobileActionsDrawer,
     onReply,
     isEditing,
   } = options;
@@ -71,24 +68,6 @@ export function useMessageInteractions(options: UseMessageInteractionsOptions) {
     message.messageId,
     setHoverTarget,
   ]);
-
-  // Long-press handler for mobile and tablets
-  const longPressHandlers = useLongPress({
-    onLongPress: () => {
-      if (useMobileDrawer) {
-        // Mobile: Open drawer
-        onMobileActionsDrawer({
-          message,
-        });
-        hapticMedium();
-      } else if (useDesktopTap) {
-        // Tablet: Show inline actions and hide others
-        setHoverTarget(message.messageId);
-        setActionsVisibleOnTap(true);
-      }
-    },
-    delay: 500,
-  });
 
   // Handle mouse over for desktop hover
   const handleMouseOver = useCallback(() => {

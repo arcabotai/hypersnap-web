@@ -1,4 +1,3 @@
-import { QuorumApiClient } from '../../../api/baseTypes';
 import { MessageDB } from '../../../db/messages';
 
 const buildEncryptionStatesFetcher =
@@ -17,7 +16,7 @@ const buildEncryptionStatesFetcher =
         conversationId,
         encryptionStates: response,
       };
-    } catch (e) {
+    } catch {
       return {
         conversationId,
         encryptionStates: [],

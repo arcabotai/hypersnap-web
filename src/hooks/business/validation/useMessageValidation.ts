@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { t } from '@lingui/core/macro';
 import { MAX_MESSAGE_LENGTH } from '@quilibrium/quorum-shared';
 
 /**

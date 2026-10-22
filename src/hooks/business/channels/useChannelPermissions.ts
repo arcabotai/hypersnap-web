@@ -4,7 +4,6 @@ import { useSpaceOwner } from '../../queries/spaceOwner';
 
 export function useChannelPermissions({
   spaceId,
-  channelId,
 }: {
   spaceId: string;
   channelId?: string;

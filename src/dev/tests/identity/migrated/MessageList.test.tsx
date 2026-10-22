@@ -154,7 +154,7 @@ vi.mock('@/hooks/business/messages/useReadReceipt', () => ({
 }));
 
 import { Message } from '@/components/message/Message';
-import { resolveMessageListSenderGate } from '@/components/message/MessageList';
+import { resolveMessageListSenderGate } from '@/components/message/messageListSenderGate';
 import { IdentityScopeProvider } from '@/identity/identityProvider';
 
 const SPACE_ID = 'space-1';

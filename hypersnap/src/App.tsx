@@ -326,16 +326,22 @@ export default function App() {
     finally { setFollowBusy(false); }
   }
   const activeTitle = view === 'profile' ? profile?.display_name || profile?.username || 'Profile' : view === 'channel' ? channelInfo?.name || channel : view === 'following' ? 'Following' : view === 'bookmarks' ? 'Bookmarks' : view === 'not-found' ? 'Page not found' : view === 'notifications' ? 'Notifications' : view === 'search' ? 'Search' : view === 'channels' ? 'Channels' : view === 'devlog' ? 'Dev log' : view === 'settings' ? 'Settings' : view === 'connect' ? 'Connect your identity' : 'Discover';
+  const profileFid = profile?.fid;
+  const sessionFid = session?.fid;
+  const sessionPublicKey = session?.publicKey;
+  const isConversation = isConversationRoute(route);
+  const conversationHash = route.kind === 'cast' ? route.hash : undefined;
+  const searchQuery = base.kind === 'search' ? base.query : undefined;
 
   useEffect(() => {
     setFollowingProfile(null); setFollowError('');
-    if (view !== 'profile' || !profile || !session || profile.fid === session.fid) return;
+    if (view !== 'profile' || profileFid === undefined || sessionFid === undefined || profileFid === sessionFid) return;
     const controller = new AbortController();
-    getFollowStatus(session.fid, profile.fid, controller.signal)
+    getFollowStatus(sessionFid, profileFid, controller.signal)
       .then(value => { if (!controller.signal.aborted) setFollowingProfile(value); })
       .catch(error => { if (!controller.signal.aborted) setFollowError(message(error)); });
     return () => controller.abort();
-  }, [view, profile?.fid, session?.fid, followRefresh, refresh]);
+  }, [view, profileFid, sessionFid, followRefresh, refresh]);
   useEffect(() => {
     const pop = () => {
       const next = parseRoute(location);
@@ -357,9 +363,11 @@ export default function App() {
     if (view === 'connect') return;
     if (view !== 'profile') { setProfile(null); setProfileError(''); return; }
     const controller = new AbortController(); profileRead.current = controller; setProfileError('');
-    if (!profileIdentifier && !session) { setProfile(null); setProfileLoading(false); return; }
-    const identifier = profileIdentifier ?? String(session!.fid);
-    const cached = profileCache.current.get(identifier) ?? (session && identifier === String(session.fid) ? session.user : null);
+    if (!profileIdentifier && sessionFid === undefined) { setProfile(null); setProfileLoading(false); return; }
+    const identifier = profileIdentifier ?? String(sessionFid);
+    // Display metadata is a cache hint, not a trigger for another identity read.
+    const account = currentSession.current;
+    const cached = profileCache.current.get(identifier) ?? (account && account.fid === sessionFid && account.publicKey === sessionPublicKey && identifier === String(sessionFid) ? account.user : null);
     setProfile(cached); setProfileLoading(!cached);
     getUser(/^\d+$/.test(identifier) ? { fid: Number(identifier) } : { username: identifier }, controller.signal)
       .then(user => { if (controller.signal.aborted) return; profileCache.current.set(String(user.fid), user); if (user.username) profileCache.current.set(user.username, user); setProfile(user); })
@@ -368,7 +376,7 @@ export default function App() {
     return () => controller.abort();
     // Updating the session's display fields must not trigger a second profile
     // read or reset the feed. Reads follow identity changes or explicit refresh.
-  }, [view, profileIdentifier, session?.fid, session?.publicKey, refresh]);
+  }, [view, profileIdentifier, sessionFid, sessionPublicKey, refresh]);
   useEffect(() => {
     if (signIn) return;
     const controller = new AbortController();
@@ -388,7 +396,7 @@ export default function App() {
     }).catch(error => { if (!controller.signal.aborted) { setChannelInfo(null); setChannelError(message(error)); } });
     return () => controller.abort();
   }, [view, channel, refresh]);
-  useEffect(() => { document.title = isConversationRoute(route) ? 'Conversation · Opencaster' : `${activeTitle} · Opencaster`; }, [route.kind, activeTitle]);
+  useEffect(() => { document.title = isConversation ? 'Conversation · Opencaster' : `${activeTitle} · Opencaster`; }, [isConversation, activeTitle]);
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); try { localStorage.setItem('quorum.theme', dark ? 'dark' : 'light'); } catch { /* Theme still works for this tab. */ } }, [dark]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 6500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => () => currentSession.current?.dispose(), []);
@@ -403,27 +411,27 @@ export default function App() {
     const controller = new AbortController();
     feedGeneration.current += 1; feedMoreRead.current?.abort();
     setError(''); setCasts([]); setCursor(null); setLoadingMore(false);
-    if (featureView || view === 'bookmarks' || view === 'not-found' || (view === 'profile' && !profile) || (view === 'following' && !session)) { setLoading(false); return; }
+    if (featureView || view === 'bookmarks' || view === 'not-found' || (view === 'profile' && profileFid === undefined) || (view === 'following' && sessionFid === undefined)) { setLoading(false); return; }
     setLoading(true);
-    const request = view === 'profile' && profile ? getProfileFeed({ fid: profile.fid, tab: profileTab, limit: 25, signal: controller.signal }) : getFeed({ kind: view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: session?.fid, channel, ...(view === 'discover' ? { timeWindow: trendingWindow } : {}), limit: 25, signal: controller.signal });
+    const request = view === 'profile' && profileFid !== undefined ? getProfileFeed({ fid: profileFid, tab: profileTab, limit: 25, signal: controller.signal }) : getFeed({ kind: view === 'channel' ? 'channel' : view === 'following' ? 'following' : 'trending', fid: sessionFid, channel, ...(view === 'discover' ? { timeWindow: trendingWindow } : {}), limit: 25, signal: controller.signal });
     request
       .then(data => { if (!controller.signal.aborted) { setCasts(data.casts); setCursor(data.next?.cursor || null); } })
       .catch(error => { if (!controller.signal.aborted) setError(message(error)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); feedMoreRead.current?.abort(); };
-  }, [view, channel, session?.fid, session?.publicKey, profile?.fid, profileTab, trendingWindow, refresh]);
+  }, [view, channel, sessionFid, sessionPublicKey, profileFid, profileTab, trendingWindow, refresh, featureView]);
   useEffect(() => {
-    if (route.kind !== 'cast') { setThread(null); setConversation(null); setThreadError(''); setThreadErrorKey(''); return; }
-    const key = castPath(route.hash);
+    if (conversationHash === undefined) { setThread(null); setConversation(null); setThreadError(''); setThreadErrorKey(''); return; }
+    const key = castPath(conversationHash);
     const controller = new AbortController(); setConversation(null); setThreadError(''); setThreadErrorKey(key);
     const cached = threadCache.current.get(key); setThread(cached ?? null);
-    getConversation(route.hash, controller.signal).then(data => {
-      if (controller.signal.aborted || currentRoute.current.kind !== 'cast' || currentRoute.current.hash !== route.hash) return;
-      if (bookmarkHash(data.cast?.hash) !== route.hash || !Number.isSafeInteger(data.cast?.author?.fid) || data.cast.author.fid < 1 || (cached && data.cast.author.fid !== cached.author.fid)) throw new Error('The node returned a different conversation for this cast.');
+    getConversation(conversationHash, controller.signal).then(data => {
+      if (controller.signal.aborted || currentRoute.current.kind !== 'cast' || currentRoute.current.hash !== conversationHash) return;
+      if (bookmarkHash(data.cast?.hash) !== conversationHash || !Number.isSafeInteger(data.cast?.author?.fid) || data.cast.author.fid < 1 || (cached && data.cast.author.fid !== cached.author.fid)) throw new Error('The node returned a different conversation for this cast.');
       setConversation(data); setThread(data.cast); threadCache.current.set(key, data.cast);
-    }).catch(error => { if (!controller.signal.aborted && currentRoute.current.kind === 'cast' && currentRoute.current.hash === route.hash) { setThreadErrorKey(key); setThreadError(message(error)); } });
+    }).catch(error => { if (!controller.signal.aborted && currentRoute.current.kind === 'cast' && currentRoute.current.hash === conversationHash) { setThreadErrorKey(key); setThreadError(message(error)); } });
     return () => controller.abort();
-  }, [route.kind === 'cast' ? route.hash : null, refresh]);
+  }, [conversationHash, refresh]);
 
   function lockSession(expectedSession = session, revoked = false) {
     if (!expectedSession || currentSession.current?.publicKey !== expectedSession.publicKey) return;
@@ -441,7 +449,7 @@ export default function App() {
     try { navigate(searchPath(query.replace(/^@/, ''), query.startsWith('@') ? 'users' : 'casts')); }
     catch (error) { notify(message(error)); }
   }
-  useEffect(() => { if (base.kind === 'search') setQuery(base.query); }, [base.kind === 'search' ? base.query : null]);
+  useEffect(() => { if (searchQuery !== undefined) setQuery(searchQuery); }, [searchQuery]);
   function toggleSavedChannel(item: Channel) {
     let next: Channel[];
     try { next = toggleChannelPin(savedChannels, item); } catch (error) { notify(message(error)); return; }

@@ -45,7 +45,6 @@ import { createSpaceBot } from './spaceBot';
 import { WsTransport } from './transport';
 import { RunLog } from './log';
 
-const WINDOW_MS = Number(process.env.HARNESS_TYPING_WINDOW_MS ?? 60_000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** How many times each fingerprint appears in a bot's arrival log. */

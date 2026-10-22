@@ -20,7 +20,6 @@ const QuickReactionButton: React.FC<QuickReactionButtonProps> = ({
 }) => {
   const existingReaction = message.reactions?.find((r) => r.emojiId === emoji);
   const userHasReacted = existingReaction?.memberIds.includes(userAddress);
-  const reactionCount = existingReaction?.memberIds.length || 0;
 
   return (
     <button

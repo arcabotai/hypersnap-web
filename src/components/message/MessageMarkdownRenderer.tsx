@@ -851,7 +851,7 @@ export const MessageMarkdownRenderer: React.FC<MessageMarkdownRendererProps> = (
       </em>
     ),
 
-  }), [processMentionTokens, messageSenderId, currentUserAddress]); // processMentionTokens already captures mapSenderToUser and onUserClick
+  }), [processMentionTokens, embeddedMedia, messageSenderId, currentUserAddress]); // processMentionTokens already captures mapSenderToUser and onUserClick
 
   // Handle mention clicks
   const handleClick = useCallback((event: React.MouseEvent) => {

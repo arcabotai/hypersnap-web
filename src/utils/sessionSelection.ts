@@ -68,7 +68,6 @@ function isSendReady(set: Record<string, unknown> | undefined): boolean {
 // Returns `any[]` deliberately: this replaces `response.map((e) => JSON.parse(e.state))`,
 // whose element type was `any`. Narrowing it here would ripple type errors through
 // every call site for no safety gain — the ordering is the change, not the typing.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function orderSessionsForSend<
   T extends { timestamp?: number; state: string; sentAccept?: boolean },
 >(rows: T[]): any[] {

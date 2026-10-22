@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { IconBell, IconBookmark, IconChevronRight, IconHash, IconHeart, IconMessageCircle, IconRefresh, IconSearch, IconUsers, IconWorld } from '@tabler/icons-react';
 import { getChannels, getNotifications, searchCasts, searchUsers, type ActivityItem, type Cast, type Channel, type User } from '../lib/api';
 import { castPath, profilePath } from '../lib/navigation';
@@ -26,7 +26,7 @@ function useFeaturePages<T>(key: string, enabled: boolean, loader: (options: Pag
   const itemKeyRef = useRef(itemKey); itemKeyRef.current = itemKey;
   const activeKey = useRef(key); activeKey.current = key;
 
-  async function load(nextCursor?: string | null, replace = false) {
+  const load = useCallback(async (nextCursor?: string | null, replace = false) => {
     if (requesting.current || !enabled) return;
     requesting.current = true;
     lastAttempt.current = { cursor: nextCursor, replace };
@@ -54,14 +54,14 @@ function useFeaturePages<T>(key: string, enabled: boolean, loader: (options: Pag
     } finally {
       if (run === generation.current) { setBusy(false); requesting.current = false; }
     }
-  }
+  }, [enabled, key]);
 
   useEffect(() => {
     generation.current += 1; request.current?.abort(); requesting.current = false;
     setItems([]); setCursor(null); setLoaded(false); setError(''); setStatus(''); setBusy(false); seen.current.clear(); lastAttempt.current = { replace: true };
     if (enabled) void load(undefined, true);
     return () => { generation.current += 1; request.current?.abort(); requesting.current = false; };
-  }, [key, enabled]);
+  }, [key, enabled, load]);
 
   function cancel() {
     generation.current += 1; request.current?.abort(); requesting.current = false;

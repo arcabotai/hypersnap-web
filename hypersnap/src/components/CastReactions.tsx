@@ -35,20 +35,25 @@ export default function CastReactions({ cast, session, onSignIn, notify }: { cas
   const [retry, setRetry] = useState(0);
   const [pending, setPending] = useState(false);
   const activeSession = useRef(session); activeSession.current = session;
+  const sessionFid = session?.fid;
+  const sessionPublicKey = session?.publicKey;
   const submitting = useRef(false);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController(); setState(null); setError(false); setUncertain(false);
-    if (session) {
-      void Promise.all((['like', 'recast'] as const).map(type => boundedRead(() => session.reactionStatus
-        ? session.reactionStatus({ fid: cast.author.fid, hash: cast.hash }, type, controller.signal)
-        : getReactionStatus(session.fid, { fid: cast.author.fid, hash: cast.hash }, type, controller.signal), controller.signal)))
+    // Capture the current identity's methods for this read. Display metadata
+    // updates must not clear status or an uncertain-write quarantine.
+    const readSession = activeSession.current;
+    if (readSession && readSession.fid === sessionFid && readSession.publicKey === sessionPublicKey) {
+      void Promise.all((['like', 'recast'] as const).map(type => boundedRead(() => readSession.reactionStatus
+        ? readSession.reactionStatus({ fid: cast.author.fid, hash: cast.hash }, type, controller.signal)
+        : getReactionStatus(readSession.fid, { fid: cast.author.fid, hash: cast.hash }, type, controller.signal), controller.signal)))
         .then(([liked, recasted]) => { if (!controller.signal.aborted) setState({ liked, recasted, likes: cast.reactions?.likes_count ?? 0, recasts: cast.reactions?.recasts_count ?? 0 }); })
         .catch(cause => { if (!controller.signal.aborted) { setError(true); setUncertain(cause instanceof ApiError && cause.code === 'submission_unknown'); } });
     }
     return () => controller.abort();
-  }, [session?.fid, session?.publicKey, cast.hash, cast.author.fid, cast.reactions?.likes_count, cast.reactions?.recasts_count, retry]);
+  }, [sessionFid, sessionPublicKey, cast.hash, cast.author.fid, cast.reactions?.likes_count, cast.reactions?.recasts_count, retry]);
   async function react(type: 'like' | 'recast') {
     if (!session) { onSignIn(); return; }
     if (!state || submitting.current) return;

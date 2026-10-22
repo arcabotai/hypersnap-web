@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { FileWithPath, useDropzone } from 'react-dropzone';
 import type {
   Message as MessageType,
-  StickerMessage,
 } from '@quilibrium/quorum-shared';
 import { t } from '@lingui/core/macro';
 import { processAttachmentImage, FILE_SIZE_LIMITS } from '../../../utils/imageProcessing';
@@ -25,7 +24,6 @@ interface UseMessageComposerOptions {
 
 export function useMessageComposer(options: UseMessageComposerOptions) {
   const {
-    type,
     onSubmitMessage,
     onSubmitSticker,
     hasStickers = false,
@@ -63,19 +61,19 @@ export function useMessageComposer(options: UseMessageComposerOptions) {
 
   // Clear mention error when message changes
   useEffect(() => {
-    if (mentionError) {
-      setMentionError(null);
-    }
+    setMentionError(null);
   }, [pendingMessage]); // Clear error when user types
 
   // Image processing using standardized processor with thumbnail support
   const processImage = async (file: FileWithPath): Promise<AttachmentProcessingResult> => {
+    let failureMessage: string;
     try {
       const result = await processAttachmentImage(file);
       return result;
     } catch (error) {
-      throw new Error(`Image processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      failureMessage = error instanceof Error ? error.message : 'Unknown error';
     }
+    throw new Error(`Image processing failed: ${failureMessage}`);
   };
 
   // File dropzone
@@ -149,7 +147,7 @@ export function useMessageComposer(options: UseMessageComposerOptions) {
       // Clear any existing mention error
       setMentionError(null);
       return true;
-    } catch (error) {
+    } catch {
       // If extraction fails, allow the message (don't block on validation errors)
       setMentionError(null);
       return true;

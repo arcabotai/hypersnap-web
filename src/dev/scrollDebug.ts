@@ -126,7 +126,6 @@ class ScrollDebug {
       kind: 'session-start',
       note: `label="${this.sessionLabel}" snapEnabled=${this.snapEnabled} url=${location.pathname}`,
     });
-    // eslint-disable-next-line no-console
     console.log(`${TAG} session "${this.sessionLabel}" started. Send messages now. Run __scrollDebug.endSession() when done.`);
   }
 
@@ -150,10 +149,8 @@ class ScrollDebug {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      // eslint-disable-next-line no-console
       console.log(`${TAG} END — events:${this.events.length} suspects:${suspectCount} — downloaded ${a.download}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error(`${TAG} download failed: ${err}. Report below — copy manually:\n${report}`);
     }
 
@@ -170,7 +167,6 @@ class ScrollDebug {
     if (this.events.length > MAX_EVENTS) this.events.shift();
     this.persistThrottled();
     if (this.verbose) {
-      // eslint-disable-next-line no-console
       console.log(`${TAG} ${t}ms ${e.kind}`, e);
     }
   }
@@ -180,14 +176,11 @@ class ScrollDebug {
     this.origin = null;
     this.sessionLabel = null;
     try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* sessionStorage unavailable */ }
-    // eslint-disable-next-line no-console
     console.log(`${TAG} cleared.`);
   }
 
   dump() {
-    // eslint-disable-next-line no-console
     console.log(`${TAG} ${this.events.length} events:`);
-    // eslint-disable-next-line no-console
     console.table(this.events.map(e => ({
       t: e.t,
       kind: e.kind,
@@ -199,7 +192,6 @@ class ScrollDebug {
       suspect: e.suspect,
       note: e.note,
     })));
-    // eslint-disable-next-line no-console
     console.log(`${TAG} full events (with stacks):`, this.events);
   }
 
@@ -221,7 +213,6 @@ class ScrollDebug {
       proto = Object.getPrototypeOf(proto);
     }
     if (!nativeDesc || !nativeDesc.get || !nativeDesc.set) {
-      // eslint-disable-next-line no-console
       console.warn(`${TAG} could not find native scrollTop descriptor`);
       return;
     }
@@ -373,7 +364,6 @@ class ScrollDebug {
       this.resizeObserver?.observe(item);
     });
 
-    // eslint-disable-next-line no-console
     console.log(`${TAG} attached to scroller. Use __scrollDebug.startSession('label') to begin.`);
   }
 
@@ -446,7 +436,6 @@ class ScrollDebug {
       this.sessionLabel = parsed.sessionLabel;
       this.events = parsed.events || [];
       if (this.events.length > 0) {
-        // eslint-disable-next-line no-console
         console.log(`${TAG} restored ${this.events.length} events from previous page (sessionStorage).`);
       }
     } catch {

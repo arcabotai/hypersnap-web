@@ -31,7 +31,7 @@
     "build:preview": "yarn build && yarn preview --config web/vite.config.ts",
     "electron:dev": "cross-env NODE_ENV=development electron web/electron/main.cjs",
     "electron:build": "yarn build && electron-builder",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "validate": "tsc --noEmit && eslint .",
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/verify/index.mjs",

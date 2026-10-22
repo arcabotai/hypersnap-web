@@ -67,7 +67,6 @@ const General: React.FunctionComponent<GeneralProps> = ({
   description,
   setDescription,
   descriptionErrors,
-  maxDescriptionLength,
   fixes,
   iconData,
   currentIconFile,
@@ -95,24 +94,31 @@ const General: React.FunctionComponent<GeneralProps> = ({
   setSaveEditHistory,
   allowThreads,
   setAllowThreads,
-  onSave,
-  isSaving,
   hasValidationError,
 }) => {
   // Feature flag: only show edit history toggle if enabled via environment variable
   const showEditHistoryToggle = isFeatureEnabled('ENABLE_EDIT_HISTORY');
 
   // Determine if there's an icon to display (new upload or existing, not marked for deletion)
-  const hasIcon = (iconData && currentIconFile) || (space?.iconUrl && !iconMarkedForDeletion);
-  const iconImageUrl = iconData && currentIconFile
-    ? `url(data:${currentIconFile.type};base64,${Buffer.from(iconData).toString('base64')})`
-    : space?.iconUrl ? `url(${space.iconUrl})` : '';
+  const hasIcon =
+    (iconData && currentIconFile) || (space?.iconUrl && !iconMarkedForDeletion);
+  const iconImageUrl =
+    iconData && currentIconFile
+      ? `url(data:${currentIconFile.type};base64,${Buffer.from(iconData).toString('base64')})`
+      : space?.iconUrl
+        ? `url(${space.iconUrl})`
+        : '';
 
   // Determine if there's a banner to display (new upload or existing, not marked for deletion)
-  const hasBanner = (bannerData && currentBannerFile) || (space?.bannerUrl && !bannerMarkedForDeletion);
-  const bannerImageUrl = bannerData && currentBannerFile
-    ? `url(data:${currentBannerFile.type};base64,${Buffer.from(bannerData).toString('base64')})`
-    : space?.bannerUrl ? `url(${space.bannerUrl})` : '';
+  const hasBanner =
+    (bannerData && currentBannerFile) ||
+    (space?.bannerUrl && !bannerMarkedForDeletion);
+  const bannerImageUrl =
+    bannerData && currentBannerFile
+      ? `url(data:${currentBannerFile.type};base64,${Buffer.from(bannerData).toString('base64')})`
+      : space?.bannerUrl
+        ? `url(${space.bannerUrl})`
+        : '';
 
   return (
     <>
@@ -130,7 +136,11 @@ const General: React.FunctionComponent<GeneralProps> = ({
             !hasIcon && <Icon name="image" size="2xl" className="icon" />
           )}
           {hasIcon && !isIconDragActive && (
-            <Tooltip id="space-icon-delete" content={t`Delete this image`} place="bottom">
+            <Tooltip
+              id="space-icon-delete"
+              content={t`Delete this image`}
+              place="bottom"
+            >
               <button
                 type="button"
                 className="image-upload-delete-btn"
@@ -213,7 +223,11 @@ const General: React.FunctionComponent<GeneralProps> = ({
               <Icon name="image" size="2xl" />
             )}
             {hasBanner && !isBannerDragActive && (
-              <Tooltip id="space-banner-delete" content={t`Delete this image`} place="top">
+              <Tooltip
+                id="space-banner-delete"
+                content={t`Delete this image`}
+                place="top"
+              >
                 <button
                   type="button"
                   className="image-upload-delete-btn"
@@ -292,29 +306,29 @@ const General: React.FunctionComponent<GeneralProps> = ({
           </div>
           {showEditHistoryToggle && (
             <>
-            <div className="flex flex-row items-center gap-3">
-              <Switch
-                onChange={() => setSaveEditHistory(!saveEditHistory)}
-                value={saveEditHistory}
-              />
-              <div className="flex flex-row items-center">
-                <div className="text-label-strong">
-                  <Trans>Save Edit History</Trans>
+              <div className="flex flex-row items-center gap-3">
+                <Switch
+                  onChange={() => setSaveEditHistory(!saveEditHistory)}
+                  value={saveEditHistory}
+                />
+                <div className="flex flex-row items-center">
+                  <div className="text-label-strong">
+                    <Trans>Save Edit History</Trans>
+                  </div>
+                  <Tooltip
+                    id="save-edit-history-tooltip"
+                    content={t`When enabled, all previous versions of edited messages will be saved. When disabled, only the current edited version is kept.`}
+                    place="bottom"
+                    className="!w-[400px]"
+                    maxWidth={400}
+                  >
+                    <Icon
+                      name="info-circle"
+                      className="text-main hover:text-strong cursor-pointer ml-2"
+                    />
+                  </Tooltip>
                 </div>
-                <Tooltip
-                  id="save-edit-history-tooltip"
-                  content={t`When enabled, all previous versions of edited messages will be saved. When disabled, only the current edited version is kept.`}
-                  place="bottom"
-                  className="!w-[400px]"
-                  maxWidth={400}
-                >
-                  <Icon
-                    name="info-circle"
-                    className="text-main hover:text-strong cursor-pointer ml-2"
-                  />
-                </Tooltip>
               </div>
-            </div>
             </>
           )}
           <div className="flex flex-row items-center gap-3 mt-3">

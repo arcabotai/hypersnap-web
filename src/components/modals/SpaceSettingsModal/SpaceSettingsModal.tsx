@@ -1,10 +1,5 @@
 import * as React from 'react';
-import {
-  Button,
-  Modal,
-  Callout,
-  Spacer,
-} from '../../primitives';
+import { Button, Modal, Callout } from '../../primitives';
 import '../../../styles/_modal_common.scss';
 import ConfirmationModal from '../ConfirmationModal';
 import ModalSaveOverlay from '../ModalSaveOverlay';
@@ -17,7 +12,10 @@ import { t } from '@lingui/core/macro';
 import { usePasskeysContext } from '@quilibrium/quilibrium-js-sdk-channels';
 import { useQueryClient } from '@tanstack/react-query';
 import { buildSpaceMembersKey } from '../../../hooks';
-import { validateSpaceName, validateSpaceDescription } from '../../../hooks/business/validation';
+import {
+  validateSpaceName,
+  validateSpaceDescription,
+} from '../../../hooks/business/validation';
 import {
   useSpaceManagement,
   useRoleManagement,
@@ -31,7 +29,10 @@ import { useMentionNotificationSettings } from '../../../hooks/business/mentions
 import { showToast } from '../../../utils/toast';
 import { useSpaceTag } from '../../../hooks/business/spaces/useSpaceTag';
 import { InviteEvalsExhaustedError } from '../../../services/InvitationService';
-import { EMPTY_ROSTERS_BY_SPACE, IdentityScopeProvider } from '../../../identity';
+import {
+  EMPTY_ROSTERS_BY_SPACE,
+  IdentityScopeProvider,
+} from '../../../identity';
 import { useConversations } from '../../../hooks/queries';
 import { realDisplayNameOrUndefined } from '../../../utils/identityPlaceholder';
 import type { Conversation } from '@quilibrium/quorum-shared';
@@ -73,8 +74,11 @@ const SpaceSettingsModal: React.FunctionComponent<{
   const { data: conversations } = useConversations({ type: 'direct' });
 
   const directConversations = React.useMemo(
-    () => (conversations?.pages ?? []).flatMap((c: any) => c.conversations as Conversation[]),
-    [conversations],
+    () =>
+      (conversations?.pages ?? []).flatMap(
+        (c: any) => c.conversations as Conversation[]
+      ),
+    [conversations]
   );
 
   const locallyKnownNames = React.useMemo(() => {
@@ -104,7 +108,8 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
   initialTab?: 'account' | 'general' | 'invites' | 'roles';
 }> = ({ spaceId, dismiss, initialTab }) => {
   const { data: space } = useSpace({ spaceId });
-  const { updateSpace, requestSync, messageDB, sendVerifyKickedStatuses } = useMessageDB();
+  const { updateSpace, requestSync, messageDB, sendVerifyKickedStatuses } =
+    useMessageDB();
   const { data: isSpaceOwner } = useSpaceOwner({ spaceId });
   const [syncingKicks, setSyncingKicks] = React.useState<boolean>(false);
   const handleSyncKicked = React.useCallback(async () => {
@@ -115,10 +120,16 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
       if (count > 0) {
         // Optionally, request a members sync shortly after
         await requestSync(space.spaceId);
-        showToast(`Updated records for ${count} users that have been kicked.`, { variant: 'success', bottomFixed: true });
+        showToast(`Updated records for ${count} users that have been kicked.`, {
+          variant: 'success',
+          bottomFixed: true,
+        });
       } else {
         // No updates needed
-        showToast(t`All kick records are up to date.`, { variant: 'info', bottomFixed: true });
+        showToast(t`All kick records are up to date.`, {
+          variant: 'info',
+          bottomFixed: true,
+        });
       }
     } finally {
       setSyncingKicks(false);
@@ -128,8 +139,9 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
   const queryClient = useQueryClient();
 
   // Legacy owner membership check
-  const [checkingOwnerMembership, setCheckingOwnerMembership] = React.useState<boolean>(false);
-  const [missingOwnerMembership, setMissingOwnerMembership] = React.useState<boolean>(false);
+  const [, setCheckingOwnerMembership] = React.useState<boolean>(false);
+  const [missingOwnerMembership, setMissingOwnerMembership] =
+    React.useState<boolean>(false);
   const [addingOwner, setAddingOwner] = React.useState<boolean>(false);
 
   React.useEffect(() => {
@@ -137,8 +149,12 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
       if (!space || !user?.currentPasskeyInfo?.address) return;
       setCheckingOwnerMembership(true);
       try {
-        const existing = await messageDB.getSpaceMember(spaceId, user.currentPasskeyInfo.address);
-        const isMissing = !existing || !existing.inbox_address || existing.inbox_address === '';
+        const existing = await messageDB.getSpaceMember(
+          spaceId,
+          user.currentPasskeyInfo.address
+        );
+        const isMissing =
+          !existing || !existing.inbox_address || existing.inbox_address === '';
         setMissingOwnerMembership(isMissing);
       } finally {
         setCheckingOwnerMembership(false);
@@ -163,7 +179,9 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
         inbox_address: inboxAddress,
       } as any);
       setMissingOwnerMembership(false);
-      await queryClient.invalidateQueries({ queryKey: buildSpaceMembersKey({ spaceId }) });
+      await queryClient.invalidateQueries({
+        queryKey: buildSpaceMembersKey({ spaceId }),
+      });
     } finally {
       setAddingOwner(false);
     }
@@ -187,7 +205,10 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
     space?.description || ''
   );
   const MAX_DESCRIPTION_LENGTH = 300;
-  const descriptionErrors = validateSpaceDescription(description, MAX_DESCRIPTION_LENGTH);
+  const descriptionErrors = validateSpaceDescription(
+    description,
+    MAX_DESCRIPTION_LENGTH
+  );
 
   // Update description when space changes
   React.useEffect(() => {
@@ -240,7 +261,6 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
     deleteRole,
     updateRoleTag,
     updateRoleDisplayName,
-    toggleRolePermission,
     updateRolePermissions,
     toggleRolePublic,
     deleteConfirmation,
@@ -332,8 +352,6 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
     generateOneTimeLink,
     clearGeneratedOneTimeLink,
     generateOneTimeLinkError,
-    publicInvite,
-    setPublicInvite,
     generating,
     generateNewInviteLink,
   } = useInviteManagement({
@@ -376,7 +394,10 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
       // spaceProfile.onSave already shows error toasts, so we don't need to duplicate
       // But if mention settings fail, we should show an error
       if (error instanceof Error && error.message.includes('mention')) {
-        showToast(t`Failed to save notification settings`, { variant: 'error', bottomFixed: true });
+        showToast(t`Failed to save notification settings`, {
+          variant: 'error',
+          bottomFixed: true,
+        });
       }
       throw error; // Re-throw to prevent modal from closing
     }
@@ -393,10 +414,10 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
       const role = roles[i];
       // Compare each role against the roles before it; the first duplicate
       // (by tag or name, case-insensitive) is the one we report.
-      const conflict = findRoleConflict(
-        roles.slice(0, i),
-        { roleTag: role.roleTag, displayName: role.displayName }
-      );
+      const conflict = findRoleConflict(roles.slice(0, i), {
+        roleTag: role.roleTag,
+        displayName: role.displayName,
+      });
       if (conflict) {
         setRoleValidationError(
           conflict.field === 'roleTag'
@@ -502,28 +523,67 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
   ]);
 
   // Determine if current category needs save button
-  const categoryNeedsSave = ['account', 'general', 'roles', 'space-tag', 'emojis', 'stickers'].includes(selectedCategory);
+  const categoryNeedsSave = [
+    'account',
+    'general',
+    'roles',
+    'space-tag',
+    'emojis',
+    'stickers',
+  ].includes(selectedCategory);
 
   return (
     <>
       <Modal
         title=""
         visible={true}
-        onClose={(isSaving || spaceProfile.isSaving || mentionSettings.isSaving || isDeleting) ? undefined : dismiss}
+        onClose={
+          isSaving ||
+          spaceProfile.isSaving ||
+          mentionSettings.isSaving ||
+          isDeleting
+            ? undefined
+            : dismiss
+        }
         size="large"
         className="modal-complex-wrapper"
         hideClose={false}
         noPadding={true}
-        closeOnBackdropClick={!(isSaving || spaceProfile.isSaving || mentionSettings.isSaving || isDeleting)}
-        closeOnEscape={!(isSaving || spaceProfile.isSaving || mentionSettings.isSaving || isDeleting)}
+        closeOnBackdropClick={
+          !(
+            isSaving ||
+            spaceProfile.isSaving ||
+            mentionSettings.isSaving ||
+            isDeleting
+          )
+        }
+        closeOnEscape={
+          !(
+            isSaving ||
+            spaceProfile.isSaving ||
+            mentionSettings.isSaving ||
+            isDeleting
+          )
+        }
       >
         <div className="modal-complex-container-inner relative">
           {/* Loading overlay for saving */}
-          <ModalSaveOverlay visible={isSaving || (selectedCategory === 'account' && (spaceProfile.isSaving || mentionSettings.isSaving))} />
+          <ModalSaveOverlay
+            visible={
+              isSaving ||
+              (selectedCategory === 'account' &&
+                (spaceProfile.isSaving || mentionSettings.isSaving))
+            }
+          />
           {/* Loading overlay for deleting */}
-          <ModalSaveOverlay visible={isDeleting} message={t`Deleting Space...`} />
+          <ModalSaveOverlay
+            visible={isDeleting}
+            message={t`Deleting Space...`}
+          />
 
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+          >
             <div className="modal-complex-layout-with-footer">
               <Navigation
                 selectedCategory={selectedCategory}
@@ -567,7 +627,9 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
                           onClose={dismiss}
                           roles={roles}
                           selectedMentionTypes={mentionSettings.selectedTypes}
-                          setSelectedMentionTypes={mentionSettings.setSelectedTypes}
+                          setSelectedMentionTypes={
+                            mentionSettings.setSelectedTypes
+                          }
                           isMentionSettingsLoading={mentionSettings.isLoading}
                         />
                       );
@@ -582,13 +644,26 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
                           descriptionErrors={descriptionErrors}
                           maxDescriptionLength={MAX_DESCRIPTION_LENGTH}
                           // set 'owner-membership' to 'true' to see in frontend
-                          fixes={(missingOwnerMembership ? [{
-                            id: 'owner-membership',
-                            message: t`You're not listed in this Space's members. Correcting this will add you to the Space Members list (stores your profile locally with your inbox address).`,
-                            actionLabel: t`Fix`,
-                            onFix: addOwnerToMembers,
-                            loading: addingOwner,
-                          }] : []).concat([{ id: 'sync-kicked', message: t`Update kick records for all members. Use this if kicked users still appear active to some members.`, actionLabel: t`Sync Kick Status`, onFix: handleSyncKicked, loading: syncingKicks }])}
+                          fixes={(missingOwnerMembership
+                            ? [
+                                {
+                                  id: 'owner-membership',
+                                  message: t`You're not listed in this Space's members. Correcting this will add you to the Space Members list (stores your profile locally with your inbox address).`,
+                                  actionLabel: t`Fix`,
+                                  onFix: addOwnerToMembers,
+                                  loading: addingOwner,
+                                },
+                              ]
+                            : []
+                          ).concat([
+                            {
+                              id: 'sync-kicked',
+                              message: t`Update kick records for all members. Use this if kicked users still appear active to some members.`,
+                              actionLabel: t`Sync Kick Status`,
+                              onFix: handleSyncKicked,
+                              loading: syncingKicks,
+                            },
+                          ])}
                           iconData={iconData}
                           currentIconFile={currentIconFile}
                           iconFileError={iconFileError}
@@ -722,7 +797,9 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
                                 // as a transient error.
                                 return;
                               }
-                              setErrorMessage(t`Failed to update join preview. Please try again.`);
+                              setErrorMessage(
+                                t`Failed to update join preview. Please try again.`
+                              );
                             }
                           }}
                           poolExhausted={poolExhausted}
@@ -762,18 +839,32 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
                       >
                         <div>
                           <div className="font-medium">{t`Save Failed`}</div>
-                          <div className="text-sm opacity-90 mt-1">{saveError}</div>
+                          <div className="text-sm opacity-90 mt-1">
+                            {saveError}
+                          </div>
                         </div>
                       </Callout>
                     </div>
                   )}
                   <Button
                     type="primary"
-                    onClick={selectedCategory === 'account' ? handleAccountSave : saveChanges}
+                    onClick={
+                      selectedCategory === 'account'
+                        ? handleAccountSave
+                        : saveChanges
+                    }
                     disabled={
                       selectedCategory === 'account'
-                        ? spaceProfile.isSaving || spaceProfile.hasValidationError || mentionSettings.isSaving
-                        : isSaving || (!!validateSpaceName(spaceName) && selectedCategory === 'general') || (descriptionErrors.length > 0 && selectedCategory === 'general') || (!!roleValidationError && selectedCategory === 'roles')
+                        ? spaceProfile.isSaving ||
+                          spaceProfile.hasValidationError ||
+                          mentionSettings.isSaving
+                        : isSaving ||
+                          (!!validateSpaceName(spaceName) &&
+                            selectedCategory === 'general') ||
+                          (descriptionErrors.length > 0 &&
+                            selectedCategory === 'general') ||
+                          (!!roleValidationError &&
+                            selectedCategory === 'roles')
                     }
                   >
                     {t`Save Changes`}
@@ -807,7 +898,9 @@ const SpaceSettingsModalInner: React.FunctionComponent<{
                 // Surfaced via the persistent banner; no transient error.
                 return;
               }
-              setErrorMessage(t`Failed to generate invite link. Please try again.`);
+              setErrorMessage(
+                t`Failed to generate invite link. Please try again.`
+              );
             }
           }}
           onCancel={() => setShowGenerateModal(false)}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconArrowUpRight, IconRefresh } from '@tabler/icons-react';
 import { resolveCastAlias, type Cast, type CastAliasContinuation, type CastAliasResult } from '../lib/api';
 import { castPath } from '../lib/navigation';
@@ -25,7 +25,7 @@ export default function CastLinkLookup({ authorIdentifier, hashPrefix, renderCas
   const loading = useRef(false);
   const lastAttempt = useRef<CastAliasContinuation | undefined>(undefined);
 
-  async function load(continuation?: CastAliasContinuation) {
+  const load = useCallback(async (continuation?: CastAliasContinuation) => {
     if (loading.current) return;
     loading.current = true; lastAttempt.current = continuation;
     const run = ++generation.current; const capturedKey = key;
@@ -46,12 +46,12 @@ export default function CastLinkLookup({ authorIdentifier, hashPrefix, renderCas
     } catch (cause) {
       if (!request.signal.aborted && run === generation.current && activeKey.current === capturedKey) setState(current => ({ ...current, busy: false, error: cause instanceof Error ? cause.message.slice(0, 300) : 'This cast link could not be checked. Try again.', cancelled: false }));
     } finally { if (run === generation.current) loading.current = false; }
-  }
+  }, [authorIdentifier, hashPrefix, key]);
   useEffect(() => {
     generation.current += 1; controller.current?.abort(); loading.current = false;
     setState(emptyState(key)); void load();
     return () => { generation.current += 1; controller.current?.abort(); loading.current = false; };
-  }, [key]);
+  }, [key, load]);
   function cancel() {
     generation.current += 1; controller.current?.abort(); loading.current = false;
     setState(current => ({ ...current, busy: false, cancelled: true, error: '' }));

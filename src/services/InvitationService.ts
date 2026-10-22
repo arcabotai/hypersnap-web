@@ -586,17 +586,22 @@ export class InvitationService {
           throw new Error(t`invalid link`);
         }
 
-        let inviteEval;
-        try {
-          inviteEval = await this.apiClient.getSpaceInviteEval(
-            configPub.toString('hex')
-          );
-        } catch (e: any) {
-          if (isQuorumApiError(e) && e.status === 404) {
-            throw new Error(t`This public invite link is no longer valid.`);
+        const lookup = await this.apiClient.getSpaceInviteEval(
+          configPub.toString('hex')
+        ).then(
+          inviteEval => ({ found: true as const, inviteEval }),
+          (error: unknown) => {
+            if (isQuorumApiError(error) && error.status === 404) {
+              return { found: false as const };
+            }
+            throw error;
           }
-          throw e;
+        );
+        if (!lookup.found) {
+          // Translate the known status without attaching transport metadata.
+          throw new Error(t`This public invite link is no longer valid.`);
         }
+        const { inviteEval } = lookup;
 
         // Prefer the eval's own ephemeral pubkey when the server provides it.
         // The manifest's ephemeral key gets rotated on every space update

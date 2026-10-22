@@ -12,7 +12,7 @@
 //
 //   yarn harness dm-volume            # HARNESS_MESSAGES (default 60)
 import { test, expect } from 'vitest';
-import { createBot, type HarnessBot } from './bot';
+import { createBot } from './bot';
 import { totalSkipped } from './inspect';
 import { RunLog } from './log';
 

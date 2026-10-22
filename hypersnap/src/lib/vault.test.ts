@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { compareAndSwapSavedVault, decryptSignerVault, decryptSignerVaultWithPasskey, deleteSavedVault, encryptSignerVault, encryptSignerVaultWithPasskey, passkeyVault, readSavedVault, savedVaultMethod, validateSignerVault, writeSavedVault, VAULT_ITERATIONS, type VaultMetadata, type SignerVault, type PasskeySignerVault } from './vault';
+import { compareAndSwapSavedVault, decryptSignerVault, decryptSignerVaultWithPasskey, deleteSavedVault, encryptSignerVault, encryptSignerVaultWithPasskey, passkeyVault, readSavedVault, savedVaultMethod, validateSignerVault, writeSavedVault, VAULT_ITERATIONS, type VaultMetadata, type SignerVault } from './vault';
 import { bytesToHex } from './protocol/signedKeyRequest';
 import { FULL_CLIENT_SCOPES, FULL_SOCIAL_SCOPES } from './pairing';
 import type { PasskeyDescriptor } from './passkey';

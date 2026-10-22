@@ -74,7 +74,13 @@ const MobileDrawer: React.FC<MobileDrawerProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!enableSwipeToClose || !isDragging || startY === null || !drawerRef.current) return;
+    if (
+      !enableSwipeToClose ||
+      !isDragging ||
+      startY === null ||
+      !drawerRef.current
+    )
+      return;
 
     const touch = e.touches[0];
     setCurrentY(touch.clientY);
@@ -92,7 +98,7 @@ const MobileDrawer: React.FC<MobileDrawerProps> = ({
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = () => {
     if (
       !enableSwipeToClose ||
       !isDragging ||
@@ -149,49 +155,47 @@ const MobileDrawer: React.FC<MobileDrawerProps> = ({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-          {/* Swipe handle indicator */}
-          {enableSwipeToClose && (
-            <div className="mobile-drawer__handle" aria-hidden="true" />
-          )}
+            {/* Swipe handle indicator */}
+            {enableSwipeToClose && (
+              <div className="mobile-drawer__handle" aria-hidden="true" />
+            )}
 
-          {/* Header row with title and close button */}
-          <div className="mobile-drawer__header-row">
-            <div className="mobile-drawer__title-area">
-              {title && (
-                <span
-                  className="text-label mobile-drawer__title"
-                >
-                  {title}
-                </span>
+            {/* Header row with title and close button */}
+            <div className="mobile-drawer__header-row">
+              <div className="mobile-drawer__title-area">
+                {title && (
+                  <span className="text-label mobile-drawer__title">
+                    {title}
+                  </span>
+                )}
+              </div>
+
+              {showCloseButton && (
+                <Button
+                  type="unstyled"
+                  onClick={handleClose}
+                  iconName="close"
+                  iconOnly
+                  className="mobile-drawer__close-btn"
+                />
               )}
             </div>
 
-            {showCloseButton && (
-              <Button
-                type="unstyled"
-                onClick={handleClose}
-                iconName="close"
-                iconOnly
-                className="mobile-drawer__close-btn"
-              />
+            {/* Optional custom header content (e.g., emoji reactions) */}
+            {headerContent && (
+              <div className="mobile-drawer__header-content">
+                {headerContent}
+              </div>
             )}
           </div>
 
-          {/* Optional custom header content (e.g., emoji reactions) */}
-          {headerContent && (
-            <div className="mobile-drawer__header-content">
-              {headerContent}
-            </div>
-          )}
+          {/* Content */}
+          <div
+            className={`mobile-drawer__content ${!title ? 'mobile-drawer__content--no-header' : ''}`}
+          >
+            {children}
+          </div>
         </div>
-
-        {/* Content */}
-        <div
-          className={`mobile-drawer__content ${!title ? 'mobile-drawer__content--no-header' : ''}`}
-        >
-          {children}
-        </div>
-      </div>
       </OverlayBackdrop>
     </Portal>
   );

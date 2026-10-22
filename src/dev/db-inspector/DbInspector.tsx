@@ -65,7 +65,7 @@ export const DbInspector: React.FC = () => {
       await navigator.clipboard.writeText(json);
       setCopyStatus('Copied to clipboard!');
       setTimeout(() => setCopyStatus(null), 2000);
-    } catch (err) {
+    } catch {
       setCopyStatus('Failed to copy');
       setTimeout(() => setCopyStatus(null), 2000);
     }

@@ -65,7 +65,10 @@ function useCollapsedGroups(spaceId: string) {
         } else {
           parsed[spaceId] = Array.from(next);
         }
-        localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(parsed));
+        localStorage.setItem(
+          COLLAPSED_GROUPS_STORAGE_KEY,
+          JSON.stringify(parsed)
+        );
       } catch {
         // localStorage unavailable; in-memory state still works
       }
@@ -135,7 +138,7 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
     })
   );
 
-  const groups = space?.groups ?? [];
+  const groups = React.useMemo(() => space?.groups ?? [], [space?.groups]);
   const defaultChannelId = space?.defaultChannelId;
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -169,7 +172,9 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
     // resolve to that channel's parent group instead.
     if (activeData.type === 'group') {
       const targetGroupIndex =
-        overData.type === 'group' ? overData.groupIndex : overData.parentGroupIndex;
+        overData.type === 'group'
+          ? overData.groupIndex
+          : overData.parentGroupIndex;
       const from = activeData.groupIndex;
       let to = targetGroupIndex;
       if (isAfter && to < from) to = to + 1;
@@ -239,9 +244,14 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
   };
 
   const handleDeleteGroup = (group: Group) => {
-    const hasDefault = group.channels.some((c) => c.channelId === defaultChannelId);
+    const hasDefault = group.channels.some(
+      (c) => c.channelId === defaultChannelId
+    );
     if (hasDefault) {
-      showToast(t`Cannot delete a group containing the default channel.`, 'error');
+      showToast(
+        t`Cannot delete a group containing the default channel.`,
+        'error'
+      );
       return;
     }
     setPendingDelete({
@@ -295,7 +305,9 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
     if (pendingDelete.kind === 'group') {
       await updateSpace({
         ...space,
-        groups: space.groups.filter((g) => g.groupName !== pendingDelete.groupName),
+        groups: space.groups.filter(
+          (g) => g.groupName !== pendingDelete.groupName
+        ),
         modifiedDate: Date.now(),
       });
     } else {
@@ -320,7 +332,9 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
   const draggedChannel = React.useMemo(() => {
     if (activeDrag?.type !== 'channel') return null;
     const g = groups[activeDrag.parentGroupIndex];
-    return g?.channels.find((c) => c.channelId === activeDrag.channelId) ?? null;
+    return (
+      g?.channels.find((c) => c.channelId === activeDrag.channelId) ?? null
+    );
   }, [activeDrag, groups]);
 
   const draggedGroup = React.useMemo(() => {
@@ -342,7 +356,10 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
             <Trans>Manage channel groups and channels. Drag to reorder.</Trans>
           </div>
           <div className="pt-3">
-            <Button type="secondary" onClick={() => setGroupEditor({ mode: 'add' })}>
+            <Button
+              type="secondary"
+              onClick={() => setGroupEditor({ mode: 'add' })}
+            >
               <Icon name="plus" className="mr-2" />
               <Trans>Add Group</Trans>
             </Button>
@@ -358,49 +375,56 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-            <SortableContext items={groups.map((g) => `group:${g.groupName}`)}>
-              <div className="flex flex-col gap-3">
-                {groups.map((group, groupIndex) => (
-                  <SortableGroup
-                    key={group.groupName}
-                    group={group}
-                    groupIndex={groupIndex}
-                    defaultChannelId={defaultChannelId}
-                    isCollapsed={collapsed.has(group.groupName)}
-                    onToggleCollapsed={() => toggleCollapsed(group.groupName)}
-                    onEditGroup={() =>
-                      setGroupEditor({ mode: 'edit', groupName: group.groupName })
-                    }
-                    onAddChannel={() =>
-                      setChannelEditor({ mode: 'add', groupName: group.groupName })
-                    }
-                    onDeleteGroup={() => handleDeleteGroup(group)}
-                    onEditChannel={(channelId) =>
-                      setChannelEditor({
-                        mode: 'edit',
-                        groupName: group.groupName,
-                        channelId,
-                      })
-                    }
-                    onDeleteChannel={(channel) => handleDeleteChannel(group, channel)}
-                    onSetDefaultChannel={(channelId) => handleSetDefault(channelId)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
+          <SortableContext items={groups.map((g) => `group:${g.groupName}`)}>
+            <div className="flex flex-col gap-3">
+              {groups.map((group, groupIndex) => (
+                <SortableGroup
+                  key={group.groupName}
+                  group={group}
+                  groupIndex={groupIndex}
+                  defaultChannelId={defaultChannelId}
+                  isCollapsed={collapsed.has(group.groupName)}
+                  onToggleCollapsed={() => toggleCollapsed(group.groupName)}
+                  onEditGroup={() =>
+                    setGroupEditor({ mode: 'edit', groupName: group.groupName })
+                  }
+                  onAddChannel={() =>
+                    setChannelEditor({
+                      mode: 'add',
+                      groupName: group.groupName,
+                    })
+                  }
+                  onDeleteGroup={() => handleDeleteGroup(group)}
+                  onEditChannel={(channelId) =>
+                    setChannelEditor({
+                      mode: 'edit',
+                      groupName: group.groupName,
+                      channelId,
+                    })
+                  }
+                  onDeleteChannel={(channel) =>
+                    handleDeleteChannel(group, channel)
+                  }
+                  onSetDefaultChannel={(channelId) =>
+                    handleSetDefault(channelId)
+                  }
+                />
+              ))}
+            </div>
+          </SortableContext>
 
-            {createPortal(
-              <DragOverlay dropAnimation={{ duration: 200, easing: 'ease' }}>
-                {draggedChannel && (
-                  <ChannelRowGhost
-                    channel={draggedChannel}
-                    isDefault={draggedChannel.channelId === defaultChannelId}
-                  />
-                )}
-                {draggedGroup && <GroupHeaderGhost group={draggedGroup} />}
-              </DragOverlay>,
-              document.body
-            )}
+          {createPortal(
+            <DragOverlay dropAnimation={{ duration: 200, easing: 'ease' }}>
+              {draggedChannel && (
+                <ChannelRowGhost
+                  channel={draggedChannel}
+                  isDefault={draggedChannel.channelId === defaultChannelId}
+                />
+              )}
+              {draggedGroup && <GroupHeaderGhost group={draggedGroup} />}
+            </DragOverlay>,
+            document.body
+          )}
         </DndContext>
       </div>
 
@@ -408,7 +432,9 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
         createPortal(
           <GroupEditorModal
             spaceId={spaceId}
-            groupName={groupEditor.mode === 'edit' ? groupEditor.groupName : undefined}
+            groupName={
+              groupEditor.mode === 'edit' ? groupEditor.groupName : undefined
+            }
             dismiss={() => setGroupEditor(null)}
           />,
           document.body
@@ -419,7 +445,9 @@ const Channels: React.FunctionComponent<ChannelsProps> = ({ spaceId }) => {
             spaceId={spaceId}
             groupName={channelEditor.groupName}
             channelId={
-              channelEditor.mode === 'edit' ? channelEditor.channelId : undefined
+              channelEditor.mode === 'edit'
+                ? channelEditor.channelId
+                : undefined
             }
             dismiss={() => setChannelEditor(null)}
           />,
@@ -528,77 +556,77 @@ const SortableGroup: React.FunctionComponent<SortableGroupProps> = ({
           isCollapsed ? '' : 'border-b border-default'
         }`}
       >
-          <button
-            {...listeners}
-            aria-label={t`Drag to reorder group`}
-            className="cursor-grab active:cursor-grabbing text-subtle hover:text-main p-1 shrink-0"
-          >
-            <Icon name="grip-vertical" />
-          </button>
-          <button
-            onClick={onToggleCollapsed}
-            aria-label={isCollapsed ? t`Expand group` : t`Collapse group`}
-            aria-expanded={!isCollapsed}
-            className="cursor-pointer p-1 text-subtle hover:text-main shrink-0"
-          >
-            <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
-          </button>
-          <div className="flex-1 min-w-0 font-semibold uppercase text-xs tracking-wider truncate">
-            {group.icon && (
-              <Icon
-                name={group.icon as any}
-                className="mr-2 inline-block"
-                style={{
-                  color: group.iconColor
-                    ? getIconColorHex(group.iconColor as any)
-                    : undefined,
-                }}
-              />
-            )}
-            {group.groupName}
-          </div>
-          <Tooltip
-            id={`group-edit-${groupIndex}`}
-            content={t`Edit group`}
-            place="top"
-          >
-            <button
-              onClick={onEditGroup}
-              className="cursor-pointer p-1 text-subtle hover:text-main"
-              aria-label={t`Edit group`}
-            >
-              <Icon name="edit" />
-            </button>
-          </Tooltip>
-          <Tooltip
-            id={`group-add-${groupIndex}`}
-            content={t`Add channel`}
-            place="top"
-          >
-            <button
-              onClick={onAddChannel}
-              className="cursor-pointer p-1 text-subtle hover:text-main"
-              aria-label={t`Add channel to group`}
-            >
-              <Icon name="plus" />
-            </button>
-          </Tooltip>
-          <Tooltip
-            id={`group-delete-${groupIndex}`}
-            content={t`Delete group`}
-            place="top"
-          >
-            <button
-              onClick={onDeleteGroup}
-              className="cursor-pointer p-1 text-subtle hover:text-danger"
-              aria-label={t`Delete group`}
-            >
-              <Icon name="trash" />
-            </button>
-          </Tooltip>
+        <button
+          {...listeners}
+          aria-label={t`Drag to reorder group`}
+          className="cursor-grab active:cursor-grabbing text-subtle hover:text-main p-1 shrink-0"
+        >
+          <Icon name="grip-vertical" />
+        </button>
+        <button
+          onClick={onToggleCollapsed}
+          aria-label={isCollapsed ? t`Expand group` : t`Collapse group`}
+          aria-expanded={!isCollapsed}
+          className="cursor-pointer p-1 text-subtle hover:text-main shrink-0"
+        >
+          <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} />
+        </button>
+        <div className="flex-1 min-w-0 font-semibold uppercase text-xs tracking-wider truncate">
+          {group.icon && (
+            <Icon
+              name={group.icon as any}
+              className="mr-2 inline-block"
+              style={{
+                color: group.iconColor
+                  ? getIconColorHex(group.iconColor as any)
+                  : undefined,
+              }}
+            />
+          )}
+          {group.groupName}
         </div>
+        <Tooltip
+          id={`group-edit-${groupIndex}`}
+          content={t`Edit group`}
+          place="top"
+        >
+          <button
+            onClick={onEditGroup}
+            className="cursor-pointer p-1 text-subtle hover:text-main"
+            aria-label={t`Edit group`}
+          >
+            <Icon name="edit" />
+          </button>
+        </Tooltip>
+        <Tooltip
+          id={`group-add-${groupIndex}`}
+          content={t`Add channel`}
+          place="top"
+        >
+          <button
+            onClick={onAddChannel}
+            className="cursor-pointer p-1 text-subtle hover:text-main"
+            aria-label={t`Add channel to group`}
+          >
+            <Icon name="plus" />
+          </button>
+        </Tooltip>
+        <Tooltip
+          id={`group-delete-${groupIndex}`}
+          content={t`Delete group`}
+          place="top"
+        >
+          <button
+            onClick={onDeleteGroup}
+            className="cursor-pointer p-1 text-subtle hover:text-danger"
+            aria-label={t`Delete group`}
+          >
+            <Icon name="trash" />
+          </button>
+        </Tooltip>
+      </div>
 
-        {!isCollapsed && (
+      {!isCollapsed && (
         <SortableContext
           items={group.channels.map((c) => `channel:${c.channelId}`)}
           strategy={verticalListSortingStrategy}
@@ -623,7 +651,7 @@ const SortableGroup: React.FunctionComponent<SortableGroupProps> = ({
             )}
           </div>
         </SortableContext>
-        )}
+      )}
     </div>
   );
 };
@@ -674,86 +702,80 @@ const SortableChannel: React.FunctionComponent<SortableChannelProps> = ({
       }}
       {...attributes}
     >
+      <button
+        {...listeners}
+        aria-label={t`Drag to reorder channel`}
+        className="cursor-grab active:cursor-grabbing text-subtle hover:text-main p-1"
+      >
+        <Icon name="grip-vertical" />
+      </button>
+      <Icon
+        name={(channel.icon || 'hashtag') as any}
+        className="text-muted"
+        style={{
+          color: channel.iconColor
+            ? getIconColorHex(channel.iconColor as any)
+            : undefined,
+        }}
+      />
+      <span className="flex-1 truncate">{channel.channelName}</span>
+      {channel.isReadOnly && (
+        <span className="text-xs px-2 py-0.5 bg-surface-5 rounded flex items-center gap-1 text-muted">
+          <Icon name="lock" />
+          <Trans>Read-only</Trans>
+        </span>
+      )}
+      <Tooltip
+        id={`channel-default-${channel.channelId}`}
+        content={isDefault ? t`Default channel` : t`Set as default channel`}
+        place="top"
+      >
         <button
-          {...listeners}
-          aria-label={t`Drag to reorder channel`}
-          className="cursor-grab active:cursor-grabbing text-subtle hover:text-main p-1"
+          onClick={isDefault ? undefined : onSetDefault}
+          disabled={isDefault}
+          className={
+            isDefault
+              ? 'p-1 text-warning cursor-default'
+              : 'cursor-pointer p-1 text-subtle hover:text-warning'
+          }
+          aria-label={
+            isDefault ? t`Default channel` : t`Set as default channel`
+          }
         >
-          <Icon name="grip-vertical" />
+          <Icon name="star" variant={isDefault ? 'filled' : 'outline'} />
         </button>
-        <Icon
-          name={(channel.icon || 'hashtag') as any}
-          className="text-muted"
-          style={{
-            color: channel.iconColor
-              ? getIconColorHex(channel.iconColor as any)
-              : undefined,
-          }}
-        />
-        <span className="flex-1 truncate">{channel.channelName}</span>
-        {channel.isReadOnly && (
-          <span className="text-xs px-2 py-0.5 bg-surface-5 rounded flex items-center gap-1 text-muted">
-            <Icon name="lock" />
-            <Trans>Read-only</Trans>
-          </span>
-        )}
-        <Tooltip
-          id={`channel-default-${channel.channelId}`}
-          content={
-            isDefault
-              ? t`Default channel`
-              : t`Set as default channel`
-          }
-          place="top"
+      </Tooltip>
+      <Tooltip
+        id={`channel-edit-${channel.channelId}`}
+        content={t`Edit channel`}
+        place="top"
+      >
+        <button
+          onClick={onEdit}
+          className="cursor-pointer p-1 text-subtle hover:text-main"
+          aria-label={t`Edit channel`}
         >
-          <button
-            onClick={isDefault ? undefined : onSetDefault}
-            disabled={isDefault}
-            className={
-              isDefault
-                ? 'p-1 text-warning cursor-default'
-                : 'cursor-pointer p-1 text-subtle hover:text-warning'
-            }
-            aria-label={
-              isDefault
-                ? t`Default channel`
-                : t`Set as default channel`
-            }
-          >
-            <Icon name="star" variant={isDefault ? 'filled' : 'outline'} />
-          </button>
-        </Tooltip>
-        <Tooltip
-          id={`channel-edit-${channel.channelId}`}
-          content={t`Edit channel`}
-          place="top"
+          <Icon name="edit" />
+        </button>
+      </Tooltip>
+      <Tooltip
+        id={`channel-delete-${channel.channelId}`}
+        content={
+          isDefault
+            ? t`You cannot delete the default channel.`
+            : t`Delete channel`
+        }
+        place="top"
+      >
+        <button
+          onClick={onDelete}
+          disabled={isDefault}
+          className="cursor-pointer p-1 text-subtle hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label={t`Delete channel`}
         >
-          <button
-            onClick={onEdit}
-            className="cursor-pointer p-1 text-subtle hover:text-main"
-            aria-label={t`Edit channel`}
-          >
-            <Icon name="edit" />
-          </button>
-        </Tooltip>
-        <Tooltip
-          id={`channel-delete-${channel.channelId}`}
-          content={
-            isDefault
-              ? t`You cannot delete the default channel.`
-              : t`Delete channel`
-          }
-          place="top"
-        >
-          <button
-            onClick={onDelete}
-            disabled={isDefault}
-            className="cursor-pointer p-1 text-subtle hover:text-danger disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label={t`Delete channel`}
-          >
-            <Icon name="trash" />
-          </button>
-        </Tooltip>
+          <Icon name="trash" />
+        </button>
+      </Tooltip>
     </div>
   );
 };
@@ -792,7 +814,9 @@ const GroupPreview: React.FunctionComponent<{
   </div>
 );
 
-const GroupHeaderGhost: React.FunctionComponent<{ group: Group }> = ({ group }) => (
+const GroupHeaderGhost: React.FunctionComponent<{ group: Group }> = ({
+  group,
+}) => (
   <div className="flex items-center gap-2 px-3 py-2.5 bg-surface-4 border border-default rounded shadow-lg cursor-grabbing">
     <Icon name="grip-vertical" className="text-subtle shrink-0" />
     <span className="font-semibold uppercase text-xs tracking-wider truncate">

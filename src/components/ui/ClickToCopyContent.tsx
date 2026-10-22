@@ -72,18 +72,21 @@ const ClickToCopyContent: React.FunctionComponent<ClickToCopyContentProps> = ({
     []
   );
 
-  const handleCopy = async (e?: React.MouseEvent | Event) => {
-    e?.stopPropagation();
-    await copyToClipboard(text);
-    setHideTooltip(false); // Show tooltip after copy
+  const handleCopy = React.useCallback(
+    async (e?: React.MouseEvent | Event) => {
+      e?.stopPropagation();
+      await copyToClipboard(text);
+      setHideTooltip(false); // Show tooltip after copy
 
-    // On touch devices, auto-hide tooltip after 3 seconds
-    if (isTouchDevice()) {
-      setTimeout(() => {
-        setHideTooltip(true);
-      }, 3000);
-    }
-  };
+      // On touch devices, auto-hide tooltip after 3 seconds
+      if (isTouchDevice()) {
+        setTimeout(() => {
+          setHideTooltip(true);
+        }, 3000);
+      }
+    },
+    [copyToClipboard, text]
+  );
 
   // Touch event handling for mobile devices
   React.useEffect(() => {
@@ -129,7 +132,7 @@ const ClickToCopyContent: React.FunctionComponent<ClickToCopyContentProps> = ({
         anchorElement.removeEventListener('touchcancel', handleTouchEnd);
       };
     }
-  }, [tooltipId, touchTrigger, longPressDuration, text, onCopy]);
+  }, [tooltipId, touchTrigger, longPressDuration, text, onCopy, handleCopy]);
 
   const iconElement = (
     <Icon
@@ -176,21 +179,39 @@ const ClickToCopyContent: React.FunctionComponent<ClickToCopyContentProps> = ({
     >
       {iconPosition === 'left' && icon}
       <span
-        className={[
-          className,
-          textVariant === 'strong' ? 'text-strong' :
-          textVariant === 'subtle' ? 'text-subtle' :
-          textVariant === 'muted' ? 'text-muted' :
-          textVariant === 'error' ? 'text-danger' :
-          textVariant === 'success' ? 'text-success' :
-          textVariant === 'warning' ? 'text-warning' : '',
-          textSize === 'xs' ? 'text-small' :
-          textSize === 'sm' ? 'text-label' :
-          textSize === 'lg' ? 'text-lg' :
-          textSize === 'xl' ? 'text-xl' :
-          textSize === '2xl' ? 'text-2xl' :
-          textSize === '3xl' ? 'text-3xl' : '',
-        ].filter(Boolean).join(' ') || undefined}
+        className={
+          [
+            className,
+            textVariant === 'strong'
+              ? 'text-strong'
+              : textVariant === 'subtle'
+                ? 'text-subtle'
+                : textVariant === 'muted'
+                  ? 'text-muted'
+                  : textVariant === 'error'
+                    ? 'text-danger'
+                    : textVariant === 'success'
+                      ? 'text-success'
+                      : textVariant === 'warning'
+                        ? 'text-warning'
+                        : '',
+            textSize === 'xs'
+              ? 'text-small'
+              : textSize === 'sm'
+                ? 'text-label'
+                : textSize === 'lg'
+                  ? 'text-lg'
+                  : textSize === 'xl'
+                    ? 'text-xl'
+                    : textSize === '2xl'
+                      ? 'text-2xl'
+                      : textSize === '3xl'
+                        ? 'text-3xl'
+                        : '',
+          ]
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
         style={{
           userSelect: !copyOnContentClick ? 'text' : 'none',
           flex: copyOnContentClick ? 1 : undefined,

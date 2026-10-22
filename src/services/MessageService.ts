@@ -5543,8 +5543,9 @@ export class MessageService {
         const hub_key = await this.messageDB.getSpaceKey(spaceId, 'hub');
         const config_key = await this.messageDB.getSpaceKey(spaceId, 'config');
         if (config_key) {
-          const pubBytes = hexToSpreadArray(config_key.publicKey);
-          const privBytes = hexToSpreadArray(config_key.privateKey);
+          // Preserve the existing decoding checks without retaining unused key copies.
+          hexToSpreadArray(config_key.publicKey);
+          hexToSpreadArray(config_key.privateKey);
         }
 
         // Parse outer envelope to check type

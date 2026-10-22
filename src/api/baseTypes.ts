@@ -100,7 +100,7 @@ abstract class AbstractQuorumApiClient {
 
   protected async patch<T>(
     url: RequestRelativeUrl,
-    { headers, ...options }: PatchOptions
+    { headers: _headers, ...options }: PatchOptions
   ) {
     return this.fetchWithRetry<T>(0, url, {
       ...options,
@@ -110,7 +110,7 @@ abstract class AbstractQuorumApiClient {
 
   protected async post<T>(
     url: RequestRelativeUrl,
-    { headers, ...options }: PostOptions
+    { headers: _headers, ...options }: PostOptions
   ) {
     return this.fetchWithRetry<T>(0, url, {
       ...options,
@@ -120,7 +120,7 @@ abstract class AbstractQuorumApiClient {
 
   protected async put<T>(
     url: RequestRelativeUrl,
-    { headers, ...options }: PutOptions
+    { headers: _headers, ...options }: PutOptions
   ) {
     return this.fetchWithRetry<T>(0, url, {
       ...options,
@@ -130,7 +130,7 @@ abstract class AbstractQuorumApiClient {
 
   protected async delete<T>(
     url: RequestRelativeUrl,
-    { headers, ...options }: DeleteOptions
+    { headers: _headers, ...options }: DeleteOptions
   ) {
     return this.fetchWithRetry<T>(0, url, {
       ...options,

@@ -1,7 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { Button, Icon, FileUpload } from '../../primitives';
 import { t } from '@lingui/core/macro';
-import { processAvatarImage, FILE_SIZE_LIMITS } from '../../../utils/imageProcessing';
+import {
+  processAvatarImage,
+  FILE_SIZE_LIMITS,
+} from '../../../utils/imageProcessing';
 import type { UseUnifiedOnboardingFlowReturn } from '../../../hooks/business/user/useUnifiedOnboardingFlow';
 import type { FileUploadFile } from '@quilibrium/quorum-shared';
 
@@ -10,6 +13,8 @@ interface StepProps {
 }
 
 export const ProfilePhotoStep: React.FC<StepProps> = ({ flow }) => {
+  const { setProfileImagePreview, saveProfilePhoto, profileImagePreview } =
+    flow;
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
 
@@ -21,28 +26,28 @@ export const ProfilePhotoStep: React.FC<StepProps> = ({ flow }) => {
   const handleFilesSelected = useCallback(
     (files: FileUploadFile[]) => {
       if (files.length > 0) {
-        flow.setProfileImagePreview(files[0].uri);
+        setProfileImagePreview(files[0].uri);
         setFileError(null);
       }
     },
-    [flow.setProfileImagePreview]
+    [setProfileImagePreview]
   );
 
   const handleFileError = useCallback(
     (error: Error) => {
       setFileError(error.message);
-      flow.setProfileImagePreview(null);
+      setProfileImagePreview(null);
     },
-    [flow.setProfileImagePreview]
+    [setProfileImagePreview]
   );
 
   const handleContinue = useCallback(() => {
-    flow.saveProfilePhoto(flow.profileImagePreview ?? undefined);
-  }, [flow.saveProfilePhoto, flow.profileImagePreview]);
+    saveProfilePhoto(profileImagePreview ?? undefined);
+  }, [saveProfilePhoto, profileImagePreview]);
 
   const handleSkip = useCallback(() => {
-    flow.saveProfilePhoto(undefined);
-  }, [flow.saveProfilePhoto]);
+    saveProfilePhoto(undefined);
+  }, [saveProfilePhoto]);
 
   return (
     <div className="onboarding-step-body">
@@ -71,25 +76,27 @@ export const ProfilePhotoStep: React.FC<StepProps> = ({ flow }) => {
           <div
             className={`onboarding-avatar-dropzone${isDragActive ? ' onboarding-dropzone--active' : ''}`}
             style={
-              flow.profileImagePreview
+              profileImagePreview
                 ? {
-                    backgroundImage: `url(${flow.profileImagePreview})`,
+                    backgroundImage: `url(${profileImagePreview})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
                   }
                 : {}
             }
           >
-            {!flow.profileImagePreview && (
-              <Icon name={isDragActive ? 'upload' : 'image'} size="2xl" className="onboarding-icon" />
+            {!profileImagePreview && (
+              <Icon
+                name={isDragActive ? 'upload' : 'image'}
+                size="2xl"
+                className="onboarding-icon"
+              />
             )}
           </div>
         </FileUpload>
       </div>
 
-      {fileError && (
-        <p className="text-sm text-danger mb-4">{fileError}</p>
-      )}
+      {fileError && <p className="text-sm text-danger mb-4">{fileError}</p>}
 
       <Button
         type="primary"

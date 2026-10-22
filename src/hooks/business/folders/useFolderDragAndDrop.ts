@@ -615,7 +615,7 @@ export const useFolderDragAndDrop = ({
           showError(t`Failed to save layout`);
         });
     },
-    [config, actionQueueService, setIsDragging, setActiveItem, dropTarget, setDropTarget, queryClient, onFolderCreated]
+    [config, actionQueueService, keyset, setIsDragging, setActiveItem, dropTarget, setDropTarget, queryClient, onFolderCreated]
   );
 
   // Configure sensors for both mouse and touch

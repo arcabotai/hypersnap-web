@@ -21,7 +21,9 @@ const isLikelyRenderableImage = (icon?: string): boolean => {
   // Only web-renderable schemes. Relative/path-less values (no scheme) are
   // allowed through for back-compat with app-relative asset paths; explicit
   // non-web schemes (file:, content:, etc.) are rejected.
-  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed)?.[1]?.toLowerCase();
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
+    .exec(trimmed)?.[1]
+    ?.toLowerCase();
   if (scheme && !['data', 'http', 'https', 'blob'].includes(scheme)) {
     return false;
   }
@@ -42,12 +44,11 @@ interface UserAvatarProps {
 export function UserAvatar({
   userIcon,
   displayName,
-  address,
   size = 40,
   className = '',
   id,
   style,
-  onClick
+  onClick,
 }: UserAvatarProps) {
   const hasValidImage = isLikelyRenderableImage(userIcon);
 
@@ -60,7 +61,10 @@ export function UserAvatar({
   }, [userIcon]);
 
   // Memoize color calculation for performance (only recalculates when display name changes)
-  const backgroundColor = useMemo(() => getColorFromDisplayName(displayName), [displayName]);
+  const backgroundColor = useMemo(
+    () => getColorFromDisplayName(displayName),
+    [displayName]
+  );
 
   if (hasValidImage && !imageFailed) {
     return (
@@ -71,7 +75,7 @@ export function UserAvatar({
           width: size,
           height: size,
           flexShrink: 0,
-          ...style
+          ...style,
         }}
         onClick={onClick}
       >

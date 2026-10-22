@@ -65,6 +65,7 @@ function ComposerEditor({ session, onSignIn, onPosted, parent, parentUrl, quote,
   const panelId = useId();
   const uploadNoticeId = useId();
   const query = session && !busy && !uploading ? inlineMentionQuery(text, caret) : undefined;
+  const mentionTerm = query?.query;
   const queryKey = query ? `${query.start}:${query.end}:${query.query}` : '';
   const showSuggestions = Boolean(query && queryKey !== dismissedQuery);
 
@@ -74,7 +75,7 @@ function ComposerEditor({ session, onSignIn, onPosted, parent, parentUrl, quote,
     try { setSavedDraft(scope ? readComposerDraft(scope) ?? null : null); }
     catch (cause) { setSavedDraft(null); setDraftStatus(errorMessage(cause)); }
     return () => { generation.current += 1; uploadController.current?.abort(); mentionController.current?.abort(); };
-  }, [context]);
+  }, [context, scope]);
   useLayoutEffect(() => {
     function resize() { const field = textarea.current; if (field) { field.style.height = 'auto'; field.style.height = `${Math.min(288, Math.max(80, field.scrollHeight))}px`; } }
     resize(); window.addEventListener('resize', resize);
@@ -83,17 +84,17 @@ function ComposerEditor({ session, onSignIn, onPosted, parent, parentUrl, quote,
   useEffect(() => { if (panel === 'mentions') mentionInput.current?.focus(); }, [panel]);
   useEffect(() => {
     setSuggestions([]); setSuggestionError(''); setSelectedSuggestion(0); setSuggesting(false);
-    if (!showSuggestions || !query) return;
+    if (!showSuggestions || mentionTerm === undefined) return;
     const controller = new AbortController(); const capturedContext = context;
     const timer = setTimeout(() => {
       setSuggesting(true);
-      searchUsers({ query: query.query, limit: 5, signal: controller.signal }).then(result => {
+      searchUsers({ query: mentionTerm, limit: 5, signal: controller.signal }).then(result => {
         if (!controller.signal.aborted && activeContext.current === capturedContext) setSuggestions(result.users.slice(0, 5));
       }).catch(() => { if (!controller.signal.aborted && activeContext.current === capturedContext) setSuggestionError('Suggestions are unavailable. Open the mention tool to look up an exact username or FID.'); })
         .finally(() => { if (!controller.signal.aborted && activeContext.current === capturedContext) setSuggesting(false); });
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [showSuggestions, queryKey, context]);
+  }, [showSuggestions, queryKey, mentionTerm, context]);
 
   let draft = { text, mentions: [] as number[], mentionsPositions: [] as number[] };
   let validationError = '';

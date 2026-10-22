@@ -20,6 +20,7 @@ interface StepProps {
 type ImportMode = 'file' | 'paste';
 
 export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
+  const { importKeyFile } = flow;
   const [mode, setMode] = useState<ImportMode>('file');
   const [isDragActive, setIsDragActive] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
@@ -32,10 +33,10 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
     async (files: FileUploadFile[]) => {
       if (files.length > 0 && files[0].file) {
         setDropError(null);
-        await flow.importKeyFile(files[0].file);
+        await importKeyFile(files[0].file);
       }
     },
-    [flow.importKeyFile]
+    [importKeyFile]
   );
 
   const handleFileError = useCallback((error: Error) => {
@@ -64,11 +65,11 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
     // 114-char hex string directly, so wrap the validated hex in a File and
     // reuse the exact same import path as the file upload.
     const file = new File([cleanHex], 'imported.key', { type: 'text/plain' });
-    await flow.importKeyFile(file);
+    await importKeyFile(file);
     // Don't leave the key sitting in component state after a successful handoff.
     setHexInput('');
     setShowKey(false);
-  }, [cleanHex, isHexValid, flow.importKeyFile]);
+  }, [cleanHex, isHexValid, importKeyFile]);
 
   const switchMode = useCallback((next: ImportMode) => {
     setMode(next);
@@ -88,7 +89,11 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
       </p>
 
       {/* Mode toggle: upload a .key file or paste the raw key */}
-      <div className="onboarding-segmented mb-4" role="tablist" aria-label={t`Import method`}>
+      <div
+        className="onboarding-segmented mb-4"
+        role="tablist"
+        aria-label={t`Import method`}
+      >
         <button
           type="button"
           role="tab"
@@ -117,7 +122,9 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
             multiple={false}
             maxSize={5 * 1024}
             validator={(file: FileUploadFile) =>
-              file.name?.endsWith('.key') ? null : 'Only .key files are accepted'
+              file.name?.endsWith('.key')
+                ? null
+                : 'Only .key files are accepted'
             }
             {...({ onDragActiveChange: setIsDragActive } as any)}
           >
@@ -125,7 +132,11 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
               className={`onboarding-dropzone${isDragActive ? ' onboarding-dropzone--active' : ''}`}
             >
               <div className="flex flex-col items-center">
-                <Icon name="upload" size="xl" className="onboarding-icon mb-2" />
+                <Icon
+                  name="upload"
+                  size="xl"
+                  className="onboarding-icon mb-2"
+                />
                 <p className="text-sm">
                   {t`Drag and drop or`}{' '}
                   <span className="text-accent underline cursor-pointer">
@@ -185,7 +196,9 @@ export const ImportKeyStep: React.FC<StepProps> = ({ flow }) => {
             <Icon name="error" className="text-danger shrink-0" />
             <p className="text-sm text-danger">{t`Could not import key`}</p>
           </div>
-          <p className="text-xs onboarding-label-muted">{flow.importError ?? dropError}</p>
+          <p className="text-xs onboarding-label-muted">
+            {flow.importError ?? dropError}
+          </p>
         </div>
       )}
 

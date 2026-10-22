@@ -89,7 +89,7 @@ export function cancelHaptic(): void {
   if (typeof window !== 'undefined' && 'vibrate' in navigator) {
     try {
       navigator.vibrate(0);
-    } catch (error) {
+    } catch {
       // Silently ignore
     }
   }

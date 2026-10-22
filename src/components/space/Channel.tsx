@@ -234,7 +234,7 @@ const Channel: React.FC<ChannelProps> = ({
     threadId: activeThreadId,
     enabled: isThreadOpen && !!activeThreadId,
   });
-  const threadMessages = threadData?.messages ?? [];
+  const threadMessages = React.useMemo(() => threadData?.messages ?? [], [threadData?.messages]);
 
   // Populate ThreadContext for ThreadPanel (rendered in Space.tsx)
   // Uses the store hook (not subscribing) to avoid re-render loops
@@ -251,7 +251,7 @@ const Channel: React.FC<ChannelProps> = ({
       isLoading: isLoadingThread,
       targetMessageId: current.targetMessageId,
     });
-  }, [isThreadOpen, activeThreadId, activeThreadRootMessage, threadMessages, isLoadingThread]);
+  }, [isThreadOpen, activeThreadId, activeThreadRootMessage, threadMessages, isLoadingThread, threadCtx]);
 
   // User profile modal state and logic
   const userProfileModal = useUserProfileModal();
@@ -973,7 +973,7 @@ const Channel: React.FC<ChannelProps> = ({
       updateThreadSettings: handleUpdateThreadSettings,
       removeThread: handleRemoveThread,
     });
-  }, [handleOpenThread, handleSubmitThreadMessage, handleSubmitThreadSticker, handleUpdateThreadTitle, handleSetThreadClosed, handleUpdateThreadSettings, handleRemoveThread]);
+  }, [handleOpenThread, handleSubmitThreadMessage, handleSubmitThreadSticker, handleUpdateThreadTitle, handleSetThreadClosed, handleUpdateThreadSettings, handleRemoveThread, threadCtx]);
 
   // Keep thread root message snapshot in sync with main messages cache.
   // When the root message is soft-deleted (content cleared), update the thread panel's copy
@@ -1002,9 +1002,10 @@ const Channel: React.FC<ChannelProps> = ({
   // Handle user profile modal close. Depend on the stable inner handleClose
   // (useCallback([]) in the hook), not the whole hook object — otherwise this
   // re-creates every render and re-arms FloatingPopover's listeners.
+  const { handleClose: closeUserProfile } = userProfileModal;
   const handleUserProfileClose = useCallback(() => {
-    userProfileModal.handleClose();
-  }, [userProfileModal.handleClose]);
+    closeUserProfile();
+  }, [closeUserProfile]);
 
   // Handle hash navigation to messages not in current list
   const handleHashMessageNotFound = useCallback(
@@ -1384,7 +1385,7 @@ const Channel: React.FC<ChannelProps> = ({
     if (!init) {
       setTimeout(() => setInit(true), 200);
     }
-  }, []);
+  }, [init]);
 
   // Handle emoji selection from the panel — insert into composer
   const handleComposerEmojiClick = useCallback((emoji: string) => {
@@ -1455,13 +1456,7 @@ const Channel: React.FC<ChannelProps> = ({
       onShowStickers: handleShowEmojiPanel,
       currentUserAddress: user.currentPasskeyInfo?.address,
     });
-  }, [
-    spaceId, channelId, members, rosterRows, mentionUsers, roles, stickers, space?.emojis,
-    mapSenderToUser, isSpaceOwner, canDeleteMessages, canPinMessages,
-    channel, spaceChannels, handleChannelClick, userProfileModal.handleUserClick,
-    space?.spaceName, space?.isRepudiable, skipSigning, spaceGroups,
-    canUseEveryone, handleShowEmojiPanel, user.currentPasskeyInfo?.address,
-  ]);
+  }, [spaceId, channelId, members, rosterRows, mentionUsers, roles, stickers, space?.emojis, mapSenderToUser, isSpaceOwner, canDeleteMessages, canPinMessages, channel, spaceChannels, handleChannelClick, userProfileModal.handleUserClick, space?.spaceName, space?.isRepudiable, skipSigning, spaceGroups, canUseEveryone, handleShowEmojiPanel, user.currentPasskeyInfo?.address, threadCtx]);
 
   // Auto-focus textarea when replying
   useEffect(() => {

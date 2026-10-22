@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useDropzone, DropzoneOptions, FileRejection } from 'react-dropzone';
+import { useDropzone, FileRejection } from 'react-dropzone';
 import { t } from '@lingui/core/macro';
 import { processAvatarImage, FILE_SIZE_LIMITS } from '../../../utils/imageProcessing';
 

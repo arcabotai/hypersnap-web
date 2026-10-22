@@ -31,6 +31,7 @@ export const useKeyBackupLogic = (adapter: KeyBackupAdapter) => {
       throw new Error('No passkey information available');
     }
 
+    let failureMessage: string;
     try {
       // Export key using SDK
       const content = await exportKey(currentPasskeyInfo.address);
@@ -38,8 +39,11 @@ export const useKeyBackupLogic = (adapter: KeyBackupAdapter) => {
 
       return { content, filename };
     } catch (error: any) {
-      throw new Error(`Failed to export key: ${error.message}`);
+      // Keep only the pre-existing message surface; SDK errors may also carry
+      // sensitive key/export metadata which must not become a public cause.
+      failureMessage = `${error.message}`;
     }
+    throw new Error(`Failed to export key: ${failureMessage}`);
   }, [currentPasskeyInfo, exportKey]);
 
   // Business logic: Download key file

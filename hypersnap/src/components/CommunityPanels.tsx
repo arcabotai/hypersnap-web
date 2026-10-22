@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconChevronRight, IconRefresh, IconUsers } from '@tabler/icons-react';
 import { getCastQuotes, getChannelMembers, getSuggestedUsers, type Cast, type Channel, type User } from '../lib/api';
 import { profilePath } from '../lib/navigation';
@@ -17,7 +17,7 @@ function useCommunityRead<T>(key: string, enabled: boolean, read: (cursor: strin
   const currentKey = useRef(key); currentKey.current = key;
   const reader = useRef(read); reader.current = read;
   const id = useRef(identity); id.current = identity;
-  async function load(cursor?: string, replace = true) {
+  const load = useCallback(async (cursor?: string, replace = true) => {
     if (!enabled || requesting.current) return;
     requesting.current = true; controller.current?.abort();
     const request = new AbortController(); controller.current = request;
@@ -38,14 +38,14 @@ function useCommunityRead<T>(key: string, enabled: boolean, read: (cursor: strin
     } catch (cause) {
       if (!request.signal.aborted && run === generation.current && currentKey.current === capturedKey) setState(current => ({ ...current, busy: false, error: cause instanceof Error ? cause.message.slice(0, 240) : 'These public results are unavailable.' }));
     } finally { if (run === generation.current) requesting.current = false; }
-  }
+  }, [enabled, key]);
   useEffect(() => {
-    generation.current++; controller.current?.abort(); requesting.current = false; seen.current.clear();
+    generation.current += 1; controller.current?.abort(); requesting.current = false; seen.current.clear();
     setState({ key, items: [], cursor: undefined, busy: enabled, loaded: false, error: '', status: '' });
     if (enabled) void load();
-    return () => { generation.current++; controller.current?.abort(); requesting.current = false; };
-  }, [key, enabled]);
-  function cancel() { generation.current++; controller.current?.abort(); requesting.current = false; setState(current => ({ ...current, busy: false, status: 'Loading cancelled.' })); }
+    return () => { generation.current += 1; controller.current?.abort(); requesting.current = false; };
+  }, [key, enabled, load]);
+  function cancel() { generation.current += 1; controller.current?.abort(); requesting.current = false; setState(current => ({ ...current, busy: false, status: 'Loading cancelled.' })); }
   return { ...(state.key === key ? state : { key, items: [] as T[], cursor: undefined, busy: enabled, loaded: false, error: '', status: '' }),
     cancel, refresh: () => { seen.current.clear(); void load(); }, more: () => void load(state.cursor, false), retry: () => void load(lastAttempt.current.cursor, lastAttempt.current.replace) };
 }

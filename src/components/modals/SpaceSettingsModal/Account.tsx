@@ -76,7 +76,6 @@ const Account: React.FunctionComponent<AccountProps> = ({
   bioErrors,
   currentPasskeyInfo,
   fileData,
-  currentFile,
   avatarFileError,
   isAvatarUploading,
   isAvatarDragActive,
@@ -87,9 +86,6 @@ const Account: React.FunctionComponent<AccountProps> = ({
   markForDeletion,
   getProfileImageUrl,
   currentMember,
-  onSave,
-  isSaving,
-  hasValidationError,
   displayNameError,
   onClose,
   roles,
@@ -173,7 +169,9 @@ const Account: React.FunctionComponent<AccountProps> = ({
             <Trans>Account Settings</Trans>
           </div>
           <div className="pt-2 text-body">
-            <Trans>Manage your settings for <strong>{spaceName}</strong>.</Trans>
+            <Trans>
+              Manage your settings for <strong>{spaceName}</strong>.
+            </Trans>
           </div>
         </div>
       </div>
@@ -182,13 +180,19 @@ const Account: React.FunctionComponent<AccountProps> = ({
           <Trans>Your Details</Trans>
         </div>
         <div className="text-label pt-1">
-          <Trans>Override your display name, avatar, and bio for this Space. Other Spaces and your global profile are unaffected.</Trans>
+          <Trans>
+            Override your display name, avatar, and bio for this Space. Other
+            Spaces and your global profile are unaffected.
+          </Trans>
         </div>
         <div className="flex items-start gap-4 pt-4">
           {(() => {
             // Determine if there's an avatar to display
-            const hasExistingAvatar = currentPasskeyInfo?.pfpUrl && !currentPasskeyInfo.pfpUrl.includes(DefaultImages.UNKNOWN_USER);
-            const hasAvatar = (fileData || hasExistingAvatar) && !markedForDeletion;
+            const hasExistingAvatar =
+              currentPasskeyInfo?.pfpUrl &&
+              !currentPasskeyInfo.pfpUrl.includes(DefaultImages.UNKNOWN_USER);
+            const hasAvatar =
+              (fileData || hasExistingAvatar) && !markedForDeletion;
             const avatarUrl = getProfileImageUrl();
             const showImage = hasAvatar && avatarUrl !== 'var(--unknown-icon)';
 
@@ -199,9 +203,11 @@ const Account: React.FunctionComponent<AccountProps> = ({
             // control is the misleading affordance this effort removes: there is
             // nothing per-space to revert. (Follow-global design.)
             const hasFreshUpload = !!fileData;
-            const perSpaceIcon = (currentMember as { user_icon?: string })?.user_icon;
+            const perSpaceIcon = (currentMember as { user_icon?: string })
+              ?.user_icon;
             const hasStoredOverride =
-              !!perSpaceIcon && !perSpaceIcon.includes(DefaultImages.UNKNOWN_USER);
+              !!perSpaceIcon &&
+              !perSpaceIcon.includes(DefaultImages.UNKNOWN_USER);
             const hasOverride =
               (hasFreshUpload || hasStoredOverride) && !markedForDeletion;
 
@@ -210,13 +216,21 @@ const Account: React.FunctionComponent<AccountProps> = ({
                 <div
                   id="space-profile-avatar-tooltip-target"
                   className={`avatar-upload ${!showImage ? 'empty' : ''}`}
-                  style={showImage ? { backgroundImage: `url(${avatarUrl})` } : {}}
+                  style={
+                    showImage ? { backgroundImage: `url(${avatarUrl})` } : {}
+                  }
                   {...getRootProps()}
                 >
                   <input {...getInputProps()} />
-                  {!showImage && <Icon name="image" size="2xl" className="icon" />}
+                  {!showImage && (
+                    <Icon name="image" size="2xl" className="icon" />
+                  )}
                   {showImage && hasOverride && (
-                    <Tooltip id="space-profile-avatar-delete" content={t`Use my main avatar`} place="bottom">
+                    <Tooltip
+                      id="space-profile-avatar-delete"
+                      content={t`Use my main avatar`}
+                      place="bottom"
+                    >
                       <button
                         type="button"
                         className="image-upload-delete-btn"
@@ -279,9 +293,7 @@ const Account: React.FunctionComponent<AccountProps> = ({
             maxLength={MAX_BIO_INPUT_CHARS}
             error={bioErrors.length > 0}
             errorMessage={
-              bioErrors.length > 0
-                ? bioErrors.join('. ')
-                : undefined
+              bioErrors.length > 0 ? bioErrors.join('. ') : undefined
             }
           />
         </div>

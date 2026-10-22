@@ -17,6 +17,7 @@ export const useFileDownloadAdapter = (): KeyBackupAdapter => {
   // Web-specific: Download file using DOM manipulation
   const downloadKeyFile = useCallback(
     async (keyData: string, filename: string): Promise<void> => {
+      let failureMessage: string;
       try {
         // Create blob from key data
         const blob = new Blob([keyData], { type: 'text/plain' });
@@ -36,9 +37,13 @@ export const useFileDownloadAdapter = (): KeyBackupAdapter => {
         // Cleanup
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
+        return;
       } catch (error: any) {
-        throw new Error(`Failed to download file: ${error.message}`);
+        // A download can contain a key backup. Preserve the message-only error
+        // boundary instead of attaching the originating file/SDK error object.
+        failureMessage = `${error.message}`;
       }
+      throw new Error(`Failed to download file: ${failureMessage}`);
     },
     []
   );

@@ -101,7 +101,7 @@ export function isFeatureEnabled(featureName: string): boolean {
         return value === 'true' || value === true || value === '1' || value === 1;
       }
     }
-  } catch (error) {
+  } catch {
     // Silently fall through to process.env check
   }
 
