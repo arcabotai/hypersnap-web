@@ -19,6 +19,20 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'one-sign-in-prompt',
+    date: '2026-10-22',
+    title: 'One clear way to sign in',
+    summary: 'Visitors who are not signed in now see a single Sign in prompt instead of several connect buttons on the same screen.',
+    changes: [
+      'Show one sign-in prompt per layout: the right column card on wide screens, the sidebar button on medium screens and the header button on phones.',
+      'Remove the welcome card above the feed, which repeated the landing, and show the Cast button only to signed-in accounts.',
+      'Use the same Sign in label everywhere, including replies, channels, Following and Notifications.',
+      'Sign-in itself is unchanged: it still uses the wallet that holds an existing Farcaster account, and the same permissions apply.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/4e9c33c67392f69fb68f09002c082d7f6a0f3367',
+    tag: 'Social',
+  },
+  {
     id: 'cast-pages-and-signed-out-landing',
     date: '2026-10-22',
     title: 'Casts open as pages, plus a proper front door',
