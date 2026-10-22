@@ -170,7 +170,10 @@ The root gate validates the dependency setup, runs messenger typecheck, lint,
 unit tests, offline harness and build, then runs `hypersnap/yarn verify` in its
 own directory. Generated output and dependency checkouts are excluded from
 lint; application sources remain checked. The normal routing, failure handling,
-known-red ceilings and permanent-account mint guard remain active. A fresh
+known-red ceilings and permanent-account mint guard remain active. CI supplies
+`--base=<before-push commit SHA>` (or the PR target SHA) so a default-branch
+checkout compares the change being shipped, even when `origin/main` is already
+at `HEAD`. A fresh
 checkout can correctly report **PASS (PARTIAL)** because production live arms
 would create permanent accounts or Spaces; do not bypass the guard to obtain
 a bare PASS. Optional quorum-mobile cross-client coverage still needs that

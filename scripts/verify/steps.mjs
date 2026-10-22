@@ -8,9 +8,10 @@
  * summary line should cost a blank column, not a failed run.
  */
 import { resolve } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 /** Vitest: "Tests  1680 passed (1680)" */
-const vitestDetail = (out) => (out.match(/Tests\s+([^\n]+)/) ?? [])[1]?.trim() ?? '';
+const vitestDetail = (out) => (stripVTControlCharacters(out).match(/^\s*Tests\s+([^\n]+)/m) ?? [])[1]?.trim() ?? '';
 /** Jest: "Tests:       1222 passed, 1222 total" */
 const jestDetail = (out) => (out.match(/Tests:\s+([^\n]+)/) ?? [])[1]?.trim() ?? '';
 /**

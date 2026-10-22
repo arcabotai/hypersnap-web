@@ -240,7 +240,9 @@ export function branchBaseRef(repoPath, execGit) {
 
 /**
  * Repo-prefixed changed paths: this branch's own commits, PLUS staged and
- * unstaged work, PLUS untracked files.
+ * unstaged work, PLUS untracked files. An explicit full commit SHA compares
+ * its tree directly with HEAD (the actual pre-push state, including a force
+ * push); otherwise the inferred branch's merge base is used.
  *
  * The branch half was missing until 2026-08-23 and it silently voided the gate
  * at the exact moment it matters. MEASURED on this very branch: 31 files
@@ -268,22 +270,37 @@ export function branchBaseRef(repoPath, execGit) {
  * both its fan-out and the live-tier trigger. An allowlist has to fail toward
  * running MORE, not less.
  */
-export function changedPaths(repoName, repoPath, execGit) {
+export function changedPaths(repoName, repoPath, execGit, explicitBase) {
   const reads = [
     execGit(repoPath, ['diff', '--name-only', 'HEAD']),
     execGit(repoPath, ['diff', '--name-only', '--staged']),
     execGit(repoPath, ['ls-files', '--others', '--exclude-standard']),
   ];
 
-  const base = branchBaseRef(repoPath, execGit);
-  if (!base) {
-    return [`${repoName}/<no base branch — cannot tell what this branch changed>`];
+  let comparisonBase;
+  if (explicitBase !== undefined) {
+    // An invalid/missing CI event SHA must never fall back to origin/main:
+    // checkout has already advanced that ref to HEAD, hiding the whole push.
+    if (typeof explicitBase !== 'string' || !/^[a-f0-9]{40}$/i.test(explicitBase)) {
+      return [`${repoName}/<invalid explicit base — expected a full commit SHA>`];
+    }
+    const commit = execGit(repoPath, ['rev-parse', '--verify', '--quiet', `${explicitBase}^{commit}`])?.trim();
+    if (!commit) {
+      return [`${repoName}/<unresolvable explicit base — cannot tell what this push changed>`];
+    }
+    comparisonBase = commit;
+  } else {
+    const base = branchBaseRef(repoPath, execGit);
+    if (!base) {
+      return [`${repoName}/<no base branch — cannot tell what this branch changed>`];
+    }
+    const mergeBase = execGit(repoPath, ['merge-base', 'HEAD', base])?.trim();
+    if (!mergeBase) {
+      return [`${repoName}/<no merge base with ${base} — cannot tell what this branch changed>`];
+    }
+    comparisonBase = mergeBase;
   }
-  const mergeBase = execGit(repoPath, ['merge-base', 'HEAD', base])?.trim();
-  if (!mergeBase) {
-    return [`${repoName}/<no merge base with ${base} — cannot tell what this branch changed>`];
-  }
-  reads.push(execGit(repoPath, ['diff', '--name-only', `${mergeBase}..HEAD`]));
+  reads.push(execGit(repoPath, ['diff', '--name-only', `${comparisonBase}..HEAD`]));
 
   if (reads.some((r) => r === null)) {
     return [`${repoName}/<unreadable — git command failed>`];

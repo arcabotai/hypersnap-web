@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import { verdictOf } from '../../../../scripts/verify/report.mjs';
 import { branchBaseRef, changedPaths, planFromPaths, resolveSharedRepo } from '../../../../scripts/verify/routing.mjs';
 
 const fixtureRoots: string[] = [];
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 afterEach(() => {
   for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -37,6 +38,22 @@ function childGateFixture(exitCode: number) {
     process.exit(${exitCode});
   `);
   return { root, child };
+}
+
+function repositoryFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'opencaster comparison '));
+  fixtureRoots.push(root);
+  const hooks = join(root, 'no-hooks');
+  mkdirSync(hooks);
+  const git = (args: string[]) => execFileSync('git', [
+    '-c', `core.hooksPath=${hooks}`, '-c', 'user.name=Verification fixture',
+    '-c', 'user.email=verify@example.invalid', '-c', 'commit.gpgsign=false', ...args,
+  ], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git(['init', '--initial-branch=main']);
+  const execGit = (_cwd: string, args: string[]) => {
+    try { return git(args); } catch { return null; }
+  };
+  return { root, git, execGit };
 }
 
 describe('standalone Hypersnap gate integration', () => {
@@ -128,9 +145,100 @@ describe('pinned dependency comparison baseline', () => {
   });
 });
 
+describe('explicit CI comparison baseline', () => {
+  it('routes a clean main push from its event SHA after origin/main has advanced to HEAD', () => {
+    const { root, git } = repositoryFixture();
+    const scripts = join(root, 'scripts/verify');
+    mkdirSync(scripts, { recursive: true });
+    for (const file of readdirSync(join(PROJECT_ROOT, 'scripts/verify')).filter((file) => file.endsWith('.mjs'))) {
+      copyFileSync(join(PROJECT_ROOT, 'scripts/verify', file), join(scripts, file));
+    }
+    writeFileSync(join(root, 'source.ts'), 'export const value = 1;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture before push']);
+    const before = git(['rev-parse', 'HEAD']);
+    writeFileSync(join(root, 'source.ts'), 'export const value = 2;\n');
+    git(['add', 'source.ts']);
+    git(['commit', '-m', 'Fixture pushed change']);
+    git(['update-ref', 'refs/remotes/origin/main', git(['rev-parse', 'HEAD'])]);
+    git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+    const explain = (...args: string[]) => execFileSync(process.execPath, [
+      join(scripts, 'index.mjs'), '--explain', `--repos-root=${join(root, 'missing-dependencies')}`, ...args,
+    ], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    expect(explain()).toMatch(/TIER\s+fast\n/);
+    const explicit = explain(`--base=${before}`);
+    expect(explicit).toMatch(/TIER\s+fast \+ live/);
+    expect(explicit).toContain('desktop/source.ts');
+    for (const args of [['--base='], ['--base'], ['--base=not-a-sha'], [`--base=${'0'.repeat(40)}`]]) {
+      const unknown = explain(...args);
+      expect(unknown).toMatch(/TIER\s+fast \+ live/);
+      expect(unknown).toMatch(/invalid explicit base|unresolvable explicit base/);
+    }
+  });
+
+  it('unions committed, staged, unstaged and untracked paths against an explicit before SHA', () => {
+    const { root, git, execGit } = repositoryFixture();
+    writeFileSync(join(root, 'existing.ts'), 'export const value = 1;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture before']);
+    const before = git(['rev-parse', 'HEAD']);
+    writeFileSync(join(root, 'committed.ts'), 'export const committed = true;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture after']);
+    writeFileSync(join(root, 'existing.ts'), 'export const value = 2;\n');
+    writeFileSync(join(root, 'staged.ts'), 'export const staged = true;\n');
+    git(['add', 'staged.ts']);
+    writeFileSync(join(root, 'untracked.ts'), 'export const untracked = true;\n');
+    expect(changedPaths('desktop', root, execGit, before).sort()).toEqual([
+      'desktop/committed.ts', 'desktop/existing.ts', 'desktop/staged.ts', 'desktop/untracked.ts',
+    ]);
+    for (const invalid of ['', 'main', 'a'.repeat(39), '0'.repeat(40), 'f'.repeat(40)]) {
+      const paths = changedPaths('desktop', root, execGit, invalid);
+      expect(paths).toHaveLength(1);
+      expect(planFromPaths(paths).live).toBe(true);
+    }
+  });
+
+  it('includes removals from the actual previous tree when a push replaces divergent history', () => {
+    const { root, git, execGit } = repositoryFixture();
+    writeFileSync(join(root, 'anchor.ts'), 'export const anchor = true;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture common ancestor']);
+    const ancestor = git(['rev-parse', 'HEAD']);
+    writeFileSync(join(root, 'removed.ts'), 'export const removed = true;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture previous branch']);
+    const before = git(['rev-parse', 'HEAD']);
+    git(['reset', '--hard', ancestor]);
+    writeFileSync(join(root, 'added.ts'), 'export const added = true;\n');
+    git(['add', '.']);
+    git(['commit', '-m', 'Fixture replacement branch']);
+    expect(changedPaths('desktop', root, execGit, before).sort()).toEqual([
+      'desktop/added.ts', 'desktop/removed.ts',
+    ]);
+  });
+});
+
+describe('Vitest result details', () => {
+  const detail = stepsFor('desktop', '/fixture', 'fast')
+    .find((step: { id: string }) => step.id === 'desktop:unit').detail;
+
+  it('reads the colored summary instead of incidental Tests text in a stack', () => {
+    const output = [
+      '    at getActiveTests (vitest/dist/runtime.js:1:1)',
+      '\u001b[32m      Tests\u001b[39m  \u001b[32m1891 passed\u001b[39m (1891)',
+    ].join('\n');
+    expect(detail(output)).toBe('1891 passed (1891)');
+  });
+
+  it('leaves the detail blank when output has no Vitest summary', () => {
+    expect(detail('at getActiveTests (vitest.js:1:1)\nTests: 1 passed, 1 total\n')).toBe('');
+  });
+});
+
 describe('root lint scope', () => {
   it('excludes generated output and pinned dependencies while retaining application source', async () => {
-    const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+    const root = PROJECT_ROOT;
     const eslint = new ESLint({ cwd: root, overrideConfigFile: join(root, 'eslint.config.js') });
     for (const path of [
       'hypersnap/dist/assets/browser.js',

@@ -34,6 +34,15 @@ const RECEIPT = resolve(DESKTOP, '.verify-receipt.json');
 const startedAt = Date.now();
 
 const argv = process.argv.slice(2);
+// CI must compare the event's pre-push/PR-base SHA, because checkout updates
+// origin/main to HEAD. Keep an invalid or duplicate argument explicit so it
+// forces conservative routing instead of silently selecting a clean baseline.
+const baseArgs = argv.filter((arg) => arg === '--base' || arg.startsWith('--base='));
+const desktopBase = baseArgs.length === 0
+  ? undefined
+  : baseArgs.length === 1 && baseArgs[0].startsWith('--base=')
+    ? baseArgs[0].slice('--base='.length)
+    : '';
 
 // Sits here deliberately: after argv, before any step runs. Reading the
 // receipt must never itself trigger a multi-minute run.
@@ -130,9 +139,13 @@ process.env.HARNESS_MOBILE_REPO = REPOS.mobile;
 
 const allPaths = Object.entries(REPOS)
   .filter(([, path]) => existsSync(path))
-  .flatMap(([name, path]) => changedPaths(name, path, execGit));
+  .flatMap(([name, path]) => changedPaths(name, path, execGit, name === 'desktop' ? desktopBase : undefined));
 
 const plan = planFromPaths(allPaths);
+if (desktopBase !== undefined) {
+  const description = /^[a-f0-9]{40}$/i.test(desktopBase) ? desktopBase : 'invalid or missing SHA';
+  plan.reasons.push(`(--base: desktop compared with ${description})`);
+}
 
 // An explicit request beats inference; a diff-less run would otherwise do nothing.
 if (argv.includes('--all')) {
