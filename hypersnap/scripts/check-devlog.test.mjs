@@ -46,7 +46,11 @@ function recordedRelease(repo, entries, source = productChange(repo)) {
   return { head, note, source };
 }
 
-describe('release-note guard against real isolated Git history', () => {
+// These functional integration cases create real repositories and spawn Git for
+// each history check. One took 5,324 ms under full-suite load on 2026-10-22,
+// exceeding Vitest's default 5 s without an assertion failure. Allow bounded
+// subprocess/filesystem variance here only; static tests keep the default budget.
+describe('release-note guard against real isolated Git history', { timeout: 15_000 }, () => {
   it('rejects a product change without an added milestone, including edits or same-day reordering of old notes', () => {
     const repo = seeded(); productChange(repo);
     for (const notes of [repo.old, [{ ...repo.old[0], title: 'Corrected old title' }, repo.old[1]], [...repo.old].reverse()]) {
