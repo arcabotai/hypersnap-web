@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'repeatable-verification-for-both-clients',
+    date: '2026-10-22',
+    title: 'Stronger checks before updates ship',
+    summary: 'A repeatable dependency setup restores the retained Quorum checks, and the full verification command now checks Opencaster through its own Hypersnap test and build tools too.',
+    changes: [
+      'Restore the exact compatible shared-library and SDK revisions for the retained messenger, with frozen dependency installs and no machine-specific or global links.',
+      'Require the standalone Hypersnap tests, typechecks, browser build and offline signer build alongside the messenger checks, including in continuous integration.',
+      'Fix platform-specific test fixtures and keep generated bundles out of source linting while retaining checks on browser, gateway and signer source.',
+      'Preserve the production account-creation guard. Checks that need permanent relay accounts or an unavailable mobile checkout remain visibly skipped.',
+      'Keep Hypersnap dependencies, protocol messages, wallet permissions and production infrastructure unchanged. This maintenance release adds verification tooling and documentation; it does not add social features or claim new live-account coverage.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/7991946803cba61922afc88edea8a8f27305249d',
+    tag: 'Reliability',
+  },
+  {
     id: 'arca-computer-organization-source',
     date: '2026-10-22',
     title: 'Opencaster joins the Arca Computer organization',
