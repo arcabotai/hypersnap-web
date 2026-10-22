@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'cast-pages-and-signed-out-landing',
+    date: '2026-10-22',
+    title: 'Casts open as pages, plus a proper front door',
+    summary: 'Tap anywhere on a cast to open its conversation as a page, and new visitors now start on a landing with Sign in or Explore without an account.',
+    changes: [
+      'Open a cast’s conversation by tapping its card, as on other social clients. Links, buttons, images, media and selected text keep their own behavior.',
+      'Show conversations as a page with a back arrow instead of a pop-up. Back returns to the same place in the feed. Replies no longer repeat a link to the parent shown above them.',
+      'Ask visitors who are not signed in to connect before replying, instead of showing a reply box they cannot use.',
+      'Greet visitors at the site root with a landing: Sign in with the wallet that holds a Farcaster account, or explore public casts without one. The explore choice is remembered on this browser.',
+      'Keep shared profile, cast and channel links open directly for everyone. Opencaster still cannot create new accounts; signing in needs an existing Farcaster account and its custody wallet.',
+      'The same Hypersnap reads, signed messages and wallet permissions apply; nothing about sign-in or posting changed.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/fe3eaf558eb3c9978f6f7d1dd4bad9f83f6d9f3c',
+    tag: 'Social',
+  },
+  {
     id: 'feed-first-social-layout',
     date: '2026-10-22',
     title: 'A feed-first layout that feels familiar',
