@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'familiar-profile-and-channel-headers',
+    date: '2026-10-22',
+    title: 'Profiles that look like profiles',
+    summary: 'Profiles now open with a cover, an overlapping avatar and the Follow and Share buttons beside it, and profile and channel pages get a back arrow in the header.',
+    changes: [
+      'Show the profile banner as a cover, or a soft gradient when there is none, with the avatar overlapping it and Share profile plus Follow (or Edit profile on your own) to the right.',
+      'Order profile details as other clients do: name and handle, bio, join date and linked addresses, then following and follower counts. The repeated profile URL line is gone; Share profile still copies the full link.',
+      'Replace the in-page back link with a back arrow in the header on profile and channel pages. On phones it takes the logo’s place so the header stays on one row.',
+      'Move View participants into the channel header next to Save channel, and remove repeated headings under profile tabs and channel headers.',
+      'Profile data, follow behavior and channel reads are unchanged. Banner editing still has the upstream Pro limitation noted for profile editing.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/5a92bfc2fd9282aa78903ad12463b1121d129fcc',
+    tag: 'Social',
+  },
+  {
     id: 'one-sign-in-prompt',
     date: '2026-10-22',
     title: 'One clear way to sign in',
