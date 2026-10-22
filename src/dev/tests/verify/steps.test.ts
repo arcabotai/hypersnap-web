@@ -237,7 +237,10 @@ describe('Vitest result details', () => {
 });
 
 describe('root lint scope', () => {
-  it('excludes generated output and pinned dependencies while retaining application source', async () => {
+  // This uses the real ESLint config/plugins, not a mock or a startup benchmark.
+  // The full suite measured 6,504 ms under contention; keep all path assertions
+  // and give only this integration case room for configuration loading.
+  it('excludes generated output and pinned dependencies while retaining application source', { timeout: 15_000 }, async () => {
     const root = PROJECT_ROOT;
     const eslint = new ESLint({ cwd: root, overrideConfigFile: join(root, 'eslint.config.js') });
     for (const path of [
