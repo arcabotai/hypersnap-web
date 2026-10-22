@@ -1,3 +1,58 @@
+# Repeatable full verification · 2026-10-22
+
+**The missing dependency failures are resolved.** `yarn setup:verify` restores the retained messenger's exact upstream verification sources: shared `2.1.0-45` at `c00c61e099fe9e682c982bc952b4e712c7a4a576` and SDK `2.1.1` at `882d8e1b520fc97c73be964013b06a57ca4f4a63`. Their clean, pinned checkouts live under ignored `.quorum-deps/`; frozen installs and source builds precede the two application installs. Setup refuses unexpected origins, revisions or local changes and records a create-only comparison ref. There are no global links, source resets or new baseline exemptions. Root lock changes contain the two local links and equivalent Yarn alias grouping; Hypersnap's dependency manifest and lockfile are unchanged. Earlier records below describe their historical missing-dependency state.
+
+Implementation `7991946803cba61922afc88edea8a8f27305249d` adds reproducible setup, dependency validation, installed-shared discovery, a separately reported Hypersnap gate and clean-checkout CI. Follow-up `1f53f7e10ec0136df14eacd7802bb4a5469fce9a` makes CI use the actual push/PR comparison SHA instead of an already-advanced `origin/main`, with conservative routing for an unavailable base. Colored test output now yields an actual summary rather than an incidental stack fragment. **29 new isolated tooling tests** cover exact pins, source preservation, immutable comparison refs, child-gate working directory/failure propagation, source-lint boundaries and actual Git/CLI routing. Ten existing path fixtures retain their assertions with native absolute paths; the mention-editor fixture supplies jsdom's missing scroll API and observes its delayed callback without claiming real layout coverage.
+
+The final complete routed run, `yarn verify --base=d2757519462305cd1e25c721b0594ec07e04112d`, checks every change from the pre-task source through `4de0af7c105f125e4c7ca9e0d666a59dc19f5e08`. Dependency validation, TypeScript, source lint, **1,896 messenger tests**, **four offline harness tests**, **887 Hypersnap tests**, both browser builds and the offline signer build pass in **122.72 seconds**, without a retry or unhandled test error. Its three dirty files were this verification draft plus concurrent root `AGENTS.md`/`CLAUDE.md` edits; the guidance edits are preserved separately and excluded from these commits. The 262 existing lint warnings remain visible.
+
+An intermediate final-source rerun passed all messenger tests but failed a real-Git dev-log integration case after **5,324 ms**, beyond its default five-second budget; a second history case took 3,584 ms. Correction `4de0af7c105f125e4c7ca9e0d666a59dc19f5e08` documents a **15-second limit only for the 14 real-Git/Node integration cases**. The five static policy/parser tests retain their default limit. No assertion, guard behavior or runtime validation changed, and no retry was added. The focused 19-case suite and subsequent full gate pass. Intentional Hypersnap control-character validation and sensitive-reference cleanup also retain their original code with line-scoped lint explanations; emitted JavaScript is unchanged for those source files.
+
+The honest root verdict remains **PASS (PARTIAL)**: retained Quorum live arms would create permanent production state without persisted bot identities, and optional mobile cross-client coverage is unavailable. The mint guard remains enabled. This does not establish live messenger or cross-client compatibility. The retained-messenger `NOT COVERED` statement below is scoped to that harness; Hypersnap's own tests and earlier isolated real-node evidence remain recorded separately. There is no Hypersnap protocol, custody authorization, permission, storage or endpoint change in this maintenance release. Automated account writes remain synthetic/isolated; production checks are public reads/navigation only.
+
+The maintenance dev-log release was built from `899af864af8d8f68d0a5b0fcbbc69c347ba64e6e` into `/tmp/opencaster-verification-production-20261022-899af86`, then deployed as Worker **`8cc1e700-48ec-4029-b643-1523555acb82`**. The pre-release source was `c78fc2d898e9972c75fd22af42851d846316fd0f`, Worker `1782c85d-fe54-41a3-9314-e6eefeca5cfa`. All **23** production files were inspected for fixture markers, duplicate filenames, source maps and symlinks; the public WalletConnect configuration and new note's implementation source were confirmed. Worker dry run passed with unchanged R2/Durable Object bindings, and file hashes matched after deployment. The dev-log guard against the actual pre-release source passes; the live page retains all prior milestones and now shows **23** updates. The final verified browser build matches all 23 deployed file hashes byte-for-byte; the later tooling/test follow-ups do not change the browser or Worker source. No signed companion asset was replaced.
+
+Live browser checks confirmed the new note and its implementation link, connected Hypersnap status, discovery casts, `/profile/912253` identity hydration and a local cast conversation with replies. Before/after public `/api/v1/info` reads returned the same node peer and version `0.13.5`. A legacy-domain HEAD returned 308 with path/query preserved. No wallet connection, signature, upload or social write was performed, and the temporary QA tab was closed. Screenshot: `/tmp/opencaster-verification-live-20261022.jpg`.
+
+[Corrected-routing main CI 39754164021](https://github.com/arcacomputer/opencaster/actions/runs/39754164021) and [feature CI 39754162528](https://github.com/arcacomputer/opencaster/actions/runs/39754162528) both passed on their first attempts. Their downloaded receipts confirm **PASS (PARTIAL)**, correct live-tier routing, readable 1,896/4/887 test totals, and all five guarded/unavailable skips. This is distinct from the initial clean-checkout CI's fast-only baseline, whose routing prompted the comparison fix. [Final-source main CI 39754762541](https://github.com/arcacomputer/opencaster/actions/runs/39754762541) and [feature CI 39754762037](https://github.com/arcacomputer/opencaster/actions/runs/39754762037) also passed on their first attempts after the scoped integration timing fix. Both downloaded receipts report **PASS (PARTIAL)** with the same complete 1,896/4/887 totals, zero failed or retry-only steps, and all five visible skips. Their clean Linux installs/builds confirm the bootstrap works independently of this Mac.
+
+The complete final local receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   4de0af7  ⚠ working tree dirty (3 files)
+    shared    LINKED → 2.1.0-45 (c00c61e, clean)
+    sdk       LINKED → 2.1.1 (882d8e1, clean)
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/.github/workflows/hypersnap.yml, desktop/.gitignore, desktop/eslint.config.js)
+            (… and 21 more)
+            (--base: desktop compared with d2757519462305cd1e25c721b0594ec07e04112d)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  dependencies   PASS       1s
+  desktop  typecheck      PASS       8s
+  desktop  lint           PASS       22s    0 errors, 262 warnings
+  desktop  unit           PASS       48s    1896 passed (1896)
+  desktop  harness-offline PASS       10s    4 passed (4)
+  desktop  build          PASS       10s
+  desktop  hypersnap      PASS       24s    887 passed (887)
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  PASS (PARTIAL) — reduced scope, see the warnings below
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Arca Computer organization transfer · 2026-10-22
 
 **Live source: https://github.com/arcacomputer/opencaster.** The user authorized transferring the public repository from `arcabotai` to the `arcacomputer` organization and updating website/documentation source links. Organization membership and administrator access were verified before transfer. The repository retained ID `1425238416`, public visibility, default branch `main`, upstream fork relationship, history and admin access. Local `origin` now points to the organization; `upstream` remains the original Quorum repository. All three prior paths (`arcabotai/opencaster`, `arcabotai/hypersnap-web`, `arcabotai/opencast`) resolve to that same repository. Actions remain enabled and the existing WalletConnect project variable survived.
