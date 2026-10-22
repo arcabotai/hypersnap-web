@@ -1,3 +1,47 @@
+# Open linked profiles and casts on Quorum · 2026-10-22
+
+> **⚠️ AI-Generated**: May contain errors. Verify before use.
+
+The standalone `cd hypersnap && yarn verify` gate passes **836 tests across 43 files**, browser/Worker/native TypeScript, the production browser build and the offline signer build. New helper regressions cover recognized source hosts/path shapes, optional trailing slash, query/fragment removal, case normalization, reserved routes, malformed authors/hashes, authority lookalikes, credentials/nondefault ports, raw encoded/dot-segment paths and whitespace/control/backslash rejection. App integration tests cover cast text, profile bios and URL embeds, local profile/conversation navigation, Back/Forward/background preservation, full-hash conversation fallback, native modified-click behavior, retained external links, raw-token classification and single-anchor protocol quotes.
+
+A pure shared-package migration candidate recognizes supported HTTPS `farcaster.xyz`, `warpcast.com` and their `www` hosts. It derives a local destination only for root author profiles, author/hash cast links and exact full-hash `/~/conversations/<hash>` links. The last format is confirmed by `apps/farcaster-web/src/components/conversation/Conversation.tsx` in the reviewed client snapshot `0c289ed93c125cc0f752d90ad224a4a41c31c3f5`, which emits that canonical fallback for a cast without a username. Recognition uses the original raw URL token before general URL normalization can erase dot segments or escapes. Unsupported paths/hosts keep existing external-link behavior; this is not a blanket domain redirect.
+
+Cast text and non-image URL attachments now render real local hrefs. Primary clicks navigate within the app; modified clicks or copied destinations also use the local URL. Attachments label their Quorum destination and retain the original URL in a title. Profile bios share the text renderer. Original authored text, protocol URLs, mentions, media and stored bookmarks are not mutated. Protocol quoted-cast previews and notification snippets already sit inside a local outer anchor and remain plain text there, avoiding nested links. Existing Hypersnap author/prefix lookup, archive, cancellation and collision limits remain in force. No dependency, gateway route, signing permission or account/protocol write was added.
+
+The retained messenger gate still lacks its original dependencies and sibling repositories; its production-account mint guard remained enabled. Its full receipt follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   87347e6  ⚠ working tree dirty (4 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/src/App.test.tsx, desktop/hypersnap/src/App.tsx, desktop/hypersnap/src/lib/socialLinks.test.ts)
+            (… and 1 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
+
 # Compatible author and cast URLs · 2026-10-22
 
 > **⚠️ AI-Generated**: May contain errors. Verify before use.

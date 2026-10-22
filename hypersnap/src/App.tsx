@@ -27,6 +27,7 @@ import { readBookmarks, saveBookmarks, toggleBookmark, filterBookmarks, bookmark
 import { contentPreferencesKey, emptyContentPreferences, readContentPreferences, writeContentPreferences, getContentFilterReason, hideCast, muteAccount, type ContentPreferences } from './lib/contentPreferences';
 import { useNavigationShortcuts } from './lib/useNavigationShortcuts';
 import { textLinks } from './lib/textLinks';
+import { quorumSocialPath } from './lib/socialLinks';
 import './familiar.scss';
 import './cast-features.scss';
 
@@ -71,11 +72,24 @@ function Avatar({ user, large = false }: { user?: User; large?: boolean }) {
   const url = safeUrl(user?.pfp_url);
   return <span className={`avatar ${large ? 'avatar--large' : ''}`}>{url && failedUrl !== url ? <img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailedUrl(url)} /> : (user?.display_name || user?.username || 'Q').slice(0, 2).toUpperCase()}</span>;
 }
-function LinkedText({ text }: { text: string }) {
-  return <>{textLinks(text).map((part, i) => part.href ? <a key={i} href={part.href} target="_blank" rel="noopener noreferrer">{part.text.length > 65 ? `${part.text.slice(0, 62)}…` : part.text}</a> : part.text)}</>;
+function LinkedText({ text, onNavigate }: { text: string; onNavigate(path: string): void }) {
+  return <>{textLinks(text).map((part, i) => {
+    if (!part.href) return part.text;
+    // Classify the original token before URL normalization can hide escapes,
+    // backslashes, or dot segments that should remain external links.
+    const localPath = quorumSocialPath(part.text);
+    const label = part.text.length > 65 ? `${part.text.slice(0, 62)}…` : part.text;
+    return localPath ? <a key={i} href={localPath} title={`Open on Quorum. Original link: ${part.text}`} onClick={event => localClick(event, () => onNavigate(localPath))}>{label}</a>
+      : <a key={i} href={part.href} target="_blank" rel="noopener noreferrer">{label}</a>;
+  })}</>;
 }
-function CastText({ cast, onProfile }: { cast: Cast; onProfile(user: User): void }) {
-  return <>{renderMentionSegments(cast).map((segment, index) => segment.kind === 'text' ? <LinkedText key={index} text={segment.text} /> : <a className="cast-mention" key={index} href={profilePath(segment.user.fid)} onClick={event => localClick(event, () => onProfile(segment.user))}>@{segment.user.username || segment.user.fid}</a>)}</>;
+function CastText({ cast, onProfile, onNavigate }: { cast: Cast; onProfile(user: User): void; onNavigate(path: string): void }) {
+  return <>{renderMentionSegments(cast).map((segment, index) => segment.kind === 'text' ? <LinkedText key={index} text={segment.text} onNavigate={onNavigate} /> : <a className="cast-mention" key={index} href={profilePath(segment.user.fid)} onClick={event => localClick(event, () => onProfile(segment.user))}>@{segment.user.username || segment.user.fid}</a>)}</>;
+}
+function LinkEmbed({ url, onNavigate }: { url: string; onNavigate(path: string): void }) {
+  const localPath = quorumSocialPath(url);
+  const destination = localPath ? publicUrl(localPath) : url;
+  return <a className="link-embed" href={localPath ?? url} target={localPath ? undefined : '_blank'} rel={localPath ? undefined : 'noopener noreferrer'} title={localPath ? `Original link: ${url}` : undefined} onClick={localPath ? event => localClick(event, () => onNavigate(localPath)) : undefined}><IconWorld size={18} /><span>{new URL(destination).hostname}<small>{destination.slice(0, 80)}</small></span><IconArrowUpRight size={17} /></a>;
 }
 function ConversationReplies({ nodes, renderCard }: { nodes: ConversationNode[]; renderCard(cast: Cast): ReactNode }) {
   let remaining = 150;
@@ -102,7 +116,7 @@ function QuotedCast({ target, onThread }: { target: { fid: number; hash: string 
     {cast ? <><strong>{cast.author.display_name || cast.author.username || `FID ${target.fid}`}</strong><span>{cast.text || 'Cast with attachments'}</span><small>Open quoted cast</small></> : <span>{unavailable ? 'Quoted cast unavailable or deleted' : 'Loading quoted cast…'}</span>}
   </a>;
 }
-function CastCard({ cast, onProfile, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
+function CastCard({ cast, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
   const urls = cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2) ?? [];
   const isImage = (url: string) => hasImageEmbed({ ...cast, embeds: [{ url }] });
   const images = urls.filter(embed => isImage(embed.url)).map((embed, index) => ({ url: embed.url, alt: `Image ${index + 1} attached to cast by @${cast.author.username || cast.author.fid}` }));
@@ -111,9 +125,9 @@ function CastCard({ cast, onProfile, onThread, onShare, onQuote, onDelete, react
     <div className="cast__body">
       {cast.reaction_context && <div className="cast-activity">{cast.reaction_context.type === 'like' ? <IconHeart size={14} aria-hidden="true" /> : <IconRepeat size={14} aria-hidden="true" />}<a href={profilePath(cast.reaction_context.fid)} onClick={event => { if (reactionActor) localClick(event, () => onProfile(reactionActor)); }}>{reactionActor?.display_name || reactionActor?.username || `FID ${cast.reaction_context.fid}`}</a>{cast.reaction_context.type === 'like' ? 'liked' : 'recasted'}<time dateTime={cast.reaction_context.timestamp} title={new Date(cast.reaction_context.timestamp).toLocaleString()}>{relativeTime(cast.reaction_context.timestamp)}</time></div>}
       <div className="cast__meta"><a className="button button--ghost author" href={profilePath(cast.author.fid)} onClick={event => localClick(event, () => onProfile(cast.author))}>{cast.author.display_name || cast.author.username || `FID ${cast.author.fid}`}</a><span className="handle">@{cast.author.username || cast.author.fid}</span><span className="dot">·</span><a className="cast-permalink" href={castPath(cast.hash)} aria-label="Open cast" onClick={event => localClick(event, () => onThread(cast))}><time dateTime={cast.timestamp} title={new Date(cast.timestamp).toLocaleString()}>{relativeTime(cast.timestamp)}</time></a>{cast.channel && <span className="channel-tag">/{cast.channel.id}</span>}</div>
-      <p className="cast__text"><CastText cast={cast} onProfile={onProfile} /></p>
+      <p className="cast__text"><CastText cast={cast} onProfile={onProfile} onNavigate={onNavigate} /></p>
       {cast.parent_hash && /^(?:0x)?[a-fA-F0-9]{40}$/.test(cast.parent_hash) && <a className="cast-parent" href={castPath(cast.parent_hash)} onClick={event => localClick(event, () => onCastHash(cast.parent_hash!))}>View parent cast<IconArrowUpRight size={13} /></a>}
-      {urls.map(embed => isImage(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" className="embed" aria-label="View attached image" onClick={event => localClick(event, () => onImages(images, images.findIndex(image => image.url === embed.url)))}><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <a className="link-embed" key={embed.url} href={embed.url} target="_blank" rel="noopener noreferrer"><IconWorld size={18} /><span>{new URL(embed.url).hostname}<small>{embed.url.slice(0, 80)}</small></span><IconArrowUpRight size={17} /></a>)}
+      {urls.map(embed => isImage(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" className="embed" aria-label="View attached image" onClick={event => localClick(event, () => onImages(images, images.findIndex(image => image.url === embed.url)))}><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <LinkEmbed key={embed.url} url={embed.url} onNavigate={onNavigate} />)}
       {cast.embeds?.filter((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && !!embed.cast_id && Number.isSafeInteger(embed.cast_id.fid) && embed.cast_id.fid > 0 && /^(?:0x)?[a-fA-F0-9]{40}$/.test(embed.cast_id.hash)).slice(0, 2).map(embed => <QuotedCast key={embed.cast_id.hash} target={embed.cast_id} onThread={onThread} />)}
       <div className="cast__actions">
         <Button variant="ghost" aria-label="Open replies" onClick={() => onThread(cast)}><IconMessageCircle size={18} /><span>{short(cast.replies?.count)}</span></Button>
@@ -475,7 +489,7 @@ export default function App() {
   const card = (cast: Cast) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
-    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
+    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigate} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
   };
   const feedCandidates = view === 'bookmarks' ? filterBookmarks(bookmarks, bookmarkQuery, bookmarkSort) : casts;
   const visibleCasts = feedCandidates.filter(cast => revealed.has(bookmarkHash(cast.hash)!) || !getContentFilterReason(cast, preferences));
@@ -512,7 +526,7 @@ export default function App() {
         <Avatar user={profile} large /><h2>{profile.display_name || profile.username}</h2><p className="muted">@{profile.username} <span>· FID {profile.fid}</span></p>
         <ProfileDetails user={profile} />
         <Button variant="secondary" onClick={() => setSharedProfile(profile)}><IconShare size={16} />Share profile</Button>
-        <p className="profile__bio"><LinkedText text={profile.profile?.bio?.text || 'A voice on the open social web.'} /></p>
+        <p className="profile__bio"><LinkedText text={profile.profile?.bio?.text || 'A voice on the open social web.'} onNavigate={navigate} /></p>
         <a className="profile-public-link" href={profilePath(profile.fid)} onClick={event => localClick(event, () => navigate(profilePath(profile.fid)))}>{publicUrl(profilePath(profile.fid))}</a>
         <div className="profile__counts"><Button variant="ghost" onClick={() => setFollowList('following')}><strong>{short(profile.following_count)}</strong> following</Button><Button variant="ghost" onClick={() => setFollowList('followers')}><strong>{short(profile.follower_count)}</strong> followers</Button></div>
         {session?.fid !== profile.fid && <div className="profile-follow"><FollowButton following={session ? followingProfile : false} pending={followBusy} onClick={() => void followProfile()} />{followError && <div><p className="error" role="alert">{followError}</p><Button variant="secondary" onClick={() => setFollowRefresh(value => value + 1)}>Check follow status</Button></div>}</div>}

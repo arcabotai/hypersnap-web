@@ -64,6 +64,97 @@ async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
+describe('Quorum destinations for supported social links', () => {
+  it('opens cast-text profiles locally and preserves the feed background through cast-link Back and Forward', async () => {
+    const source = cast('d', 10, 'Profile https://www.warpcast.com/Person30/?utm_source=cast#bio and cast https://farcaster.xyz/Person20/0xbbbbbbbb?ref=cast');
+    vi.mocked(getFeed).mockResolvedValue({ casts: [source], next: {} });
+    vi.mocked(getUser).mockImplementation(async lookup => person(lookup.username === 'person30' ? 30 : lookup.fid ?? 10));
+    await start();
+    const profileLink = container.querySelector<HTMLAnchorElement>('main .feed .cast__text a[href="/profile/person30"]')!;
+    expect(profileLink.target).toBe(''); expect(profileLink.textContent).toContain('https://www.warpcast.com/Person30/');
+    await click(profileLink); expect(location.pathname).toBe('/profile/person30'); expect(getUser).toHaveBeenCalledWith({ username: 'person30' }, expect.any(AbortSignal));
+    await traverse('back'); expect(location.pathname).toBe('/');
+    const castLink = container.querySelector<HTMLAnchorElement>('main .feed .cast__text a[href="/person20/0xbbbbbbbb"]')!;
+    expect(castLink.target).toBe(''); await click(castLink);
+    expect(resolveCastAlias).toHaveBeenCalledWith(expect.objectContaining({ authorIdentifier: 'person20', hashPrefix: '0xbbbbbbbb' }));
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
+    expect(dialog('Conversation').textContent).toContain(otherCast.text);
+    await traverse('back'); expect(location.pathname).toBe('/'); expect(dialog('Conversation')).toBeUndefined();
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(dialog('Conversation').textContent).toContain(otherCast.text);
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname).toBe('/');
+  });
+
+  it('labels supported URL embeds with their Quorum destination and opens profile and cast embeds locally', async () => {
+    const profileUrl = 'https://farcaster.xyz/person30?ref=embed'; const castUrl = `https://www.warpcast.com/person20/${otherCast.hash}#replies`;
+    vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, embeds: [{ url: profileUrl }, { url: castUrl }] }], next: {} });
+    await start();
+    const links = [...container.querySelectorAll<HTMLAnchorElement>('main .feed .link-embed')];
+    expect(links.map(link => link.getAttribute('href'))).toEqual(['/profile/person30', `/person20/${otherCast.hash}`]);
+    for (const link of links) { expect(link.target).toBe(''); expect(link.textContent).toContain('quorum.arca.computer'); expect(link.textContent).not.toMatch(/warpcast\.com|farcaster\.xyz/); }
+    expect(links[0].title).toContain(profileUrl); expect(links[1].title).toContain(castUrl);
+    await click(links[0]); expect(location.pathname).toBe('/profile/person30');
+    await traverse('back'); await click(container.querySelector(`main .feed .link-embed[href="/person20/${otherCast.hash}"]`)!);
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
+  });
+
+  it('opens official full-hash conversation fallback links directly without inventing an author lookup', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, text: `https://farcaster.xyz/~/conversations/${otherCast.hash}?ref=cast#replies` }], next: {} });
+    await start(); const link = container.querySelector<HTMLAnchorElement>('main .feed .cast__text a')!;
+    expect(link.getAttribute('href')).toBe(`/cast/${otherCast.hash}`); expect(link.target).toBe(''); await click(link);
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal)); expect(resolveCastAlias).not.toHaveBeenCalled();
+    expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
+  });
+
+  it('routes profile-bio links locally and retains the profile tab behind its cast conversation', async () => {
+    const publicProfile: User = { ...person(10), profile: { bio: { text: 'Meet https://warpcast.com/person30 and read https://farcaster.xyz/person20/0xbbbbbbbb?utm_source=bio' } } };
+    vi.mocked(getUser).mockImplementation(async lookup => lookup.username === 'person30' ? person(30) : publicProfile);
+    await start('/profile/10?tab=replies');
+    await click(container.querySelector('.profile__bio a[href="/profile/person30"]')!); expect(location.pathname).toBe('/profile/person30');
+    await traverse('back'); expect(location.pathname + location.search).toBe('/profile/10?tab=replies');
+    const link = container.querySelector<HTMLAnchorElement>('.profile__bio a[href="/person20/0xbbbbbbbb"]')!; expect(link.target).toBe('');
+    await click(link); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state.quorumBackground).toBe('/profile/10?tab=replies');
+    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe('/profile/10?tab=replies');
+  });
+
+  it('keeps real local hrefs for native modified clicks without intercepting them or starting lookups', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, text: 'https://farcaster.xyz/person20/0xbbbbbbbb', embeds: [{ url: 'https://warpcast.com/person30' }] }], next: {} });
+    await start();
+    const links = [container.querySelector<HTMLAnchorElement>('main .feed .cast__text a')!, container.querySelector<HTMLAnchorElement>('main .feed .link-embed')!];
+    for (const link of links) {
+      expect(link.getAttribute('href')).toMatch(/^\/(?:profile\/person30|person20\/0xbbbbbbbb)$/); expect(link.target).toBe('');
+      for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...modifier });
+        await act(async () => { link.dispatchEvent(event); }); expect(event.defaultPrevented).toBe(false);
+        // Happy DOM follows modified anchors in this window. Reset that native
+        // navigation without dispatching popstate; the SPA must stay untouched.
+        history.replaceState(null, '', '/');
+      }
+    }
+    expect(location.pathname).toBe('/'); expect(resolveCastAlias).not.toHaveBeenCalled(); expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it('preserves external and unsupported links and classifies raw tokens before URL normalization', async () => {
+    const rawNormalized = 'https://farcaster.xyz/ignored/../person30';
+    const externalUrl = 'https://example.org/person20/0xbbbbbbbb'; const unsupportedUrl = 'https://warpcast.com/~/channel/art';
+    vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, text: `${rawNormalized} ${externalUrl} ${unsupportedUrl}`, embeds: [{ url: unsupportedUrl }, { url: externalUrl }] }], next: {} });
+    await start();
+    const links = [...container.querySelectorAll<HTMLAnchorElement>('main .feed .cast__text a, main .feed .link-embed')]; expect(links).toHaveLength(5);
+    for (const link of links) { expect(link.getAttribute('href')).toMatch(/^https:\/\//); expect(link.target).toBe('_blank'); expect(link.rel).toBe('noopener noreferrer'); }
+    const normalized = container.querySelector<HTMLAnchorElement>('main .feed .cast__text a')!;
+    expect(normalized.getAttribute('href')).toBe('https://farcaster.xyz/person30'); expect(normalized.textContent).toBe(rawNormalized);
+    expect(container.querySelector('main .feed .link-embed')?.textContent).toContain('warpcast.com');
+    expect(resolveCastAlias).not.toHaveBeenCalled(); expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps protocol quote previews as a single local anchor without nesting linkified text', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [{ ...ownCast, embeds: [{ cast_id: { fid: 20, hash: otherCast.hash } }] }], next: {} });
+    vi.mocked(getCast).mockResolvedValue({ ...otherCast, text: 'Quoted https://farcaster.xyz/person30' });
+    await start();
+    const quote = container.querySelector<HTMLAnchorElement>('.quoted-cast')!; expect(quote.getAttribute('href')).toBe(`/cast/${otherCast.hash}`); expect(quote.querySelector('a')).toBeNull(); expect(quote.textContent).toContain('https://farcaster.xyz/person30');
+    await click(quote); expect(location.pathname).toBe(`/cast/${otherCast.hash}`);
+  });
+});
+
 describe('author-scoped compatible cast URLs', () => {
   const alias = '/person20/0xbbbbbbbb';
   const continuation: CastAliasContinuation = { authorIdentifier: 'person20', hashPrefix: '0xbbbbbbbb', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [otherCast.hash], scanned: 1000 };
