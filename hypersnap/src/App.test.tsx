@@ -264,7 +264,7 @@ describe('isolated App feature integration', () => {
   it.each([
     ['sidebar', '.sidebar__bottom button.full-width'],
     ['join card', '.join-card button'],
-    ['composer', '.composer__submit button'],
+    ['welcome', '.welcome__actions button'],
     ['mobile account', 'nav[aria-label="Mobile navigation"] button[aria-label="Account"]'],
     ['header', '.mobile-connect'],
   ])('opens the dedicated sign-in page from the %s without a modal or background feed', async (_label, selector) => {
@@ -606,4 +606,32 @@ describe('isolated App feature integration', () => {
     expect(location.pathname).toBe('/profile/20'); expect(dialog('Participants · /Isolated channel')).toBeUndefined();
   });
 
+});
+
+describe('feed-first social layout', () => {
+  it('shows guests a connect prompt instead of a home composer and collapses long casts until expanded', async () => {
+    const long = cast('d', 20, `Opening line\n${'A long isolated paragraph. '.repeat(30)}`);
+    vi.mocked(getFeed).mockResolvedValue({ casts: [long], next: {} });
+    await start();
+    const main = container.querySelector('main')!;
+    expect(main.querySelector('textarea[aria-label="Write a cast"]')).toBeNull(); expect(main.querySelector('.welcome__actions button')).not.toBeNull();
+    expect(main.querySelector('.cast__text--clamp')).not.toBeNull();
+    await click(button('Show more', main));
+    expect(main.querySelector('.cast__text--clamp')).toBeNull(); expect(button('Show more', main)).toBeUndefined();
+  });
+
+  it('opens a new-cast dialog from the sidebar and the mobile action, then closes it after publishing', async () => {
+    await start(); const connected = session(FULL_CLIENT_SCOPES); await connect(connected);
+    expect(container.querySelector('main textarea[aria-label="Write a cast"]')).not.toBeNull();
+    await click(container.querySelector('button[aria-label="Write a new cast"]')!);
+    const compose = dialog('New cast'); expect(compose.querySelector('textarea[aria-label="Write a cast"]')).not.toBeNull();
+    await click(compose.querySelector('button[aria-label="Close dialog"]')!); expect(dialog('New cast')).toBeUndefined();
+    await click(button('Cast', container.querySelector('.sidebar')!));
+    const field = dialog('New cast').querySelector<HTMLTextAreaElement>('textarea')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    await act(async () => { setter.call(field, 'A cast from the dialog'); field.dispatchEvent(new Event('input', { bubbles: true })); });
+    await click(button('Cast', dialog('New cast')));
+    expect(connected.cast).toHaveBeenCalledWith('A cast from the dialog', undefined, expect.anything());
+    await settleNavigation(); expect(dialog('New cast')).toBeUndefined();
+  });
 });
