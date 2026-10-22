@@ -62,7 +62,7 @@ const texts = () => [...container.querySelectorAll('main .feed .cast__text')].ma
 async function discover() { await click(button('Discover', container.querySelector('nav[aria-label="Main navigation"]')!)); }
 async function settings() { await click(container.querySelector('nav[aria-label="Main navigation"] a[href="/settings"]')!); await until(() => Boolean(container.querySelector('.content-settings'))); }
 async function options(index = 0) { await click(container.querySelectorAll('main button[aria-label="More cast options"]')[index]); return dialog('Cast options')!; }
-async function connect(value: WalletSession) { wallet.next = value; await click(button('Connect Farcaster')); await click(button('Approve isolated wallet')); }
+async function connect(value: WalletSession) { wallet.next = value; await click(button('Sign in')); await click(button('Approve isolated wallet')); }
 async function lock() { await click(container.querySelector('button[aria-label="Manage this device’s signing access"]')!); await click(button('Lock isolated wallet')); }
 async function input(field: HTMLInputElement, value: string) {
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value); field.dispatchEvent(new Event('input', { bubbles: true })); });

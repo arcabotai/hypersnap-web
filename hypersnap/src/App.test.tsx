@@ -60,7 +60,7 @@ function button(label: string, scope: ParentNode = container) { return [...scope
 function thread() { return container.querySelector<HTMLElement>('section.conversation-page') ?? undefined!; }
 function dialog(title: string) { return [...container.querySelectorAll<HTMLDialogElement>('dialog')].find(item => item.querySelector('h2')?.textContent === title)!; }
 async function settleNavigation() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); }
-async function connect(value: WalletSession) { wallet.next = value; await click(button('Connect Farcaster')); await click(button('Approve synthetic wallet')); await settleNavigation(); }
+async function connect(value: WalletSession) { wallet.next = value; await click(button('Sign in')); await click(button('Approve synthetic wallet')); await settleNavigation(); }
 async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
@@ -265,7 +265,6 @@ describe('isolated App feature integration', () => {
   it.each([
     ['sidebar', '.sidebar__bottom button.full-width'],
     ['join card', '.join-card button'],
-    ['welcome', '.welcome__actions button'],
     ['mobile account', 'nav[aria-label="Mobile navigation"] button[aria-label="Account"]'],
     ['header', '.mobile-connect'],
   ])('opens the dedicated sign-in page from the %s without a modal or background feed', async (_label, selector) => {
@@ -316,7 +315,7 @@ describe('isolated App feature integration', () => {
 
   it('returns from sign-in to the original conversation and closes it back to its search background', async () => {
     await start('/search?q=cosmos'); await click(container.querySelector('main a[aria-label="Open cast"]')!);
-    await click(button('Connect', thread()));
+    await click(button('Sign in', thread()));
     expect(location.pathname).toBe('/connect'); expect(container.querySelector('dialog')).toBeNull();
     await click(button('Cancel synthetic wallet')); await settleNavigation();
     expect(thread()).toBeDefined(); expect(location.pathname).toBe(`/cast/${otherCast.hash}`);
@@ -615,7 +614,7 @@ describe('feed-first social layout', () => {
     vi.mocked(getFeed).mockResolvedValue({ casts: [long], next: {} });
     await start();
     const main = container.querySelector('main')!;
-    expect(main.querySelector('textarea[aria-label="Write a cast"]')).toBeNull(); expect(main.querySelector('.welcome__actions button')).not.toBeNull();
+    expect(main.querySelector('textarea[aria-label="Write a cast"]')).toBeNull(); expect(main.querySelector('.welcome')).toBeNull(); expect(button('Cast', container.querySelector('.sidebar')!)).toBeUndefined();
     expect(main.querySelector('.cast__text--clamp')).not.toBeNull();
     await click(button('Show more', main));
     expect(main.querySelector('.cast__text--clamp')).toBeNull(); expect(button('Show more', main)).toBeUndefined();
@@ -666,7 +665,7 @@ describe('signed-out landing and cast pages', () => {
     await click(card.querySelector('.cast__text')!);
     expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(container.querySelector('dialog')).toBeNull();
     expect(thread().textContent).toContain(otherCast.text); expect(container.querySelector<HTMLElement>('.main-base')!.hidden).toBe(true);
-    expect(thread().textContent).toContain('Connect your account to reply.');
+    expect(thread().textContent).toContain('Sign in to reply.');
     await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
     expect(location.pathname).toBe('/'); expect(thread()).toBeUndefined(); expect(container.querySelector<HTMLElement>('.main-base')!.hidden).toBe(false);
   });

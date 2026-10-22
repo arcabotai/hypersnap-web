@@ -161,7 +161,7 @@ describe('isolated feature panels', () => {
     const onConnect = vi.fn();
     await render(<NotificationsView onConnect={onConnect} onProfile={vi.fn()} onCast={vi.fn()} />);
     expect(getNotifications).not.toHaveBeenCalled();
-    await click(button('Connect wallet')); expect(onConnect).toHaveBeenCalledOnce();
+    await click(button('Sign in')); expect(onConnect).toHaveBeenCalledOnce();
   });
 
   it.each(['failed', 'cancelled'] as const)('retries a %s refresh from the beginning instead of the previous continuation', async outcome => {
