@@ -19,6 +19,20 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'optional-hypersnap-node-support',
+    date: '2026-10-22',
+    title: 'Help fund an independently operated Hypersnap node',
+    summary: 'An optional support banner on Discover links to a one-time Stripe checkout for Arca Computer, with proceeds helping fund node hosting and operation.',
+    changes: [
+      'Place a compact, dismissible banner below the introduction and above the composer and feed, without blocking browsing or posting.',
+      'Open the existing Stripe checkout in a separate tab. Support is optional and one-time, not a subscription or tax-deductible charitable donation; the checkout explains its existing-software tip basis and limitations.',
+      'Remember dismissal on this browser when local storage is available. Keep dismissal working for the current app session when storage is unavailable.',
+      'Keep the current public Hypersnap upstream, wallet permissions, protocol messages, media storage and infrastructure unchanged. This release does not provision a node or promise launch, uptime, tokens or investment returns.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/7bb689f58d227359b24d2cedd05de2ff908e3545',
+    tag: 'Launch',
+  },
+  {
     id: 'zero-warning-source-checks',
     date: '2026-10-22',
     title: 'Cleaner checks and steadier account sessions',
