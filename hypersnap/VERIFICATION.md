@@ -1,10 +1,56 @@
-# Opencaster migration · 2026-10-22
+# Opencaster launch and domain migration · 2026-10-22
 
-The user confirmed `opencaster.org` and the Opencaster product/repository name. The active Cloudflare zone is `37b169ad321b96250025080e8606ab35` in Arca Computer, Inc. GitHub is renamed to `arcabotai/opencaster`; the homepage and local origin remote point to the new names. The pre-release Worker source is `b629f7e5c41a36d26976bebaec3c8936205f684c`, version `c58ffa28-b404-4f2e-968e-94c87d6e09eb`.
+**Live at https://opencaster.org.** The user confirmed the final Opencaster name and `opencaster.org` spelling. [Public source](https://github.com/arcabotai/opencaster), repository homepage, local origin remote, current website links and metadata now use that name. The original `arcabotai/hypersnap-web` GitHub URL resolves to the renamed repository. The AGPL license, upstream Quorum attribution and all historical milestones are retained.
 
-The migration preserves protocol signing labels, message scopes, storage keys, upstream node, Worker service identity, R2 bucket and Durable Object namespace. Exact legacy GET/HEAD requests redirect with path/query preserved; other legacy methods reject before signed data is read or forwarded. Historical media remains served from the existing bucket. Saved local keys, passkeys, drafts and preferences remain origin-bound; users reconnect their existing custody wallet on the new domain. The native v0.2.1 companion adds the new exact display origin and keeps its original limited permission set. Notarization remains deferred at the user's request.
+Source release `dad011c4668459935d2dc38bf08e563bc388fe76` (implementation `2ca6b5673869c7caab4a25c586a24edc8cdfb2be`) was deployed as Cloudflare Worker version `3e197425-aa59-4a1e-aea5-71d8a4820ce4`. The pre-release source was `b629f7e5c41a36d26976bebaec3c8936205f684c`, Worker `c58ffa28-b404-4f2e-968e-94c87d6e09eb`. The new active zone is `37b169ad321b96250025080e8606ab35` in Arca Computer, Inc. Its DNS inventory was empty before attachment. Domain-only triggers attached the new hostname to the existing Worker, and valid HTTPS returned 200 before the redirect code shipped. No legacy traffic was redirected before that check.
 
-Release verification and deployed identifiers will be recorded below after the final checks and deployment. All account, signing and upload write tests remain isolated; production checks use public reads and navigation only.
+The final standalone `cd hypersnap && yarn verify` gate passed **886 tests across 43 files**, TypeScript, production browser build and offline signer payload build. The release-note guard compared against the actual pre-release source and accepted the new `opencaster-name-and-domain` milestone. Fresh production assets were built at `/tmp/opencaster-production-20261022-dad011c`: **23 production files**, no fixture markers or cloud-sync duplicate filenames. Those exact assets were reviewed through the actual local Worker, deployed, and their hashes rechecked unchanged after deployment.
+
+[Feature-branch CI 39740183135](https://github.com/arcabotai/opencaster/actions/runs/39740183135) passed on its first attempt. [Default-branch CI 39740183693](https://github.com/arcabotai/opencaster/actions/runs/39740183693) passed on its single retry: **flaky, not a clean first-attempt pass**. Its first slow runner exceeded 5-second test budgets in a seven-PBKDF2 case, a multi-account App integration and a 1,000-profile DOM case; the App timeout then produced overlapping-act warnings and cascading assertions (11 failures). The same source passed both full local runs and the parallel CI job. No product code or test limits were changed to obtain the retry pass. Both successful CI runs covered release-note enforcement, full verification and signer payload reproducibility.
+
+The migration preserves protocol signing labels, message scopes, storage keys, upstream node, Worker service identity `hypersnap-quorum`, R2 bucket `hypersnap-quorum-media` and Durable Object namespace. Exact legacy GET/HEAD requests return 308 with path/query preserved; other legacy methods return `409 site_moved` before signed data is read or forwarded. No Origin:null or cross-origin submission exception was added. Existing content-addressed media uses the same bucket, with the legacy redirect permitting public cross-origin image embedding. New cast shares and uploads use the canonical domain; own-host cast/profile links recognize both current and historical hosts.
+
+Saved posting keys, passkeys, drafts, bookmarks and preferences remain browser-origin-bound. The dedicated onboarding notice explains reconnecting the existing custody wallet and optional fresh local saving. Password and passkey regressions reject relabeling or unlocking old-origin vaults on the new origin. Existing network authorizations are not silently revoked. Recovery phrases stay in the wallet. The existing WalletConnect project was checked in Reown and the exact `https://opencaster.org` origin added alongside the retained legacy origin; no wildcard was added. Its SDK license and external relay dependency remain disclosed.
+
+[Arca Signer v0.2.1](https://github.com/arcabotai/opencaster/releases/tag/arca-signer-v0.2.1) was built from clean committed release source, packaged for macOS arm64, Developer ID signed with hardened runtime/Electron integrity fuses, and verified using deep/strict codesign checks. The public ZIP, build manifest, release status and SHA256SUMS were published before the website download link shipped. GitHub's asset digest matches `e122f121558a6570c3d6e909ee32900ec5e29f1339eaa553ab63fd7174fcf8cc`; public download returns 200 after its normal GitHub redirect. Version 0.2.1 accepts the exact new display origin, retains original `[1, 3, 4]` scope limits, and includes the origin source in its source-tree fingerprint. **Apple notarization remains pending**, as the user expressly requested. The older v0.2.0 companion cannot accept new-domain pairing requests.
+
+Live HEAD/GET assertions confirmed nine legacy routes, including root, dev log, profile with `?tab=replies`, author/short-hash, full cast, historical `/?cast=...`, search, API info and a syntactic hash-media path. Every legacy response was 308 to its exact canonical path/query; the media redirect carried cross-origin CORP. Eight canonical page/asset/API checks returned 200, including public node info, FID 410023 and cast `0xcfd6d3c3e990cffcb4af8063426d299cf22fab37`. The synthetic media hash checks redirect semantics only; it does not claim an existing production image was downloaded. Storage bytes and upload origin guards are covered in isolated Worker/R2 tests. Python urllib received an edge 403, while curl and Chrome succeeded; the automated live receipt uses curl.
+
+Chrome confirmed root and dev-log redirects, final branding/source links, connected Hypersnap reads, **21 milestones** with the new launch entry, and a loaded profile with Replies selected after the original URL's query was retained. The redirected full conversation loaded with replies, and Share cast exposed the exact `https://opencaster.org/cast/0xcfd6d3c3e990cffcb4af8063426d299cf22fab37` URL. The loopback preview also found the existing short-link candidate through bounded Hypersnap history. Live onboarding displays the new-origin reconnect notice. Production checks remained public reads and navigation: no wallet permissions/signature, passkey/vault enrollment or unlock, posting-key preparation, image upload, cast, reaction, profile or follow write was attempted. All protocol write coverage remains isolated. Screenshots retain the live brand and exact WalletConnect allowlist.
+
+The retained messenger gate lacks its original dependencies and sibling repositories. It does **not** clear that application or shared/wire changes; its permanent production-account mint guard remained enabled. Full receipt from this migration run follows (line-end padding omitted):
+
+```text
+── VERIFY ──────────────────────────────────────────────
+  ENVIRONMENT
+    desktop   9337cc1  ⚠ working tree dirty (52 files)
+    shared    NOT INSTALLED
+    sdk       NOT INSTALLED
+
+  ROUTED    desktop
+  TIER      fast + live
+            (not on the safe list: desktop/hypersnap/index.html, desktop/hypersnap/package.json, desktop/hypersnap/scripts/check-devlog.mjs)
+            (… and 47 more)
+            (held back: space-basic — it creates a permanent, undeletable Space every run; `yarn verify --all` runs it)
+
+  desktop  typecheck      FAIL       0s
+  desktop  lint           FAIL       0s
+  desktop  unit           FAIL       0s
+  desktop  harness-offline FAIL       0s
+  desktop  build          FAIL       0s
+  desktop  dm-basic       SKIP       0s     would register PERMANENT production state (missing .state/alice-bot.json, .state/bob-bot.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  dm-delivery    SKIP       0s     would register PERMANENT production state (missing .state/dm-delivery-receiver.json, .state/dm-delivery-sender.json) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  space-delivery SKIP       0s     would register PERMANENT production state (missing .state/space-delivery-victim.json, .state/space-delivery-sender.json, .state/space-delivery-victim-space.json (missing or unrestorable), .state/space-delivery-sender-space.json (missing or unrestorable)) — relay accounts and Spaces cannot be deleted. Opt in with `yarn verify --live-allow-minting`
+  desktop  cross-dm       SKIP       0s     quorum-mobile not found — cross-client arm skipped
+  desktop  config-cross   SKIP       0s     quorum-mobile not found — cross-client arm skipped
+
+  NOT COVERED  role/permission gating — untested; the harness cannot even build one yet · authorization — 10 forgery/scope scenarios exist, none of them runs here · pin, an honoured mute & DM profile updates — sent, never confirmed to land · calling — zero coverage of all 9 WebRTC message types · no end-to-end or integration test exists
+
+  VERDICT  FAIL — see the failing step above
+           ⚠ live arms were skipped because this machine has no persisted bot identities — running them would register permanent, undeletable accounts and Spaces on the PRODUCTION relay. The fast tier ran in full. `yarn verify --live-allow-minting` accepts that cost deliberately.
+           ⚠ This does NOT clear a change that touches shared or the wire.
+─────────────────────────────────────────────────────────
+```
 
 # Open linked profiles and casts on Quorum · 2026-10-22
 
