@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'farcaster-shaped-conversations-and-cast-links',
+    date: '2026-10-23',
+    title: 'Familiar conversations and cast links',
+    summary: 'Conversations follow a familiar Farcaster-style layout, and shared casts use the same author and short-hash path shape.',
+    changes: [
+      'Let the main cast span the conversation column, with a compact header, circular avatars, clearer author names and a purple accent. Keep replies compact and show the complete main cast.',
+      'Place image and link attachments together in a horizontal media strip. Avoid repeating standalone attachment URLs in the displayed text while preserving the original cast and inline links.',
+      'Show quoted authors, timestamps, protocol mentions and safe image thumbnails without adding nested quote lookups.',
+      'Generate, copy and share cast links as /username/0x followed by eight hexadecimal hash characters, with a FID fallback when a username is unavailable. Existing /cast/full-hash links remain supported and move to the author path after verification.',
+      'Preserve verified short-link URLs and browser navigation. Use exact author/full-hash links for explicit lookup choices and known prefix collisions, including shared links.',
+      'Changing a supported Farcaster or Warpcast link host to opencaster.org keeps its cast path. Availability still depends on Hypersnap: incomplete history searches require an explicit cast choice, older casts may need more bounded searches, and missing or deleted casts cannot be restored by a URL change.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/8f013714fc0aef3471d1e00b3a5eb1baf25ee940',
+    tag: 'Social',
+  },
+  {
     id: 'aggregate-cloudflare-usage-and-health',
     date: '2026-10-23',
     title: 'Understanding how Opencaster is used',
