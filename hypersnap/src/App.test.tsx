@@ -57,6 +57,11 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 async function start(path = '/') { history.replaceState(null, '', path); await act(async () => root.render(<App />)); }
 async function click(element: Element) { await act(async () => { element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); }
 function button(label: string, scope: ParentNode = container) { return [...scope.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!; }
+// Quote lives in each cast's Recast menu, as on X and Farcaster.
+async function openQuote(scope: ParentNode = container, index = 0) {
+  const trigger = scope.querySelectorAll('button.recast-trigger')[index];
+  await click(trigger); await click(trigger.parentElement!.querySelector('[role="menu"] button[aria-label="Quote cast"]')!);
+}
 function thread() { return container.querySelector<HTMLElement>('section.conversation-page') ?? undefined!; }
 function dialog(title: string) { return [...container.querySelectorAll<HTMLDialogElement>('dialog')].find(item => item.querySelector('h2')?.textContent === title)!; }
 async function settleNavigation() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); }
@@ -263,7 +268,7 @@ describe('author-scoped compatible cast URLs', () => {
 
   it('returns from sign-in to a still-unresolved alias and its explicit quote without changing account permissions', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
-    await start(alias); await click(thread().querySelector('button[aria-label="Quote cast"]')!); await click(button('Quote', dialog('Quote cast')));
+    await start(alias); await openQuote(thread()); await click(button('Quote', dialog('Quote cast')));
     expect(location.pathname).toBe('/connect'); expect(history.state.quorumConnectReturn).toBe(alias);
     expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
     await click(button('Cancel synthetic wallet')); await settleNavigation();
@@ -499,7 +504,7 @@ describe('isolated App feature integration', () => {
     const connected = session(FULL_CLIENT_SCOPES);
     vi.mocked(uploadMedia).mockResolvedValue({ url: `https://opencaster.org/media/${'e'.repeat(64)}` });
     await start(); await connect(connected);
-    await click(container.querySelector('button[aria-label="Quote cast"]')!);
+    await openQuote();
     const quote = dialog('Quote cast');
     expect(connected.cast).not.toHaveBeenCalled();
     const field = quote.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -518,11 +523,11 @@ describe('isolated App feature integration', () => {
     const connected = session(FULL_CLIENT_SCOPES);
     vi.mocked(connected.cast).mockReturnValueOnce(receipt.promise);
     await start(); await connect(connected);
-    await click(container.querySelectorAll('main button[aria-label="Quote cast"]')[0]);
+    await openQuote(container.querySelector('main')!, 0);
     await click(button('Quote', dialog('Quote cast')));
     expect(connected.cast).toHaveBeenCalledOnce();
     await click(dialog('Quote cast').querySelector('button[aria-label="Close dialog"]')!);
-    await click(container.querySelectorAll('main button[aria-label="Quote cast"]')[1]);
+    await openQuote(container.querySelector('main')!, 1);
     const newer = dialog('Quote cast');
     expect(newer.textContent).toContain(secondCast.text);
     const field = newer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Write a quote"]')!;

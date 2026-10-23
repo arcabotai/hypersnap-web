@@ -72,4 +72,27 @@ describe('verified connected-user reactions', () => {
     expect(button('Unlike').disabled).toBe(false); expect(session.react).not.toHaveBeenCalled();
   });
 
+  it('offers Recast and Quote from one menu when quoting is available, keeping the same reaction write', async () => {
+    vi.mocked(getReactionStatus).mockResolvedValue(false);
+    const session = makeSession(); const onQuote = vi.fn();
+    await act(async () => root.render(<CastReactions cast={cast} session={session} onSignIn={vi.fn()} notify={vi.fn()} onQuote={onQuote} />));
+    expect(host.querySelector('[role="menu"]')).toBeNull(); expect(button('Recast').getAttribute('aria-haspopup')).toBe('menu');
+    await click(button('Recast')); expect(session.react).not.toHaveBeenCalled();
+    const recast = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Recast')!;
+    await click(recast);
+    expect(session.react).toHaveBeenCalledWith({ fid: 20, hash: cast.hash }, 'recast', false); expect(host.querySelector('[role="menu"]')).toBeNull();
+    expect(button('Undo recast').textContent).toBe('3');
+    await click(button('Undo recast')); await click(button('Quote cast'));
+    expect(onQuote).toHaveBeenCalledOnce(); expect(host.querySelector('[role="menu"]')).toBeNull();
+  });
+  it('closes the recast menu on Escape and keeps quoting available while reaction status is unknown', async () => {
+    vi.mocked(getReactionStatus).mockRejectedValue(new Error('Node unavailable'));
+    const onQuote = vi.fn();
+    await act(async () => root.render(<CastReactions cast={cast} session={makeSession()} onSignIn={vi.fn()} notify={vi.fn()} onQuote={onQuote} />));
+    await click(button('Recast'));
+    expect([...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Recast')!.disabled).toBe(true);
+    expect(button('Quote cast').disabled).toBe(false);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+    expect(host.querySelector('[role="menu"]')).toBeNull();
+  });
 });

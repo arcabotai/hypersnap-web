@@ -87,6 +87,28 @@
 .feature-channel-header__footer { justify-content: flex-start; }
 .feature-channel-header__footer > span { margin-right: auto; }
 
+// The right column lists active channels while it is visible, so the sidebar
+// shows the same list only when that column is hidden.
+.rail-channels { margin-top: 1.25rem; border: .0625rem solid var(--border); border-radius: 1rem; overflow: hidden; }
+.rail-channels h2 { margin: 0; padding: .9rem 1rem .4rem; font: 650 1rem Sen, sans-serif; }
+.rail-channels ul { list-style: none; margin: 0; padding: 0; }
+.rail-channels li > a { display: flex; align-items: center; gap: .65rem; padding: .6rem 1rem; color: var(--color-text-strong); }
+.rail-channels li > a:hover { background: var(--surface-1); text-decoration: none; }
+.rail-channels li img, .rail-channels .channel-mark { width: 2.1rem; height: 2.1rem; border-radius: .6rem; object-fit: cover; flex-shrink: 0; }
+.rail-channels .channel-mark { display: grid; place-items: center; background: var(--surface-2); color: var(--color-text-subtle); }
+.rail-channels li > a > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.rail-channels strong { font-size: .78rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-channels small { font-size: .65rem; color: var(--color-text-subtle); }
+.rail-channels__more { display: block; padding: .75rem 1rem; font-size: .72rem; }
+.rail-status { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin: 1.25rem 0 0; font-size: .65rem; color: var(--color-text-subtle); }
+.rail-status a { margin-left: auto; color: var(--color-text-subtle); }
+@media (min-width: 1031px) { .sidebar-explore { display: none; } }
+
+// Recast opens a small Recast / Quote menu.
+.recast-control { position: relative; display: inline-flex; }
+.recast-menu { position: absolute; top: calc(100% + .25rem); left: 0; z-index: 6; display: flex; flex-direction: column; min-width: 9.5rem; padding: .3rem; border: .0625rem solid var(--surface-4); border-radius: .75rem; background: var(--surface-0); box-shadow: 0 .6rem 1.6rem rgb(0 0 0 / .35); }
+.recast-menu .button { justify-content: flex-start; gap: .6rem; min-height: 2.5rem; padding: .5rem .7rem; font-size: .78rem; color: var(--color-text-strong); }
+
 @media (min-width: 1031px) { .sidebar__bottom .sidebar-signin { display: none; } }
 @media (max-width: 700px) {
   .page-header { gap: .7rem; padding: .75rem 1rem; min-height: 0; }
@@ -97,8 +119,6 @@
   .compact-tools .search { display: none; }
   .compact-tools .channel-chips { scrollbar-width: none; }
   .channel-chips .button { white-space: nowrap; flex-shrink: 0; }
-  // Quote stays available from the cast options menu; five actions fit one row.
-  .cast__actions .button[aria-label="Quote cast"] { display: none; }
   .feed-window label { position: absolute; width: .0625rem; height: .0625rem; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .guest-prompt { padding-inline: 1rem; }
   .home-composer { display: none; }
