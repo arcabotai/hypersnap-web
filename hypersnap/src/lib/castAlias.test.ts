@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getConversation, resolveCastAlias, type Cast, type CastAliasContinuation, type User } from './api';
+import { ApiError, getConversation, resolveCastAlias, type Cast, type CastAliasContinuation, type CastAliasResult, type User } from './api';
 
 const prefix = '0xcfd6d3c3';
 const hash = (index = 1) => `${prefix}${index.toString(16).padStart(32, '0')}`;
@@ -12,6 +12,11 @@ const ordered = (messages: ReturnType<typeof message>[], start = timestamp) => m
 const unrelatedHash = (n: number) => `0x${'a'.repeat(32)}${n.toString(16).padStart(8, '0')}`;
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 const input = { authorIdentifier: 'alice', hashPrefix: prefix };
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(deliver => { resolve = deliver; });
+  return { promise, resolve };
+}
 // Native legacy User/FID/CastMessage/timestamp/hash primary keys, not opaque
 // synthetic strings: reverse pagination is exclusive and lexicographic.
 function cursorFor(receipt: ReturnType<typeof message>, overrides: { root?: number; fid?: number; postfix?: number; length?: number } = {}) {
@@ -32,7 +37,8 @@ function install(pages: unknown[], hydration?: (url: URL, options: RequestInit) 
     if (url.pathname.endsWith('/castsByFid')) {
       expect(url.searchParams.get('fid')).toBe(String(author.fid)); expect(url.searchParams.get('pageSize')).toBe('250'); expect(url.searchParams.get('reverse')).toBe('true');
       if (!reads.length) throw new Error('Unexpected history page');
-      return json(reads.shift());
+      const page = reads.shift();
+      return page instanceof Promise ? page : json(page);
     }
     if (url.pathname.endsWith('/cast')) {
       expect(url.searchParams.get('fid')).toBe(String(author.fid));
@@ -50,6 +56,66 @@ describe('bounded author-scoped cast links', () => {
     const result = await resolveCastAlias({ ...input, authorIdentifier: 'ALICE', hashPrefix: prefix.toUpperCase() });
     expect(result).toEqual({ author, candidates: [cast()], complete: true, scanned: 4 }); expect(fetch).toHaveBeenCalledTimes(3);
     expect(fetch.mock.calls[0][0]).toContain('/by-username?username=alice');
+  });
+  it('publishes an exact hydrated match before later history settles and reuses it for the final result', async () => {
+    const receipt = historyReceipt(1, hash()); const laterPage = deferred<Response>();
+    const fetch = install([{ messages: [receipt], nextPageToken: cursorFor(receipt) }, laterPage.promise]);
+    const onProgress = vi.fn<(snapshot: CastAliasResult) => void>(); const settled = vi.fn();
+    const pending = resolveCastAlias({ ...input, onProgress }); void pending.then(settled, settled);
+    await vi.waitFor(() => expect(onProgress).toHaveBeenCalled());
+    expect(onProgress.mock.calls[0][0]).toEqual({ author, candidates: [cast()], complete: false, scanned: 1 });
+    await vi.waitFor(() => expect(fetch.mock.calls.filter(([path]) => path.includes('/castsByFid'))).toHaveLength(2));
+    expect(settled).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(1);
+    laterPage.resolve(json({ messages: [historyReceipt(2)] }));
+    expect(await pending).toEqual({ author, candidates: [cast()], complete: true, scanned: 2 });
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(1);
+    for (const [snapshot] of onProgress.mock.calls) {
+      expect(snapshot.complete).toBe(false); expect(snapshot.continuation).toBeUndefined();
+    }
+  });
+  it('hydrates only after history for callers without progress', async () => {
+    const receipt = historyReceipt(1, hash()); const laterPage = deferred<Response>();
+    const fetch = install([{ messages: [receipt], nextPageToken: cursorFor(receipt) }, laterPage.promise]);
+    const pending = resolveCastAlias(input);
+    await vi.waitFor(() => expect(fetch.mock.calls.filter(([path]) => path.includes('/castsByFid'))).toHaveLength(2));
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(0);
+    laterPage.resolve(json({ messages: [] }));
+    expect(await pending).toMatchObject({ candidates: [cast()], complete: true, scanned: 1 });
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(1);
+  });
+  it.each(['Zh==', token(2)])('validates the current page pagination before publishing its matching cast: %s', async nextPageToken => {
+    const receipt = historyReceipt(1, hash());
+    const fetch = install([{ messages: [receipt], nextPageToken }]); const onProgress = vi.fn();
+    await expect(resolveCastAlias({ ...input, onProgress })).rejects.toMatchObject({ code: 'invalid_pagination' });
+    expect(onProgress).not.toHaveBeenCalled(); expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('skips a removed or pruned progressive candidate without hydrating it again at completion', async () => {
+    const receipt = historyReceipt(1, hash()); const laterPage = deferred<Response>();
+    const fetch = install([{ messages: [receipt], nextPageToken: cursorFor(receipt) }, laterPage.promise], () => json({ code: 'cast_not_found' }, 404));
+    const onProgress = vi.fn<(snapshot: CastAliasResult) => void>();
+    const pending = resolveCastAlias({ ...input, onProgress });
+    await vi.waitFor(() => expect(fetch.mock.calls.filter(([path]) => path.includes('/castsByFid'))).toHaveLength(2));
+    for (const [snapshot] of onProgress.mock.calls) expect(snapshot.candidates).toEqual([]);
+    laterPage.resolve(json({ messages: [] }));
+    expect(await pending).toMatchObject({ candidates: [], complete: true, scanned: 1 });
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(1);
+  });
+  it('accumulates verified prefix collisions in progress and retains every choice in the final result', async () => {
+    const first = historyReceipt(1, hash()); const laterPage = deferred<Response>();
+    const fetch = install([{ messages: [first], nextPageToken: cursorFor(first) }, laterPage.promise]);
+    const onProgress = vi.fn<(snapshot: CastAliasResult) => void>();
+    const pending = resolveCastAlias({ ...input, onProgress });
+    await vi.waitFor(() => expect(onProgress).toHaveBeenCalled());
+    expect(onProgress.mock.calls[0][0].candidates).toEqual([cast()]);
+    laterPage.resolve(json({ messages: [historyReceipt(2, hash(2))] }));
+    expect(await pending).toEqual({ author, candidates: [cast(), cast(hash(2))], complete: true, scanned: 2 });
+    expect(onProgress.mock.calls.some(([snapshot]) => snapshot.scanned === 2 && snapshot.candidates.length === 2)).toBe(true);
+    expect(onProgress.mock.calls[0][0].candidates).toEqual([cast()]);
+    for (const [snapshot] of onProgress.mock.calls) {
+      expect(snapshot.complete).toBe(false); expect(snapshot.continuation).toBeUndefined();
+    }
+    expect(fetch.mock.calls.filter(([path]) => path.includes('/cast?'))).toHaveLength(2);
   });
   it('keeps all matching candidates instead of picking the first prefix collision', async () => {
     install([{ messages: ordered([message(), message(hash(2))]) }]);
@@ -194,6 +260,26 @@ describe('bounded author-scoped cast links', () => {
     const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2)); controller.abort(); deliver(json({ messages: [message()] }));
     await rejected; expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('suppresses progressive hydration that arrives after caller cancellation', async () => {
+    const hydration = deferred<Response>(); const receipt = historyReceipt(1, hash());
+    const fetch = install([{ messages: [receipt], nextPageToken: cursorFor(receipt) }], () => hydration.promise);
+    const onProgress = vi.fn(); const controller = new AbortController();
+    const pending = resolveCastAlias({ ...input, onProgress, signal: controller.signal });
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+    controller.abort(); hydration.resolve(json({ cast: cast() }));
+    await rejected; expect(onProgress).not.toHaveBeenCalled(); expect(fetch).toHaveBeenCalledTimes(3);
+  });
+  it('suppresses progressive hydration that arrives after the shared deadline', async () => {
+    vi.useFakeTimers(); const hydration = deferred<Response>(); const receipt = historyReceipt(1, hash());
+    const fetch = install([{ messages: [receipt], nextPageToken: cursorFor(receipt) }], () => hydration.promise);
+    const onProgress = vi.fn();
+    const pending = resolveCastAlias({ ...input, onProgress });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'timeout', status: 504 });
+    await vi.advanceTimersByTimeAsync(0); expect(fetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(25_001); hydration.resolve(json({ cast: cast() }));
+    await rejected; expect(onProgress).not.toHaveBeenCalled(); expect(fetch).toHaveBeenCalledTimes(3);
   });
   it('rejects a late direct missing-cast response after caller cancellation rather than returning an empty result', async () => {
     let deliver!: (value: Response) => void;

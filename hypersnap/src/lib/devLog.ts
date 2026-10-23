@@ -19,6 +19,20 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'short-cast-links-show-matches-earlier',
+    date: '2026-10-22',
+    title: 'Short cast links show matches sooner',
+    summary: 'Farcaster-style short links now display verified matching casts as soon as their history page is checked, while remaining checks continue in the background.',
+    changes: [
+      'Show a matching cast before the remaining pages in the current history batch finish, and put the cast above the lookup status.',
+      'Open a verified match immediately through its full cast link and cancel the remaining background lookup. Reuse its exact author/hash read within the same batch.',
+      'Keep ambiguous matches explicit: background checks do not claim that a partial match is unique, and older history still uses bounded searches because Hypersnap has no native short-hash index.',
+      'Preserve visible matches after a later lookup failure or cancellation, and ignore obsolete results after navigation. No new API service, wallet permission or persistent cast cache is added.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/99ceba1ef8e941b920b42b7b8e6d4e0fb2d17d5e',
+    tag: 'Reliability',
+  },
+  {
     id: 'persistent-node-support-link',
     date: '2026-10-22',
     title: 'Node support stays one click away',

@@ -109,7 +109,7 @@ describe('Opencaster destinations for supported social links', () => {
     await click(thread().querySelector(short ? '.cast__text a' : '.link-embed')!);
     expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
     if (short) {
-      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(thread().textContent).toContain('not yet known to be unique');
+      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(thread().textContent).toContain('Other matches may exist.');
       await click(thread().querySelector('.cast-link-lookup__candidate > a')!);
     } else expect(resolveCastAlias).not.toHaveBeenCalled();
     expect(location.pathname).toBe(`/cast/${target.hash}`); expect(thread().textContent).toContain(target.text);
@@ -238,7 +238,7 @@ describe('author-scoped compatible cast URLs', () => {
   it('shows a partial candidate immediately but opens it only after a full-link click', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
     await start(alias);
-    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain(otherCast.text); expect(thread().textContent).toContain('not yet known to be unique'); expect(getConversation).not.toHaveBeenCalled();
+    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain(otherCast.text); expect(thread().textContent).toContain('Other matches may exist.'); expect(getConversation).not.toHaveBeenCalled();
     await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="/cast/${otherCast.hash}"]`)!);
     expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
   });

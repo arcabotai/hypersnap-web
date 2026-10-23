@@ -11,7 +11,7 @@ const candidate = (suffix: string): Cast => ({ hash: `0x12345678${suffix.repeat(
 const one = candidate('a'); const two = candidate('b');
 const continuation: CastAliasContinuation = { authorIdentifier: 'alice', hashPrefix: '0x12345678', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [one.hash], scanned: 1000 };
 const result = (overrides: Partial<CastAliasResult> = {}): CastAliasResult => ({ author, candidates: [one], complete: false, scanned: 1000, continuation, ...overrides });
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 let container: HTMLDivElement; let root: Root; let props: CastLinkLookupProps;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.resetAllMocks();
@@ -24,9 +24,104 @@ async function click(value: Element) { await act(async () => value.dispatchEvent
 const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(value => value.textContent?.trim() === label)!;
 
 describe('bounded author-scoped cast link lookup UI', () => {
+  it('renders and opens a verified progress candidate before the history scan finishes, aborting before navigation', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('Checking for other matches');
+    expect(container.textContent).not.toContain('Finding the cast'); expect(props.onResolved).not.toHaveBeenCalled();
+    const link = container.querySelector<HTMLAnchorElement>('a')!; expect(link.getAttribute('href')).toBe(`/cast/${one.hash}`);
+    vi.mocked(props.onOpen).mockImplementation(() => expect(request.signal!.aborted).toBe(true));
+    await click(link); expect(props.onOpen).toHaveBeenCalledExactlyOnceWith(one);
+    await act(async () => {
+      request.onProgress!(result({ candidates: [two], continuation: undefined, scanned: 500 }));
+      pending.resolve(result({ complete: true, continuation: undefined }));
+    });
+    expect(container.textContent).toContain('Candidate a'); expect(container.textContent).not.toContain('Candidate b');
+    expect(props.onResolved).not.toHaveBeenCalled();
+  });
+  it('keeps modified clicks as canonical full-cast links without cancelling the current scan', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    const link = container.querySelector<HTMLAnchorElement>('a')!;
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+    await act(async () => link.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false); expect(link.getAttribute('href')).toBe(`/cast/${one.hash}`);
+    expect(request.signal!.aborted).toBe(false); expect(props.onOpen).not.toHaveBeenCalled(); expect(props.onResolved).not.toHaveBeenCalled();
+  });
+  it('waits for a final unique result before automatically resolving a progressive candidate', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    expect(props.onResolved).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(result({ complete: true, continuation: undefined })));
+    expect(props.onResolved).toHaveBeenCalledExactlyOnceWith(one);
+    await act(async () => request.onProgress!(result({ candidates: [two], continuation: undefined, scanned: 1250 })));
+    expect(container.textContent).not.toContain('Candidate b'); expect(button('Cancel lookup')).toBeUndefined();
+  });
+  it('keeps progressive candidates selectable when a later match makes the final result ambiguous', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    await act(async () => request.onProgress!(result({ candidates: [one, two], continuation: undefined, scanned: 500 })));
+    expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('Candidate b');
+    expect(props.onResolved).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(result({ candidates: [one, two], complete: true, continuation: undefined })));
+    expect(container.textContent).toContain('More than one cast matches'); expect(props.onResolved).not.toHaveBeenCalled();
+  });
+  it('ignores malformed progress snapshots without rendering or redirecting their candidates', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const progress = vi.mocked(resolveCastAlias).mock.calls[0][0].onProgress!;
+    await act(async () => {
+      progress(null as unknown as CastAliasResult);
+      progress(result({ complete: true, continuation: undefined }));
+      progress(result({ candidates: [{ ...one, author: { ...author, fid: 30 } }], continuation: undefined }));
+      progress(result({ candidates: [{ ...one, hash: `0x87654321${'a'.repeat(32)}` }], continuation: undefined }));
+      progress(result({ candidates: [{ ...one, hash: '0x12345678' }], continuation: undefined }));
+      progress(result({ continuation: undefined, scanned: Number.NaN }));
+      progress(result());
+    });
+    expect(container.textContent).not.toContain('Candidate a'); expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(props.onResolved).not.toHaveBeenCalled();
+    await act(async () => progress(result({ continuation: undefined, scanned: 250 })));
+    expect(container.textContent).toContain('Candidate a'); expect(props.onResolved).not.toHaveBeenCalled();
+  });
+  it('keeps a progressive candidate after cancellation and ignores late progress and completion', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    await click(button('Cancel lookup')); expect(request.signal!.aborted).toBe(true);
+    await act(async () => {
+      request.onProgress!(result({ candidates: [two], continuation: undefined, scanned: 500 }));
+      pending.resolve(result({ candidates: [two], complete: true, continuation: undefined }));
+    });
+    expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('Lookup cancelled');
+    expect(container.textContent).not.toContain('Candidate b'); expect(props.onResolved).not.toHaveBeenCalled();
+  });
+  it('keeps a progressive candidate when a later history page fails', async () => {
+    const pending = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValueOnce(pending.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    await act(async () => pending.reject(new Error('A later history page failed.')));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('A later history page failed');
+    expect(container.textContent).toContain('Candidate a'); expect(props.onResolved).not.toHaveBeenCalled();
+    await act(async () => request.onProgress!(result({ candidates: [two], continuation: undefined, scanned: 500 })));
+    expect(container.textContent).not.toContain('Candidate b'); expect(button('Cancel lookup')).toBeUndefined();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('A later history page failed');
+  });
+  it('ignores previous-route progress while a different author lookup is still pending', async () => {
+    const old = deferred<CastAliasResult>(); const current = deferred<CastAliasResult>();
+    vi.mocked(resolveCastAlias).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    await render(); const request = vi.mocked(resolveCastAlias).mock.calls[0][0];
+    await render({ authorIdentifier: 'bob' }); expect(request.signal!.aborted).toBe(true);
+    await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
+    expect(container.textContent).not.toContain('Candidate a'); expect(container.textContent).toContain('bob');
+    expect(props.onResolved).not.toHaveBeenCalled();
+  });
   it('shows a first-page match without assuming uniqueness, then resolves only after explicit continuation exhausts history', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValueOnce(result()).mockResolvedValueOnce(result({ complete: true, continuation: undefined, scanned: 1500 }));
-    await render(); expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('1,000 history messages'); expect(container.textContent).toContain('not yet known to be unique');
+    await render(); expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('You can open this cast now.'); expect(container.textContent).toContain('Other matches may exist.');
     expect(props.onResolved).not.toHaveBeenCalled(); await click(button('Search older casts'));
     expect(vi.mocked(resolveCastAlias).mock.calls[1][0].continuation).toBe(continuation); expect(props.onResolved).toHaveBeenCalledWith(one);
   });
