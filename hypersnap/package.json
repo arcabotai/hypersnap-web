@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "check:devlog": "node scripts/check-devlog.mjs",
+    "analytics:report": "node scripts/analytics-report.mjs",
     "verify": "yarn test && yarn build && yarn signer:build",
     "signer:build": "node scripts/build-signer.mjs",
     "signer:dev": "yarn signer:build && electron dist-signer/main.cjs",

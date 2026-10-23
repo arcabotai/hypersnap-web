@@ -14,6 +14,51 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('aggregate observability routing', () => {
+  it('handles first-party analytics with the normal security headers and no upstream request', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const writeDataPoint = vi.fn(); const assets = vi.fn();
+    const response = await handleRequest(new Request(`${BASE}/_analytics/events`, {
+      method: 'POST', headers: { Origin: BASE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: [{ kind: 'click', page: 'profile', name: 'profile-open' }] }),
+    }), { ...env, ANALYTICS: { writeDataPoint }, ASSETS: { fetch: assets } });
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self';");
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(writeDataPoint).toHaveBeenCalledTimes(1);
+    expect(writeDataPoint.mock.calls[0][0].blobs.slice(0, 3)).toEqual(['click', 'profile', 'profile-open']);
+    expect(fetch).not.toHaveBeenCalled(); expect(assets).not.toHaveBeenCalled();
+  });
+
+  it('keeps request metrics to route families and status classes, including failed gateway reads', async () => {
+    const writeDataPoint = vi.fn();
+    const analytics = { ...env, ANALYTICS: { writeDataPoint } };
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('isolated failure')));
+    await handleRequest(new Request(`${BASE}/profile/12345?private=not-telemetry`), analytics);
+    await handleRequest(new Request(`${BASE}/api/v1/info`), analytics);
+    await handleRequest(new Request(`${BASE}/assets/opaque-build.js`), analytics);
+    expect(writeDataPoint.mock.calls.map(([point]) => point.blobs.slice(0, 3))).toEqual([
+      ['request', 'page', '2xx'], ['request', 'api', '5xx'], ['request', 'asset', '2xx'],
+    ]);
+    expect(JSON.stringify(writeDataPoint.mock.calls)).not.toMatch(/12345|private|not-telemetry|opaque-build|isolated failure|https:/);
+    await handleRequest(new Request(`${LEGACY}/profile/12345`), analytics);
+    await handleRequest(new Request(`${BASE}/`, { headers: { DNT: '1' } }), analytics);
+    expect(writeDataPoint).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not let a failed analytics binding change a successful page response', async () => {
+    const response = await handleRequest(new Request(BASE), { ...env, ANALYTICS: { writeDataPoint: () => { throw new Error('offline'); } } });
+    expect(response.status).toBe(200);
+  });
+
+  it.each(['/alice.eth', '/profile/alice.base.eth', '/alice.json'])('counts dotted profile routes as pages: %s', async path => {
+    const writeDataPoint = vi.fn();
+    await handleRequest(new Request(`${BASE}${path}`), { ...env, ANALYTICS: { writeDataPoint } });
+    expect(writeDataPoint.mock.calls[0][0].blobs.slice(0, 3)).toEqual(['request', 'page', '2xx']);
+  });
+});
+
 describe('the Opencaster domain migration', () => {
   it.each([
     '/', '/profile/1234?tab=likes', '/gandhionchain/0xcfd6d3c3?utm_source=share',
