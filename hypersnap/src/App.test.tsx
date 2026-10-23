@@ -31,7 +31,7 @@ function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason:
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); wallet.next = null; wallet.signal = null; wallet.initialFid = undefined; wallet.onConnect = null;
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); vi.clearAllMocks(); localStorage.clear(); localStorage.setItem('opencaster.explore', '1'); sessionStorage.clear(); wallet.next = null; wallet.signal = null; wallet.initialFid = undefined; wallet.onConnect = null;
   history.replaceState(null, '', '/');
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
@@ -57,27 +57,40 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 async function start(path = '/') { history.replaceState(null, '', path); await act(async () => root.render(<App />)); }
 async function click(element: Element) { await act(async () => { element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); }
 function button(label: string, scope: ParentNode = container) { return [...scope.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!; }
+// Quote lives in each cast's Recast menu, as on X and Farcaster.
+async function openQuote(scope: ParentNode = container, index = 0) {
+  const trigger = scope.querySelectorAll('button.recast-trigger')[index];
+  await click(trigger); await click(trigger.parentElement!.querySelector('[role="menu"] button[aria-label="Quote cast"]')!);
+}
+function thread() { return container.querySelector<HTMLElement>('section.conversation-page') ?? undefined!; }
 function dialog(title: string) { return [...container.querySelectorAll<HTMLDialogElement>('dialog')].find(item => item.querySelector('h2')?.textContent === title)!; }
 async function settleNavigation() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); }
-async function connect(value: WalletSession) { wallet.next = value; await click(button('Connect Farcaster')); await click(button('Approve synthetic wallet')); await settleNavigation(); }
+async function connect(value: WalletSession) { wallet.next = value; await click(button('Sign in')); await click(button('Approve synthetic wallet')); await settleNavigation(); }
 async function traverse(direction: 'back' | 'forward') {
   await act(async () => { history[direction](); await new Promise(resolve => setTimeout(resolve, 10)); });
 }
 
 describe('homepage node support placement', () => {
-  it('appears after the introduction and before the composer, without blocking browsing', async () => {
+  it('appears under the home tabs and before the composer and feed, without blocking browsing', async () => {
     vi.mocked(getFeed).mockResolvedValue({ casts: [otherCast], next: {} });
     await start();
     const banner = container.querySelector('.node-support')!;
-    const welcome = container.querySelector('.welcome')!;
-    const composer = container.querySelector('main .composer')!;
-    expect(banner).not.toBeNull(); expect(composer).not.toBeNull();
-    expect(welcome.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(banner.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const tabs = container.querySelector('nav[aria-label="Home feeds"]')!;
+    const feed = container.querySelector('main .feed')!;
+    expect(banner).not.toBeNull(); expect(feed).not.toBeNull();
+    expect(tabs.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner.compareDocumentPosition(feed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.querySelector('main .feed')?.textContent).toContain(otherCast.text);
     await click(banner.querySelector('button')!);
     expect(container.querySelector('.node-support')).toBeNull();
     expect(container.querySelector('main .feed')?.textContent).toContain(otherCast.text);
+  });
+
+  it('stays above the home composer for a signed-in account', async () => {
+    await start(); await connect(session(FULL_CLIENT_SCOPES));
+    const banner = container.querySelector('.node-support')!; const composer = container.querySelector('main .home-composer .composer')!;
+    expect(banner).not.toBeNull(); expect(composer).not.toBeNull();
+    expect(banner.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it.each(['/following', '/settings', '/devlog', '/profile/20'])('does not interrupt %s', async path => {
@@ -92,27 +105,27 @@ describe('Opencaster destinations for supported social links', () => {
     const source: Cast = { ...ownCast, hash: '0xffe80d84ab6bc9203c084001647e9520e21ac646', text: short ? 'Source with https://farcaster.xyz/gandhionchain/0xcbbe7828' : 'Source with a separate cast embed', embeds: short ? [] : [{ url: `https://farcaster.xyz/~/conversations/${target.hash}` }] };
     vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === source.hash ? source : target, replies: [] }));
     vi.mocked(resolveCastAlias).mockResolvedValue({ author: target.author, candidates: [target], complete: false, scanned: 1000, continuation: { authorIdentifier: 'gandhionchain', hashPrefix: '0xcbbe7828', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [target.hash], scanned: 1000 } });
-    await start(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(dialog('Conversation').textContent).toContain(source.text);
-    await click(dialog('Conversation').querySelector(short ? '.cast__text a' : '.link-embed')!);
+    await start(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(thread().textContent).toContain(source.text);
+    await click(thread().querySelector(short ? '.cast__text a' : '.link-embed')!);
     expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
     if (short) {
-      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(dialog('Conversation').textContent).toContain('not yet known to be unique');
-      await click(dialog('Conversation').querySelector('.cast-link-lookup__candidate > a')!);
+      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(thread().textContent).toContain('not yet known to be unique');
+      await click(thread().querySelector('.cast-link-lookup__candidate > a')!);
     } else expect(resolveCastAlias).not.toHaveBeenCalled();
-    expect(location.pathname).toBe(`/cast/${target.hash}`); expect(dialog('Conversation').textContent).toContain(target.text);
+    expect(location.pathname).toBe(`/cast/${target.hash}`); expect(thread().textContent).toContain(target.text);
     expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
-    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(dialog('Conversation').textContent).toContain(source.text);
-    await traverse('forward'); expect(location.pathname).toBe(`/cast/${target.hash}`); expect(dialog('Conversation').textContent).toContain(target.text);
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation();
-    expect(location.pathname).toBe(`/cast/${source.hash}`); expect(dialog('Conversation').textContent).toContain(source.text);
+    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(history.state).toBeNull(); expect(thread().textContent).toContain(source.text);
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${target.hash}`); expect(thread().textContent).toContain(target.text);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
+    expect(location.pathname).toBe(`/cast/${source.hash}`); expect(thread().textContent).toContain(source.text);
   });
 
   it('returns from a social profile link to the direct source conversation on Back', async () => {
     const source: Cast = { ...ownCast, text: 'Meet https://farcaster.xyz/person30' };
     vi.mocked(getConversation).mockResolvedValue({ cast: source, replies: [] });
-    await start(`/cast/${source.hash}`); await click(dialog('Conversation').querySelector('.cast__text a')!);
-    expect(location.pathname).toBe('/profile/person30'); expect(dialog('Conversation')).toBeUndefined();
-    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(dialog('Conversation').textContent).toContain(source.text);
+    await start(`/cast/${source.hash}`); await click(thread().querySelector('.cast__text a')!);
+    expect(location.pathname).toBe('/profile/person30'); expect(thread()).toBeUndefined();
+    await traverse('back'); expect(location.pathname).toBe(`/cast/${source.hash}`); expect(thread().textContent).toContain(source.text);
   });
 
   it('opens cast-text profiles locally and preserves the feed background through cast-link Back and Forward', async () => {
@@ -128,10 +141,10 @@ describe('Opencaster destinations for supported social links', () => {
     expect(castLink.target).toBe(''); await click(castLink);
     expect(resolveCastAlias).toHaveBeenCalledWith(expect.objectContaining({ authorIdentifier: 'person20', hashPrefix: '0xbbbbbbbb' }));
     expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
-    expect(dialog('Conversation').textContent).toContain(otherCast.text);
-    await traverse('back'); expect(location.pathname).toBe('/'); expect(dialog('Conversation')).toBeUndefined();
-    await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(dialog('Conversation').textContent).toContain(otherCast.text);
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname).toBe('/');
+    expect(thread().textContent).toContain(otherCast.text);
+    await traverse('back'); expect(location.pathname).toBe('/'); expect(thread()).toBeUndefined();
+    await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(thread().textContent).toContain(otherCast.text);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation(); expect(location.pathname).toBe('/');
   });
 
   it('labels supported URL embeds with their Opencaster destination and opens profile and cast embeds locally', async () => {
@@ -163,7 +176,7 @@ describe('Opencaster destinations for supported social links', () => {
     await traverse('back'); expect(location.pathname + location.search).toBe('/profile/10?tab=replies');
     const link = container.querySelector<HTMLAnchorElement>('.profile__bio a[href="/person20/0xbbbbbbbb"]')!; expect(link.target).toBe('');
     await click(link); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state.quorumBackground).toBe('/profile/10?tab=replies');
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe('/profile/10?tab=replies');
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe('/profile/10?tab=replies');
   });
 
   it('keeps real local hrefs for native modified clicks without intercepting them or starting lookups', async () => {
@@ -213,20 +226,20 @@ describe('author-scoped compatible cast URLs', () => {
   it.each([alias, `/person20/${otherCast.hash}`])('verifies %s before replacing the same history entry with its canonical conversation', async path => {
     const resolving = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValue(resolving.promise);
     const historyLength = history.length; await start(path);
-    expect(dialog('Conversation')).toBeDefined(); expect(dialog('Conversation').textContent).toContain('Checking this cast link'); expect(getConversation).not.toHaveBeenCalled();
+    expect(thread()).toBeDefined(); expect(thread().textContent).toContain('Checking this cast link'); expect(getConversation).not.toHaveBeenCalled();
     expect(resolveCastAlias).toHaveBeenCalledWith(expect.objectContaining({ authorIdentifier: 'person20', hashPrefix: path.split('/')[2], signal: expect.any(AbortSignal) }));
     await act(async () => resolving.resolve(result()));
     expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.length).toBe(historyLength); expect(history.state).toBeNull();
-    expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal)); expect(dialog('Conversation').textContent).toContain(otherCast.text);
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!);
-    expect(location.pathname).toBe('/'); expect(history.length).toBe(historyLength); expect(dialog('Conversation')).toBeUndefined();
+    expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal)); expect(thread().textContent).toContain(otherCast.text);
+    await click(thread().querySelector('button[aria-label="Back"]')!);
+    expect(location.pathname).toBe('/'); expect(history.length).toBe(historyLength); expect(thread()).toBeUndefined();
   });
 
   it('shows a partial candidate immediately but opens it only after a full-link click', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
     await start(alias);
-    expect(location.pathname).toBe(alias); expect(dialog('Conversation').textContent).toContain(otherCast.text); expect(dialog('Conversation').textContent).toContain('not yet known to be unique'); expect(getConversation).not.toHaveBeenCalled();
-    await click(dialog('Conversation').querySelector(`.cast-link-lookup__candidate > a[href="/cast/${otherCast.hash}"]`)!);
+    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain(otherCast.text); expect(thread().textContent).toContain('not yet known to be unique'); expect(getConversation).not.toHaveBeenCalled();
+    await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="/cast/${otherCast.hash}"]`)!);
     expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
   });
 
@@ -234,11 +247,11 @@ describe('author-scoped compatible cast URLs', () => {
     const second = { ...cast('c', 20, 'Another matching full cast'), hash: `0xbbbbbbbb${'c'.repeat(32)}` };
     vi.mocked(resolveCastAlias).mockResolvedValueOnce(result({ complete: false, continuation, scanned: 1000 })).mockResolvedValueOnce(result({ candidates: [otherCast, second], complete: true, scanned: 2000 }));
     vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === second.hash ? second : otherCast, replies: [] }));
-    await start(alias); await click(button('Search older casts', dialog('Conversation')));
+    await start(alias); await click(button('Search older casts', thread()));
     expect(vi.mocked(resolveCastAlias).mock.calls[1][0].continuation).toBe(continuation); expect(location.pathname).toBe(alias); expect(getConversation).not.toHaveBeenCalled();
-    expect(dialog('Conversation').textContent).toContain('More than one cast matches'); expect(dialog('Conversation').querySelectorAll('.cast-link-lookup__candidate')).toHaveLength(2);
-    await click(dialog('Conversation').querySelector(`.cast-link-lookup__candidate > a[href="/cast/${second.hash}"]`)!);
-    expect(location.pathname).toBe(`/cast/${second.hash}`); expect(dialog('Conversation').textContent).toContain(second.text);
+    expect(thread().textContent).toContain('More than one cast matches'); expect(thread().querySelectorAll('.cast-link-lookup__candidate')).toHaveLength(2);
+    await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="/cast/${second.hash}"]`)!);
+    expect(location.pathname).toBe(`/cast/${second.hash}`); expect(thread().textContent).toContain(second.text);
   });
 
   it('aborts an alias on Back, ignores its late result and preserves the search background through Forward and canonicalization', async () => {
@@ -246,28 +259,28 @@ describe('author-scoped compatible cast URLs', () => {
     const background = '/search?q=cosmos&type=users'; history.replaceState(null, '', background); history.pushState({ quorumThread: true, quorumBackground: background }, '', alias);
     await act(async () => root.render(<App />)); const signal = vi.mocked(resolveCastAlias).mock.calls[0][0].signal!;
     await traverse('back'); expect(signal.aborted).toBe(true); expect(location.pathname + location.search).toBe(background);
-    await act(async () => pendingAlias.resolve(result())); expect(location.pathname + location.search).toBe(background); expect(dialog('Conversation')).toBeUndefined();
+    await act(async () => pendingAlias.resolve(result())); expect(location.pathname + location.search).toBe(background); expect(thread()).toBeUndefined();
     await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(history.state).toEqual({ quorumThread: true, quorumBackground: background });
     await traverse('back'); expect(location.pathname + location.search).toBe(background);
     await traverse('forward'); expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(resolveCastAlias).toHaveBeenCalledTimes(2);
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe(background);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation(); expect(location.pathname + location.search).toBe(background);
   });
 
   it('returns from sign-in to a still-unresolved alias and its explicit quote without changing account permissions', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
-    await start(alias); await click(dialog('Conversation').querySelector('button[aria-label="Quote cast"]')!); await click(button('Quote', dialog('Quote cast')));
+    await start(alias); await openQuote(thread()); await click(button('Quote', dialog('Quote cast')));
     expect(location.pathname).toBe('/connect'); expect(history.state.quorumConnectReturn).toBe(alias);
     expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
     await click(button('Cancel synthetic wallet')); await settleNavigation();
     expect(location.pathname).toBe(alias); expect(dialog('Quote cast')).toBeDefined(); expect(dialog('Quote cast').textContent).toContain(otherCast.text);
-    await click(dialog('Quote cast').querySelector('button[aria-label="Close dialog"]')!); await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!);
+    await click(dialog('Quote cast').querySelector('button[aria-label="Close dialog"]')!); await click(thread().querySelector('button[aria-label="Back"]')!);
     expect(location.pathname).toBe('/'); expect(wallet.next).toBeNull();
   });
 
   it('keeps an exhausted no-match result on its original link with an honest node-history message', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ candidates: [], complete: true, scanned: 250 }));
     await start(alias);
-    expect(location.pathname).toBe(alias); expect(dialog('Conversation').textContent).toContain('No cast matched this link in the available history returned by this Hypersnap node.'); expect(getConversation).not.toHaveBeenCalled();
+    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain('No cast matched this link in the available history returned by this Hypersnap node.'); expect(getConversation).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -276,8 +289,8 @@ describe('author-scoped compatible cast URLs', () => {
   ])('rejects a conversation response whose $label differs from the verified alias cast', async ({ returned }) => {
     vi.mocked(getConversation).mockResolvedValue({ cast: returned, replies: [] });
     await start(alias);
-    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(dialog('Conversation').querySelector('[role="alert"]')?.textContent).toContain('different conversation');
-    expect(dialog('Conversation').textContent).not.toContain(returned.text); expect(dialog('Conversation').querySelector('.composer')).toBeNull();
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(thread().querySelector('[role="alert"]')?.textContent).toContain('different conversation');
+    expect(thread().textContent).not.toContain(returned.text); expect(thread().querySelector('.composer')).toBeNull();
   });
 });
 
@@ -285,7 +298,6 @@ describe('isolated App feature integration', () => {
   it.each([
     ['sidebar', '.sidebar__bottom button.full-width'],
     ['join card', '.join-card button'],
-    ['composer', '.composer__submit button'],
     ['mobile account', 'nav[aria-label="Mobile navigation"] button[aria-label="Account"]'],
     ['header', '.mobile-connect'],
   ])('opens the dedicated sign-in page from the %s without a modal or background feed', async (_label, selector) => {
@@ -336,12 +348,12 @@ describe('isolated App feature integration', () => {
 
   it('returns from sign-in to the original conversation and closes it back to its search background', async () => {
     await start('/search?q=cosmos'); await click(container.querySelector('main a[aria-label="Open cast"]')!);
-    await click(button('Reply', dialog('Conversation')));
+    await click(button('Sign in', thread()));
     expect(location.pathname).toBe('/connect'); expect(container.querySelector('dialog')).toBeNull();
     await click(button('Cancel synthetic wallet')); await settleNavigation();
-    expect(dialog('Conversation')).toBeDefined(); expect(location.pathname).toBe(`/cast/${otherCast.hash}`);
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!); await settleNavigation();
-    expect(location.pathname + location.search).toBe('/search?q=cosmos'); expect(dialog('Conversation')).toBeUndefined();
+    expect(thread()).toBeDefined(); expect(location.pathname).toBe(`/cast/${otherCast.hash}`);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
+    expect(location.pathname + location.search).toBe('/search?q=cosmos'); expect(thread()).toBeUndefined();
   });
 
   it('rejects a different account during a scoped upgrade and preserves the original device on cancel', async () => {
@@ -403,12 +415,12 @@ describe('isolated App feature integration', () => {
     await start('/search?q=cosmos');
     await click(container.querySelector('main a[aria-label="Open cast"]')!);
     expect(history.state.quorumBackground).toBe('/search?q=cosmos');
-    expect(dialog('Conversation')).toBeDefined();
+    expect(thread()).toBeDefined();
     await traverse('back');
     expect(location.pathname + location.search).toBe('/search?q=cosmos');
-    expect(dialog('Conversation')).toBeUndefined();
-    await traverse('forward'); expect(dialog('Conversation')).toBeDefined();
-    await click(dialog('Conversation').querySelector('button[aria-label="Close dialog"]')!);
+    expect(thread()).toBeUndefined();
+    await traverse('forward'); expect(thread()).toBeDefined();
+    await click(thread().querySelector('button[aria-label="Back"]')!);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
     expect(location.pathname + location.search).toBe('/search?q=cosmos');
   });
@@ -492,7 +504,7 @@ describe('isolated App feature integration', () => {
     const connected = session(FULL_CLIENT_SCOPES);
     vi.mocked(uploadMedia).mockResolvedValue({ url: `https://opencaster.org/media/${'e'.repeat(64)}` });
     await start(); await connect(connected);
-    await click(container.querySelector('button[aria-label="Quote cast"]')!);
+    await openQuote();
     const quote = dialog('Quote cast');
     expect(connected.cast).not.toHaveBeenCalled();
     const field = quote.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -511,11 +523,11 @@ describe('isolated App feature integration', () => {
     const connected = session(FULL_CLIENT_SCOPES);
     vi.mocked(connected.cast).mockReturnValueOnce(receipt.promise);
     await start(); await connect(connected);
-    await click(container.querySelectorAll('main button[aria-label="Quote cast"]')[0]);
+    await openQuote(container.querySelector('main')!, 0);
     await click(button('Quote', dialog('Quote cast')));
     expect(connected.cast).toHaveBeenCalledOnce();
     await click(dialog('Quote cast').querySelector('button[aria-label="Close dialog"]')!);
-    await click(container.querySelectorAll('main button[aria-label="Quote cast"]')[1]);
+    await openQuote(container.querySelector('main')!, 1);
     const newer = dialog('Quote cast');
     expect(newer.textContent).toContain(secondCast.text);
     const field = newer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Write a quote"]')!;
@@ -627,4 +639,105 @@ describe('isolated App feature integration', () => {
     expect(location.pathname).toBe('/profile/20'); expect(dialog('Participants · /Isolated channel')).toBeUndefined();
   });
 
+});
+
+describe('feed-first social layout', () => {
+  it('shows guests a connect prompt instead of a home composer and collapses long casts until expanded', async () => {
+    const long = cast('d', 20, `Opening line\n${'A long isolated paragraph. '.repeat(30)}`);
+    vi.mocked(getFeed).mockResolvedValue({ casts: [long], next: {} });
+    await start();
+    const main = container.querySelector('main')!;
+    expect(main.querySelector('textarea[aria-label="Write a cast"]')).toBeNull(); expect(main.querySelector('.welcome')).toBeNull(); expect(button('Cast', container.querySelector('.sidebar')!)).toBeUndefined();
+    expect(main.querySelector('.cast__text--clamp')).not.toBeNull();
+    await click(button('Show more', main));
+    expect(main.querySelector('.cast__text--clamp')).toBeNull(); expect(button('Show more', main)).toBeUndefined();
+  });
+
+  it('opens a new-cast dialog from the sidebar and the mobile action, then closes it after publishing', async () => {
+    await start(); const connected = session(FULL_CLIENT_SCOPES); await connect(connected);
+    expect(container.querySelector('main textarea[aria-label="Write a cast"]')).not.toBeNull();
+    await click(container.querySelector('button[aria-label="Write a new cast"]')!);
+    const compose = dialog('New cast'); expect(compose.querySelector('textarea[aria-label="Write a cast"]')).not.toBeNull();
+    await click(compose.querySelector('button[aria-label="Close dialog"]')!); expect(dialog('New cast')).toBeUndefined();
+    await click(button('Cast', container.querySelector('.sidebar')!));
+    const field = dialog('New cast').querySelector<HTMLTextAreaElement>('textarea')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    await act(async () => { setter.call(field, 'A cast from the dialog'); field.dispatchEvent(new Event('input', { bubbles: true })); });
+    await click(button('Cast', dialog('New cast')));
+    expect(connected.cast).toHaveBeenCalledWith('A cast from the dialog', undefined, expect.anything());
+    await settleNavigation(); expect(dialog('New cast')).toBeUndefined();
+  });
+});
+
+describe('signed-out landing and cast pages', () => {
+  it('greets a new visitor at the root with sign-in, then remembers the choice to explore', async () => {
+    localStorage.removeItem('opencaster.explore');
+    await start();
+    expect(container.querySelector('.landing h1')?.textContent).toBe('Your people, your identity, your voice.'); expect(container.querySelector('.app')).toBeNull();
+    await click(button('Explore without an account'));
+    expect(container.querySelector('.landing')).toBeNull(); expect(container.querySelector('main .feed-heading')).not.toBeNull();
+    expect(localStorage.getItem('opencaster.explore')).toBe('1');
+  });
+
+  it('opens the sign-in page from the landing and keeps shared links readable without it', async () => {
+    localStorage.removeItem('opencaster.explore');
+    await start(); await click(button('Sign in'));
+    expect(location.pathname).toBe('/connect'); expect(container.querySelector('[data-testid="synthetic-wallet"]')).not.toBeNull();
+    await act(async () => root.unmount()); root = createRoot(container);
+    await start(`/cast/${otherCast.hash}`);
+    expect(container.querySelector('.landing')).toBeNull(); expect(thread()?.textContent).toContain(otherCast.text);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/'); expect(container.querySelector('.landing')).toBeNull();
+  });
+
+  it('opens a cast page from the card body, leaving links and actions alone, and returns to the feed', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ casts: [otherCast], next: {} });
+    await start();
+    const card = container.querySelector<HTMLElement>('main .feed .cast')!;
+    await click(card.querySelector('button[aria-label="Bookmark cast"]')!); expect(location.pathname).toBe('/');
+    await click(card.querySelector('.cast__text')!);
+    expect(location.pathname).toBe(`/cast/${otherCast.hash}`); expect(container.querySelector('dialog')).toBeNull();
+    expect(thread().textContent).toContain(otherCast.text); expect(container.querySelector<HTMLElement>('.main-base')!.hidden).toBe(true);
+    expect(thread().textContent).toContain('Sign in to reply.');
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/'); expect(thread()).toBeUndefined(); expect(container.querySelector<HTMLElement>('.main-base')!.hidden).toBe(false);
+  });
+});
+
+describe('profile and channel headers', () => {
+  it('puts profile actions beside the avatar and returns to Discover from the header arrow', async () => {
+    await start('/profile/20'); await settleNavigation();
+    const actions = container.querySelector('.profile .profile-top .profile-actions')!;
+    expect(button('Share profile', actions)).toBeTruthy(); expect(actions.querySelectorAll('button')).toHaveLength(2);
+    expect(container.querySelector('.profile-public-link')).toBeNull(); expect(container.querySelector('main .feed-heading')).toBeNull();
+    await click(container.querySelector('header button[aria-label="Back to discover"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/');
+  });
+
+  it('keeps channel participants in the channel header and goes back to the directory', async () => {
+    const channel = { id: 'isolated', name: 'Isolated channel', url: 'https://example.com/channel/alias', parent_url: 'https://example.com/real-namespace/isolated', member_count: 2 };
+    vi.mocked(getChannel).mockResolvedValue(channel);
+    await start('/channel/isolated'); await settleNavigation();
+    expect(button('View participants', container.querySelector('.feature-channel-header')!)).toBeTruthy(); expect(container.querySelector('.channel-detail-actions')).toBeNull();
+    await click(container.querySelector('header button[aria-label="Back to channels"]')!); await settleNavigation();
+    expect(location.pathname).toBe('/channels');
+  });
+});
+
+describe('persistent node support links', () => {
+  const supportLinks = (scope: ParentNode) => [...scope.querySelectorAll<HTMLAnchorElement>('a')].filter(link => link.textContent === 'Support the node');
+  it('keeps a Support the node link in the sidebar and right column after the banner is dismissed', async () => {
+    await start(); await click(container.querySelector('button[aria-label="Dismiss node support banner"]')!);
+    expect(container.querySelector('.node-support')).toBeNull();
+    for (const scope of [container.querySelector('.sidebar-links')!, container.querySelector('.rightbar footer')!]) {
+      const [link] = supportLinks(scope);
+      expect(link.href).toBe('https://buy.stripe.com/cNi00i9dY4kD3JP7G57ss05'); expect(link.target).toBe('_blank');
+      expect(link.rel.split(' ')).toEqual(expect.arrayContaining(['noopener', 'noreferrer'])); expect(link.getAttribute('aria-label')).toContain('opens Stripe');
+    }
+  });
+
+  it('offers the same link in the signed-out landing footer', async () => {
+    localStorage.removeItem('opencaster.explore'); await start();
+    expect(supportLinks(container.querySelector('.landing__footer')!).map(link => link.href)).toEqual(['https://buy.stripe.com/cNi00i9dY4kD3JP7G57ss05']);
+  });
 });

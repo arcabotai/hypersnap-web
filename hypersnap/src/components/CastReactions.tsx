@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconHeart, IconRepeat } from '@tabler/icons-react';
+import { IconHeart, IconQuote, IconRepeat } from '@tabler/icons-react';
 import { ApiError, getReactionStatus, type Cast } from '../lib/api';
 import type { WalletSession } from '../lib/auth';
 import { Button } from './ui';
@@ -28,12 +28,14 @@ function boundedRead<T>(read: () => Promise<T>, signal: AbortSignal): Promise<T>
 const short = (value: number) => Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(Math.max(0, value));
 type State = { liked: boolean; recasted: boolean; likes: number; recasts: number };
 
-export default function CastReactions({ cast, session, onSignIn, notify }: { cast: Cast; session: WalletSession | null; onSignIn(): void; notify(text: string): void }) {
+export default function CastReactions({ cast, session, onSignIn, notify, onQuote }: { cast: Cast; session: WalletSession | null; onSignIn(): void; notify(text: string): void; onQuote?(): void }) {
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [retry, setRetry] = useState(0);
   const [pending, setPending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLSpanElement>(null);
   const activeSession = useRef(session); activeSession.current = session;
   const sessionFid = session?.fid;
   const sessionPublicKey = session?.publicKey;
@@ -54,6 +56,15 @@ export default function CastReactions({ cast, session, onSignIn, notify }: { cas
     }
     return () => controller.abort();
   }, [sessionFid, sessionPublicKey, cast.hash, cast.author.fid, cast.reactions?.likes_count, cast.reactions?.recasts_count, retry]);
+  // With a quote action, the recast button opens a Recast / Quote menu as on
+  // X and Farcaster. Reaction state and its safeguards are unchanged.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: Event) => { if (!menu.current?.contains(event.target as Node)) setMenuOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape); };
+  }, [menuOpen]);
   async function react(type: 'like' | 'recast') {
     if (!session) { onSignIn(); return; }
     if (!state || submitting.current) return;
@@ -75,7 +86,13 @@ export default function CastReactions({ cast, session, onSignIn, notify }: { cas
     } finally { submitting.current = false; if (mounted.current && activeSession.current?.publicKey === key) setPending(false); }
   }
   return <>
-    <Button variant="ghost" aria-label={state?.recasted ? 'Undo recast' : 'Recast'} aria-pressed={state?.recasted ?? false} disabled={pending || Boolean(session && !state)} className={state?.recasted ? 'is-recasted' : ''} onClick={() => void react('recast')}><IconRepeat size={18} /><span>{short(state?.recasts ?? cast.reactions?.recasts_count ?? 0)}</span></Button>
+        {onQuote ? <span className="recast-control" ref={menu}>
+      <Button variant="ghost" aria-label={state?.recasted ? 'Undo recast' : 'Recast'} aria-haspopup="menu" aria-expanded={menuOpen} className={`recast-trigger ${state?.recasted ? 'is-recasted' : ''}`} onClick={() => setMenuOpen(open => !open)}><IconRepeat size={18} /><span>{short(state?.recasts ?? cast.reactions?.recasts_count ?? 0)}</span></Button>
+      {menuOpen && <span className="recast-menu" role="menu">
+        <Button variant="ghost" role="menuitem" disabled={pending || Boolean(session && !state)} onClick={() => { setMenuOpen(false); void react('recast'); }}><IconRepeat size={17} aria-hidden="true" />{state?.recasted ? 'Undo recast' : 'Recast'}</Button>
+        <Button variant="ghost" role="menuitem" aria-label="Quote cast" onClick={() => { setMenuOpen(false); onQuote(); }}><IconQuote size={17} aria-hidden="true" />Quote</Button>
+      </span>}
+    </span> : <Button variant="ghost" aria-label={state?.recasted ? 'Undo recast' : 'Recast'} aria-pressed={state?.recasted ?? false} disabled={pending || Boolean(session && !state)} className={state?.recasted ? 'is-recasted' : ''} onClick={() => void react('recast')}><IconRepeat size={18} /><span>{short(state?.recasts ?? cast.reactions?.recasts_count ?? 0)}</span></Button>}
     <Button variant="ghost" aria-label={state?.liked ? 'Unlike' : 'Like'} aria-pressed={state?.liked ?? false} disabled={pending || Boolean(session && !state)} className={state?.liked ? 'is-liked' : ''} onClick={() => void react('like')}><IconHeart size={18} fill={state?.liked ? 'currentColor' : 'none'} /><span>{short(state?.likes ?? cast.reactions?.likes_count ?? 0)}</span></Button>
     {session && !state && <span className="reaction-status" role="status">{error ? <>{uncertain && 'Waiting for confirmation. '}<Button variant="ghost" onClick={() => setRetry(value => value + 1)}>{uncertain ? 'Check pending reaction' : 'Retry reaction status'}</Button></> : 'Checking reactions…'}</span>}
   </>;

@@ -195,7 +195,7 @@ export function NotificationsView({ fid, onConnect, onProfile, onCast, isActivit
   }
   return <section className="feature-view" aria-label="Notifications">
     <div className="feature-intro"><span className="feature-kicker"><IconBell size={15} aria-hidden="true" />YOUR CONVERSATIONS</span><h2>Recent activity.</h2><p>Replies, mentions, reactions and follows reported by Hypersnap. This recent activity view may not include every event.</p></div>
-    {!fid ? <div className="feature-empty"><IconBell size={32} aria-hidden="true" /><h3>Keep up with your conversations.</h3><p>Connect your wallet to view activity for your profile.</p><Button onClick={onConnect}>Connect wallet</Button></div> : <>
+    {!fid ? <div className="feature-empty"><IconBell size={32} aria-hidden="true" /><h3>Keep up with your conversations.</h3><p>Sign in to view activity for your profile.</p><Button onClick={onConnect}>Sign in</Button></div> : <>
       <div className="feature-toolbar"><span>{!result.loaded ? result.error ? 'Activity unavailable' : 'Checking recent activity…' : unread ? `${unread} unread in this view` : 'You’re up to date in this view'}</span><div><Button variant="ghost" disabled={result.busy} onClick={result.refresh} aria-label="Refresh activity"><IconRefresh size={17} aria-hidden="true" /></Button><Button variant="secondary" disabled={!unread} onClick={markRead}>Mark read</Button></div></div>
       <nav className="feature-tabs feature-activity-filters" aria-label="Activity filters">{activityFilters.map(value => <Button key={value} variant="ghost" className={filter === value ? 'feature-tab--active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{activityFilterLabels[value]}</Button>)}</nav>
       <p className="feature-note feature-note--inset">Filters apply to loaded activity. Mark read applies across filters. Read status stays on this browser.</p>
@@ -260,11 +260,11 @@ export function ChannelsView({ onChannel, savedChannels = [], onToggleSave }: { 
   </section>;
 }
 
-export function ChannelHeader({ channel, onCompose, saved = false, onToggleSave }: { channel: Channel; onCompose?(): void; saved?: boolean; onToggleSave?(channel: Channel): void }) {
+export function ChannelHeader({ channel, onCompose, saved = false, onToggleSave, onPeople }: { channel: Channel; onCompose?(): void; saved?: boolean; onToggleSave?(channel: Channel): void; onPeople?(): void }) {
   return <div className="feature-channel-header">
     <div className="feature-channel-header__identity">{safeImage(channel.image_url) ? <img src={channel.image_url} alt="" width={64} height={64} referrerPolicy="no-referrer" /> : <span className="feature-channel-mark" aria-hidden="true"><IconHash size={30} /></span>}<div><span className="feature-kicker">HYPERSNAP CHANNEL</span><h2>{channel.name || channel.id}</h2><p>/{channel.id}</p></div></div>
     {channel.description && <p className="feature-channel-header__description">{channel.description}</p>}
-    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}{onToggleSave && <Button variant="secondary" aria-pressed={saved} onClick={() => onToggleSave(channel)}><IconBookmark size={16} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />{saved ? 'Saved on this browser' : 'Save channel'}</Button>}</div>
+    <div className="feature-channel-header__footer">{typeof channel.member_count === 'number' && <span><IconUsers size={15} aria-hidden="true" />{channel.member_count.toLocaleString()} participants</span>}{onPeople && <Button variant="secondary" onClick={onPeople}><IconUsers size={16} aria-hidden="true" />View participants</Button>}{onCompose && <Button variant="secondary" onClick={onCompose}><IconMessageCircle size={16} aria-hidden="true" />Cast in this channel</Button>}{onToggleSave && <Button variant="secondary" aria-pressed={saved} onClick={() => onToggleSave(channel)}><IconBookmark size={16} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />{saved ? 'Saved on this browser' : 'Save channel'}</Button>}</div>
     {onToggleSave && <p className="feature-note">Saved channels are local shortcuts on this browser.</p>}
   </div>;
 }
