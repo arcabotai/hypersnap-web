@@ -1,3 +1,52 @@
+# Aggregate usage and health statistics · 2026-10-23
+
+Implementation `e0f3d50bd85cd7647a0e2f84ffca6a2ece22851d` adds first-party
+Cloudflare Analytics Engine events and a private local HTML report. Release note
+`70d3f1b86bfe256ad2d354462100c48795661b99` links that implementation and its
+recorded author date. The release guard passed against actual pre-release source
+`14550a1de59ac81c4c3a86ee9005d4e36b57c49f`, Worker
+`86e3aa7b-2fa5-415a-ad63-0992c9bd529d`.
+
+The final standalone `yarn verify` passed **1,010 tests across 48 files**, browser
+and Worker typechecks, production browser build and offline signer build.
+Changed source passed ESLint with zero errors or warnings. Existing Rollup
+WalletConnect annotation and large-chunk advisories remain. New isolated checks
+cover finite telemetry fields, excluded content and credentials, production
+gating, StrictMode, queue/batch/document limits, failures, privacy signals and
+opt-out, performance samples, origin checks, streamed body limits, request
+families, safe storage outages, sampled report queries, escaping and credential
+handling. They use synthetic fixtures; no real account write was tested.
+
+Production assets were built freshly from `70d3f1b8` into
+`/private/tmp/opencaster-analytics-production-20261023-70d3f1b8`. All **25 files**
+were inspected for source maps, test markers, symlinks and duplicate names;
+the public WalletConnect configuration, event endpoint and milestone source link
+were confirmed. Asset hashes matched after deployment. The exact directory was
+deployed as Worker **`a779d8f2-05e4-4ab6-b2f8-f90c3601e3b9`**, with the Analytics
+Engine dataset and dedicated rate-limit binding alongside the existing media
+bindings. Raw invocation logs, automatic traces and third-party analytics scripts
+remain disabled. No signed companion binary was replaced.
+
+A local Worker preview required a temporary Yarn-installed Wrangler 4.152.0:
+the globally installed 4.141.0 runtime predates the project's existing
+2026-10-19 compatibility date. No dependency or compatibility date was changed.
+Chrome's privacy signal correctly disabled browser analytics in the preview.
+An isolated in-app browser on the live site showed analytics enabled, the new
+milestone among **33 updates**, and working public Settings/Channels navigation.
+Authenticated Cloudflare queries confirmed a document visit, page views and the
+distinct `nav-settings` and `nav-channels` actions. Data becomes queryable after
+an ingestion delay; an immediate snapshot initially contained no browser events.
+All ten report queries executed successfully against the live dataset.
+
+Public checks returned 200 for the website and `/api/v1/info`, with node version
+**0.13.5**, the restrictive self-only script CSP, and the existing legacy-domain
+308 redirect preserving path/query. These checks used public reads/navigation
+only: no wallet connection, signature, upload or social write. Browser actions
+measure selected UI clicks rather than confirmed protocol operations. Counts
+begin with this release, include reloads and can be sampled or affected by bots,
+privacy controls, unsupported metrics and delivery loss; they are not unique
+people or complete session histories. See [OBSERVABILITY.md](OBSERVABILITY.md).
+
 # Zero-warning source checks · 2026-10-22
 
 **All 262 source lint warnings are resolved; new warnings fail verification.** Implementation `eaebd8c3cabdbbba458f91bdd79d0464c1b5600f` cleans both applications without changing ESLint rules, source exclusions or dependency versions. The full audit covered 1,087 files with **zero errors and zero warnings**; the final gate runs `eslint . --max-warnings 0`. Historical warning counts below describe their recorded runs.
