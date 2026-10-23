@@ -1,3 +1,54 @@
+# Conversation layout and cast links deployed · 2026-10-23
+
+Release source `d45a12a4952650bc98faf77c6266192e5a676402` is deployed as Worker
+**`0266933d-7e4e-4e49-97d1-0935b5656b03`**, at 100% traffic (deployment
+`620e9c68-d6ad-454a-9a95-76d3d6a1efae`). Implementation
+`8f013714fc0aef3471d1e00b3a5eb1baf25ee940` and its recorded Git author date
+are linked by the new `farcaster-shaped-conversations-and-cast-links` milestone.
+The release branch is `codex/farcaster-conversation-links`.
+
+Authenticated deployment metadata and matching public assets established the
+actual pre-release source as `70d3f1b86bfe256ad2d354462100c48795661b99`, Worker
+`a779d8f2-05e4-4ab6-b2f8-f90c3601e3b9`. Against that base,
+`yarn check:devlog` passed for six shipped files and the new milestone. The full
+standalone `yarn verify` passed **1,035 tests across 50 files**, browser/Worker
+typechecks and build, and offline signer typecheck/build. The clean temporary
+frozen installation described below was reused; checksums confirmed matching
+source, assets, manifest and lockfile. No dependency versions were changed.
+
+Fresh production assets were built in
+`/private/tmp/opencaster-conversation-production-20261023-d45a12a4-JECziZ`.
+All **25 files** were inspected, with no maps, symlinks, duplicate filenames or
+test/preview wrappers; imports resolved and the new milestone/source link were
+present. The production public WalletConnect ID matches the prior live assets.
+Wrangler 4.152.0 dry-run passed with unchanged media, quota, analytics and asset
+bindings. That exact inspected directory was deployed, and its local hashes
+remained unchanged afterwards. No signed companion binary was replaced.
+
+All 24 directly served non-HTML files match their uploaded hashes. Cloudflare
+redirects `/index.html` to `/` and inserts one 367-byte Cloudflare Insights beacon
+script into the document. Removing that single tag makes served HTML byte-identical
+to uploaded `index.html`; the unchanged enforced CSP retains `script-src 'self'`
+and excludes the beacon origin from both script and connection permissions.
+The injected external script is therefore blocked. Raw HTML is not reported as
+hash-identical; no Cloudflare analytics settings or CSP were changed.
+
+Live browser checks confirmed the updated conversation, quoted image/mention
+preview and canonical short share URL for the supplied cast. Desktop (1440px)
+and mobile (390px) layouts rendered without document overflow or visible alerts.
+The live dev log shows **34 updates**, including the new implementation link.
+A direct short-link load found the correct candidate; **Open full cast** opened
+its exact author/hash conversation. Incomplete history searches still require
+that explicit choice. `/api/v1/info` returned 200, and the legacy host returned
+308 while preserving the author/hash path and query. These were public reads
+and navigation only: no wallet connection, signing, upload or social write.
+
+Release receipts are in `/tmp/opencaster-conversation-release-base.json`,
+`/tmp/opencaster-conversation-release-manifest.json` and
+`/tmp/opencaster-conversation-public-verification.json`. Live screenshots:
+`/tmp/opencaster-conversation-live-desktop-20261023.jpg` and
+`/tmp/opencaster-conversation-live-mobile-20261023.jpg`.
+
 # Conversation layout and author/hash links · 2026-10-23
 
 The final standalone `yarn verify` passed **1,035 tests across 50 files**, browser
