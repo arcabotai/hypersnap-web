@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'short-cast-links-open-conversations-directly',
+    date: '2026-10-23',
+    title: 'Short links go straight to the cast',
+    summary: 'Open a verified matching cast and its replies immediately, without an intermediate preview or confirmation click.',
+    changes: [
+      'Replace the ordinary Open full cast preview and lookup-status panel with the actual conversation as soon as one available matching cast is verified.',
+      'Keep the author and short-hash URL, load replies normally, and preserve Back and Forward navigation.',
+      'Cancel the remaining lookup before opening the conversation and ignore late results, so older history does not delay an available match.',
+      'Show a chooser only when a returned page or batch contains multiple verified matches. Explicit choices still use exact author/full-hash links.',
+      'Keep exact author/hash validation, lookup deadlines, bounded history reads and retry/no-match states. Hypersnap has no short-hash index: this selects the first available verified match and does not establish uniqueness across unsearched history; absent or deleted casts remain unavailable.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/ae746a653d3cb54a37024652ce1058da2220df50',
+    tag: 'Reliability',
+  },
+  {
     id: 'farcaster-shaped-conversations-and-cast-links',
     date: '2026-10-23',
     title: 'Familiar conversations and cast links',
