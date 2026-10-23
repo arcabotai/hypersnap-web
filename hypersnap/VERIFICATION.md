@@ -1,3 +1,47 @@
+# Direct short links deployed · 2026-10-23
+
+Follow-up source `9e5d119ba0c37bee9eb9b409885169b1486c897e` is deployed as Worker
+**`7841cf8e-0b5f-442b-9435-f914bfba2741`** at 100% traffic, deployment
+`3894007c-f652-4ccf-876e-a9c7849ef40a`. Its milestone links implementation
+`ae746a653d3cb54a37024652ce1058da2220df50` with the recorded author date.
+Authenticated deployment metadata confirmed the actual pre-release base
+`d45a12a4952650bc98faf77c6266192e5a676402`, Worker
+`0266933d-7e4e-4e49-97d1-0935b5656b03`.
+
+The dev-log guard passed against that base for **three shipped runtime files**
+and the new `short-cast-links-open-conversations-directly` milestone. Final
+`yarn verify` passed **1,037 tests across 50 files**, browser/Worker checks and
+production build, plus offline signer typecheck/build. Frozen dependencies,
+lockfile and public wallet configuration were preserved. Existing build
+advisories remain; no signed companion binary was replaced.
+
+Fresh production assets were built in
+`/private/tmp/opencaster-direct-cast-production-20261023-9e5d119b-ad631B`.
+All **25 files** were inspected, including HTML/import references, public assets,
+licenses, the milestone/source link and absence of test wrappers, maps and
+symlinks. The ordinary success-wall messages are absent from application
+bundles. Wrangler 4.152.0 dry-run passed with unchanged bindings, and that exact
+inspected directory was deployed. All local hashes remained unchanged, and
+all 24 non-HTML public asset hashes match. Served HTML differs only by the same
+367-byte Cloudflare beacon injection described below; removing that tag gives
+exact equality. The unchanged enforced self-only script CSP blocks the tag.
+
+A fresh live document at `/yes2crypto.eth/0x8d336914` opened the featured cast
+and replies automatically, at the unchanged short URL, without a confirmation
+click or lookup panel. Desktop (1440px) and mobile (390px) checks showed no
+horizontal document overflow or visible alerts. The dev log shows **35 updates**
+and the correct implementation link; browser Back restored the cast. API health
+returned 200, and the legacy host returned 308 preserving the short path and
+query. These checks used public reads/navigation only, with no account, wallet,
+signing, upload or social action.
+
+Receipts: `/tmp/opencaster-direct-cast-release-base.json`,
+`/tmp/opencaster-direct-cast-release-manifest.json`,
+`/tmp/opencaster-direct-cast-deployment-receipt.json` and
+`/tmp/opencaster-direct-cast-public-verification.json`. Live screenshots:
+`/tmp/opencaster-direct-cast-live-desktop-20261023.jpg` and
+`/tmp/opencaster-direct-cast-live-mobile-20261023.jpg`.
+
 # Direct short-link opening · 2026-10-23
 
 The standalone `yarn verify` passed **1,037 tests across 50 files**, browser/Worker
