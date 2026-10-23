@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'aggregate-cloudflare-usage-and-health',
+    date: '2026-10-23',
+    title: 'Understanding how Opencaster is used',
+    summary: 'Aggregate Cloudflare statistics help improve navigation and reliability, with browser privacy controls and no visitor identifiers or session recordings.',
+    changes: [
+      'Count document visits, page categories and selected interface actions, with broad traffic-source, country, device and browser categories. Visits include reloads and do not identify unique people.',
+      'Measure available LCP, CLS and TTFB page-performance samples, coarse browser error counts, and gateway request status and response time. Clicks describe interface actions, not confirmed social writes.',
+      'Send only fixed labels and numeric measurements to a bounded first-party collector. Exclude search text, account identifiers, cast content, wallet data, signing material, raw URLs and error details; add no tracking cookies or visitor IDs.',
+      'Respect Do Not Track and Global Privacy Control, and add a browser usage opt-out under Settings → Privacy & analytics. Ordinary hosting and aggregate operational request measurements continue.',
+      'Provide a private local statistics report backed by Cloudflare Analytics Engine. Collection starts with this release; coverage depends on privacy choices, browser support and delivery, and counts can be sampled or affected by automated traffic.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/e0f3d50bd85cd7647a0e2f84ffca6a2ece22851d',
+    tag: 'Reliability',
+  },
+  {
     id: 'short-cast-links-show-matches-earlier',
     date: '2026-10-22',
     title: 'Short cast links show matches sooner',
