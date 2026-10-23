@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { IconArrowUpRight, IconRefresh } from '@tabler/icons-react';
 import { resolveCastAlias, type Cast, type CastAliasContinuation, type CastAliasResult } from '../lib/api';
-import { castPath } from '../lib/navigation';
+import { castPermalink } from '../lib/navigation';
 import { Button } from './ui';
 import '../cast-link.scss';
 
@@ -75,7 +75,7 @@ export default function CastLinkLookup({ authorIdentifier, hashPrefix, renderCas
   const hasCandidates = Boolean(result?.candidates.length);
   return <section className="cast-link-lookup" aria-label="Resolve cast link">
     {!hasCandidates && <div className="cast-link-lookup__intro"><h3>Finding the cast</h3><p>Looking for a cast from <strong>{authorIdentifier}</strong> on Hypersnap.</p></div>}
-    {result?.candidates.map(cast => <section className="cast-link-lookup__candidate" key={cast.hash.toLowerCase()} aria-label="Matching cast candidate">{renderCast(cast)}<a className="button button--secondary" href={castPath(cast.hash)} onClick={event => open(event, cast)}>Open full cast <IconArrowUpRight size={16} /></a></section>)}
+    {result?.candidates.map(cast => <section className="cast-link-lookup__candidate" key={cast.hash.toLowerCase()} aria-label="Matching cast candidate">{renderCast(cast)}<a className="button button--secondary" href={castPermalink(cast, { fullHash: true })} onClick={event => open(event, cast)}>Open full cast <IconArrowUpRight size={16} /></a></section>)}
     {result && <div className="cast-link-lookup__status" role="status">
       {!result.complete && hasCandidates && <p>{result.candidates.length === 1 ? 'You can open this cast now.' : 'Choose a cast to open.'} Other matches may exist.</p>}
       {result.complete && result.candidates.length > 1 && <p>More than one cast matches this short link. Choose a full cast to open.</p>}

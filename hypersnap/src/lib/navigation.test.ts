@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { castPath, castAliasPath, parseRoute, profilePath, publicUrl, routePath, searchPath, parseLocalPath, connectReturnPath } from './navigation';
+import { castPath, castAliasPath, castPermalink, matchesCastRoute, parseRoute, profilePath, publicUrl, routePath, searchPath, parseLocalPath, connectReturnPath } from './navigation';
 
 const hash = '0x0123456789abcdef0123456789abcdef01234567';
 const route = (pathname: string, search = '') => parseRoute({ pathname, search });
@@ -166,6 +166,37 @@ describe('adaptive author-scoped routes', () => {
 });
 
 describe('share link construction', () => {
+  it('shares known casts with the same author and eight-hex-character path as Farcaster', () => {
+    const cast = { hash: '0x8D336914CDDB739974EB0C2E820FA744054C9439', author: { fid: 20, username: 'YES2CRYPTO.ETH' } };
+    expect(castPermalink(cast)).toBe('/yes2crypto.eth/0x8d336914');
+    expect(publicUrl(castPermalink(cast))).toBe('https://opencaster.org/yes2crypto.eth/0x8d336914');
+    expect(parseLocalPath(castPermalink(cast))).toEqual({ kind: 'cast-alias', authorIdentifier: 'yes2crypto.eth', hashPrefix: '0x8d336914' });
+    expect(castPermalink(cast, { fullHash: true })).toBe(`/yes2crypto.eth/${cast.hash.toLowerCase()}`);
+  });
+
+  it('uses the actual FID when a username cannot safely identify the cast author', () => {
+    for (const username of ['', '1234', 'cast', 'CONNECT', 'alice/bob', '@alice', '.', '..', 'alice%2fbob', 'a'.repeat(129)]) {
+      expect(castPermalink({ hash, author: { fid: 20, username } })).toBe('/20/0x01234567');
+    }
+    expect(() => castPermalink({ hash: '0x01234567', author: { fid: 20, username: 'alice' } })).toThrow('Invalid cast hash');
+    for (const fid of [0, -1, 1.2, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => castPermalink({ hash, author: { fid, username: 'alice' } })).toThrow('Invalid cast author FID');
+    }
+  });
+
+  it('matches known routes only when their full hash or scoped author and prefix agree', () => {
+    const cast = { hash, author: { fid: 20, username: 'alice' } };
+    expect(matchesCastRoute(route(`/cast/${hash}`), cast)).toBe(true);
+    expect(matchesCastRoute(route('/alice/0x01234567'), cast)).toBe(true);
+    expect(matchesCastRoute(route('/20/0x01234567'), cast)).toBe(true);
+    expect(matchesCastRoute(route(`/alice/${hash}`), cast)).toBe(true);
+    for (const path of ['/bob/0x01234567', '/21/0x01234567', '/alice/0x12345678', `/cast/0x${'a'.repeat(40)}`, '/profile/alice']) {
+      expect(matchesCastRoute(parseLocalPath(path), cast), path).toBe(false);
+    }
+    expect(matchesCastRoute(route('/alice/0x01234567'), { ...cast, hash: '0x01234567' })).toBe(false);
+    expect(matchesCastRoute(route('/alice/0x01234567'), { ...cast, author: { fid: 0, username: 'alice' } })).toBe(false);
+  });
+
   it('produces stable FID and full normalized hash paths at the canonical domain', () => {
     expect(profilePath(1234)).toBe('/profile/1234');
     expect(castPath(hash.slice(2).toUpperCase())).toBe(`/cast/${hash}`);

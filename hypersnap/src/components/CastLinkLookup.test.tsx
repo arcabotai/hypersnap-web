@@ -30,7 +30,7 @@ describe('bounded author-scoped cast link lookup UI', () => {
     await act(async () => request.onProgress!(result({ continuation: undefined, scanned: 250 })));
     expect(container.textContent).toContain('Candidate a'); expect(container.textContent).toContain('Checking for other matches');
     expect(container.textContent).not.toContain('Finding the cast'); expect(props.onResolved).not.toHaveBeenCalled();
-    const link = container.querySelector<HTMLAnchorElement>('a')!; expect(link.getAttribute('href')).toBe(`/cast/${one.hash}`);
+    const link = container.querySelector<HTMLAnchorElement>('a')!; expect(link.getAttribute('href')).toBe(`/alice/${one.hash}`);
     vi.mocked(props.onOpen).mockImplementation(() => expect(request.signal!.aborted).toBe(true));
     await click(link); expect(props.onOpen).toHaveBeenCalledExactlyOnceWith(one);
     await act(async () => {
@@ -47,7 +47,7 @@ describe('bounded author-scoped cast link lookup UI', () => {
     const link = container.querySelector<HTMLAnchorElement>('a')!;
     const event = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
     await act(async () => link.dispatchEvent(event));
-    expect(event.defaultPrevented).toBe(false); expect(link.getAttribute('href')).toBe(`/cast/${one.hash}`);
+    expect(event.defaultPrevented).toBe(false); expect(link.getAttribute('href')).toBe(`/alice/${one.hash}`);
     expect(request.signal!.aborted).toBe(false); expect(props.onOpen).not.toHaveBeenCalled(); expect(props.onResolved).not.toHaveBeenCalled();
   });
   it('waits for a final unique result before automatically resolving a progressive candidate', async () => {
@@ -128,7 +128,7 @@ describe('bounded author-scoped cast link lookup UI', () => {
   it('requires an explicit full-cast choice when complete history contains multiple matching hashes', async () => {
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ candidates: [one, two], complete: true, continuation: undefined }));
     await render(); expect(container.textContent).toContain('More than one cast matches'); expect(props.onResolved).not.toHaveBeenCalled();
-    const links = [...container.querySelectorAll<HTMLAnchorElement>('a')]; expect(links.map(link => link.getAttribute('href'))).toEqual([`/cast/${one.hash}`, `/cast/${two.hash}`]);
+    const links = [...container.querySelectorAll<HTMLAnchorElement>('a')]; expect(links.map(link => link.getAttribute('href'))).toEqual([`/alice/${one.hash}`, `/alice/${two.hash}`]);
     await click(links[1]); expect(props.onOpen).toHaveBeenCalledWith(two); expect(props.onResolved).not.toHaveBeenCalled();
   });
   it('cancels a continuation, retries exactly that attempt and ignores its older late completion', async () => {

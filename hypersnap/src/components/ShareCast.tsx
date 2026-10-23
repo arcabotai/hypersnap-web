@@ -1,12 +1,12 @@
 import { useId, useRef, useState } from 'react';
 import { IconArrowUpRight, IconCopy, IconShare } from '@tabler/icons-react';
 import type { Cast } from '../lib/api';
-import { castPath, publicUrl } from '../lib/navigation';
+import { castPermalink, publicUrl } from '../lib/navigation';
 import { Button, Input, Modal } from './ui';
 
 /** Shares public cast content only. This dialog never reads account or wallet state. */
-export function ShareCastDialog({ cast, onClose, notify }: { cast: Cast; onClose(): void; notify(text: string): void }) {
-  const link = publicUrl(castPath(cast.hash));
+export function ShareCastDialog({ cast, path = castPermalink(cast), onClose, notify }: { cast: Cast; path?: string; onClose(): void; notify(text: string): void }) {
+  const link = publicUrl(path);
   const inputId = useId();
   const statusId = useId();
   const input = useRef<HTMLInputElement>(null);

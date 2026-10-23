@@ -158,7 +158,40 @@ export function castPath(hash: string): string {
   return `/cast/${normalized}`;
 }
 
-/** An unresolved author-scoped alias is never a canonical cast share link. */
+type CastLinkTarget = { hash: string; author: { fid: number; username: string } };
+
+/** Farcaster's public path shape, using a known cast's author and hash prefix.
+ * The full-hash form is available when a choice must identify one exact cast.
+ * Resolving a short link still requires the author's available Hypersnap history.
+ */
+export function castPermalink(cast: CastLinkTarget, { fullHash = false }: { fullHash?: boolean } = {}): string {
+  const hash = normalizedHash(cast.hash);
+  if (!hash) throw new Error('Invalid cast hash.');
+  const { fid, username } = cast.author;
+  if (!Number.isSafeInteger(fid) || fid <= 0) throw new Error('Invalid cast author FID.');
+  // Numeric names would be parsed as FIDs; missing, reserved or malformed
+  // usernames therefore use the actual FID instead of changing author scope.
+  const identifier = typeof username === 'string' && validAliasIdentifier(username) && !/^\d+$/.test(username) ? username : String(fid);
+  return castAliasPath(identifier, fullHash ? hash : hash.slice(0, 10));
+}
+
+/** Match only a cast already known in this tab; this never resolves an author.
+ * Alternate names verified by the API must retain their separately verified
+ * alias-to-cast association rather than inferring identity from a hash prefix.
+ */
+export function matchesCastRoute(route: AppRoute, cast: CastLinkTarget): boolean {
+  const hash = normalizedHash(cast.hash);
+  if (!hash || !Number.isSafeInteger(cast.author?.fid) || cast.author.fid <= 0) return false;
+  if (route.kind === 'cast') return normalizedHash(route.hash) === hash;
+  if (route.kind !== 'cast-alias' || !validAliasIdentifier(route.authorIdentifier)) return false;
+  const prefix = normalizedAliasHash(route.hashPrefix);
+  if (!prefix || !hash.startsWith(prefix)) return false;
+  return /^\d+$/.test(route.authorIdentifier)
+    ? Number(route.authorIdentifier) === cast.author.fid
+    : typeof cast.author.username === 'string' && route.authorIdentifier.toLowerCase() === cast.author.username.toLowerCase();
+}
+
+/** Validated author-scoped paths also support exact full-hash disambiguation. */
 export function castAliasPath(authorIdentifier: string, hashPrefix: string): string {
   const normalized = normalizedAliasHash(hashPrefix);
   if (!validAliasIdentifier(authorIdentifier) || !normalized) throw new Error('Invalid author-scoped cast path.');

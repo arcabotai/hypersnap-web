@@ -1,3 +1,36 @@
+# Conversation layout and author/hash links · 2026-10-23
+
+The final standalone `yarn verify` passed **1,035 tests across 50 files**, browser
+and Worker typechecks, production browser build and offline signer typecheck/build.
+The checkout's installed `picomatch` source was an unreadable iCloud placeholder,
+so verification used a fresh frozen Yarn install in
+`/tmp/opencaster-ui-check-itPz2YeK/hypersnap`. Checksums confirmed that the tested
+source, public assets, manifest and lockfile matched this checkout. Dependencies
+and lockfiles were not changed. Existing Rollup annotation and large-chunk
+advisories remain. The retained Quorum application was outside this change.
+
+Synthetic regressions cover generated author/8-hex links, share dialogs, legacy
+full-hash navigation, verified alias preservation, Back/Forward caching, prefix
+collisions and exact candidate choices, stale conversation reads, featured cast
+layout, standalone attachment URLs, UTF-8 mentions and quoted image previews.
+Known prefix collisions retain exact author/full-hash links when sharing.
+
+The in-app browser checked the supplied public cast at desktop (1440 pixels)
+and mobile (390 pixels) widths through the local preview. The legacy full-hash
+path became `/yes2crypto.eth/0x8d336914` after hydration; the share dialog used
+that same short path on the canonical origin. Media and quoted thumbnails
+rendered, with no horizontal document overflow or visible error alerts. A fresh
+short-link load found the cast and required **Open full cast** because the
+bounded history search was incomplete; selecting it opened its exact author/hash
+conversation. Hypersnap's history/index limits and collision choices remain.
+
+These are local changes, **not a production release**. No account connection,
+signature, upload, social write, commit, branch push or deployment was performed.
+A release still requires the implementation commit and a new dev-log milestone
+linked to it, followed by the documented release checks. Screenshots:
+`/tmp/opencaster-conversation-desktop-20261023.jpg` and
+`/tmp/opencaster-conversation-mobile-20261023.jpg`.
+
 # Aggregate usage and health statistics · 2026-10-23
 
 Implementation `e0f3d50bd85cd7647a0e2f84ffca6a2ece22851d` adds first-party

@@ -3,7 +3,7 @@ import { IconSettings, IconKeyboard, IconBell, IconDots, IconTrash, IconArrowDow
 import { Button, Input, Modal } from './components/ui';
 import { getFeed, getProfileFeed, hasImageEmbed, getCast, getChannels, getChannel, getUser, getInfo, getConversation, type Channel, type Cast, type User, type ConversationNode } from './lib/api';
 import type { WalletSession } from './lib/auth';
-import { castPath, parseRoute, parseLocalPath, routePath, searchPath, profilePath, publicUrl, connectReturnPath, type AppRoute } from './lib/navigation';
+import { castPath, castPermalink, parseRoute, parseLocalPath, routePath, searchPath, profilePath, publicUrl, connectReturnPath, type AppRoute } from './lib/navigation';
 import { ShareCastDialog } from './components/ShareCast';
 import FollowButton from './components/FollowButton';
 import FollowListDialog from './components/FollowListDialog';
@@ -88,12 +88,33 @@ function LinkedText({ text, onNavigate }: { text: string; onNavigate(path: strin
   })}</>;
 }
 function CastText({ cast, onProfile, onNavigate }: { cast: Cast; onProfile(user: User): void; onNavigate(path: string): void }) {
-  return <>{renderMentionSegments(cast).map((segment, index) => segment.kind === 'text' ? <LinkedText key={index} text={segment.text} onNavigate={onNavigate} /> : <a data-analytics="profile-open" className="cast-mention" key={index} href={profilePath(segment.user.fid)} onClick={event => localClick(event, () => onProfile(segment.user))}>@{segment.user.username || segment.user.fid}</a>)}</>;
+  const attachmentUrls = cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2).map(embed => safeUrl(embed.url)) ?? [];
+  const segments = renderMentionSegments(cast);
+  const hiddenLines = new Set(segments.map(segment => segment.kind === 'text' ? segment.text : '\ufffc').join('').split('\n').flatMap((line, index) => {
+    const url = safeUrl(line.trim());
+    return url && attachmentUrls.includes(url) ? [index] : [];
+  }));
+  let lineIndex = 0;
+  return <>{segments.map((segment, index) => {
+    if (segment.kind !== 'text') return <a data-analytics="profile-open" className="cast-mention" key={index} href={profilePath(segment.user.fid)} onClick={event => localClick(event, () => onProfile(segment.user))}>@{segment.user.username || segment.user.fid}</a>;
+    // Remove only standalone attachment lines, after resolving protocol mention
+    // positions. Inline authored links and the original cast text stay intact.
+    let text = segment.text.split('\n').map((line, part, lines) => {
+      const hidden = hiddenLines.has(lineIndex);
+      if (part === lines.length - 1) return hidden ? '' : line;
+      lineIndex += 1;
+      return hidden ? '' : `${line}\n`;
+    }).join('');
+    if (hiddenLines.size && index === 0) text = text.trimStart();
+    if (hiddenLines.size && index === segments.length - 1) text = text.trimEnd();
+    return <LinkedText key={index} text={text} onNavigate={onNavigate} />;
+  })}</>;
 }
 function LinkEmbed({ url, onNavigate }: { url: string; onNavigate(path: string): void }) {
   const localPath = quorumSocialPath(url);
   const destination = localPath ? publicUrl(localPath) : url;
-  return <a className="link-embed" href={localPath ?? url} target={localPath ? undefined : '_blank'} rel={localPath ? undefined : 'noopener noreferrer'} title={localPath ? `Original link: ${url}` : undefined} onClick={localPath ? event => localClick(event, () => onNavigate(localPath)) : undefined}><IconWorld size={18} /><span>{new URL(destination).hostname}<small>{destination.slice(0, 80)}</small></span><IconArrowUpRight size={17} /></a>;
+  const hostname = new URL(destination).hostname.replace(/^www\./, '');
+  return <a className="link-embed" href={localPath ?? url} target={localPath ? undefined : '_blank'} rel={localPath ? undefined : 'noopener noreferrer'} title={localPath ? `Original link: ${url}` : url} onClick={localPath ? event => localClick(event, () => onNavigate(localPath)) : undefined}><span className="link-embed__visual" aria-hidden="true"><IconWorld size={32} /></span><span className="link-embed__caption"><small>{hostname}</small><strong>{hostname === 'youtube.com' || hostname === 'youtu.be' ? 'YouTube' : hostname}</strong></span><IconArrowUpRight className="link-embed__arrow" size={17} /></a>;
 }
 function ConversationReplies({ nodes, renderCard }: { nodes: ConversationNode[]; renderCard(cast: Cast): ReactNode }) {
   let remaining = 150;
@@ -103,7 +124,7 @@ function ConversationReplies({ nodes, renderCard }: { nodes: ConversationNode[];
   });
   return <div className="conversation-replies" aria-label="Conversation replies">{render(nodes, 0)}<p className="thread-empty">Open a reply to continue its conversation.</p></div>;
 }
-function QuotedCast({ target, onThread }: { target: { fid: number; hash: string }; onThread(cast: Cast): void }) {
+function QuotedCast({ target, onThread, getCastPath }: { getCastPath(cast: Cast): string; target: { fid: number; hash: string }; onThread(cast: Cast): void }) {
   const controls = useContext(ContentControls);
   const [cast, setCast] = useState<Cast | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -116,8 +137,9 @@ function QuotedCast({ target, onThread }: { target: { fid: number; hash: string 
   }, [target.hash, target.fid]);
   const reason = cast && !controls.revealed.has(bookmarkHash(cast.hash)!) ? getContentFilterReason(cast, controls.preferences) : undefined;
   if (reason) return <div className="filtered-cast"><p>Quoted cast filtered: {reason}</p><Button variant="ghost" onClick={() => controls.reveal(cast!.hash)}>Show this quote for this view</Button></div>;
-  return <a data-analytics="cast-open" className="quoted-cast" href={castPath(target.hash)} onClick={event => { if (cast) localClick(event, () => onThread(cast)); }}>
-    {cast ? <><strong>{cast.author.display_name || cast.author.username || `FID ${target.fid}`}</strong><span>{cast.text || 'Cast with attachments'}</span><small>Open quoted cast</small></> : <span>{unavailable ? 'Quoted cast unavailable or deleted' : 'Loading quoted cast…'}</span>}
+  const quoteImages = cast?.embeds.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url) && hasImageEmbed({ ...cast, embeds: [embed] })).slice(0, 2) ?? [];
+  return <a data-analytics="cast-open" className="quoted-cast" href={cast ? getCastPath(cast) : castPath(target.hash)} onClick={event => { if (cast) localClick(event, () => onThread(cast)); }}>
+    {cast ? <><span className="quoted-cast__author"><Avatar user={cast.author} /><strong>{cast.author.username || cast.author.display_name || `FID ${target.fid}`}</strong><time dateTime={cast.timestamp}>{relativeTime(cast.timestamp)}</time></span><span className="quoted-cast__text">{renderMentionSegments(cast).map(segment => segment.kind === 'text' ? segment.text : `@${segment.user.username || segment.user.fid}`).join('') || 'Cast with attachments'}</span>{quoteImages.length > 0 && <span className="quoted-cast__images">{quoteImages.map(embed => <img key={embed.url} src={embed.url} alt="Image attached to quoted cast" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} />)}</span>}</> : <span>{unavailable ? 'Quoted cast unavailable or deleted' : 'Loading quoted cast…'}</span>}
   </a>;
 }
 function GuestPrompt({ children, onConnect }: { children: ReactNode; onConnect(): void }) {
@@ -141,34 +163,37 @@ function Landing({ onSignIn, onExplore, onNavigate }: { onSignIn(): void; onExpl
     <footer className="landing__footer"><a data-analytics="nav-settings" href="/settings" onClick={event => localClick(event, () => onNavigate('/settings'))}>Privacy &amp; analytics</a><a data-analytics="nav-devlog" href="/devlog" onClick={event => localClick(event, () => onNavigate('/devlog'))}>Dev log</a><a data-analytics="hypersnap-open" href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a><a data-analytics="node-support-open" href={NODE_SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-label="Support the node (opens Stripe in a new tab)">Support the node</a><a data-analytics="source-open" href={sourceUrl} target="_blank" rel="noopener noreferrer">Source</a><a href={`${sourceUrl}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a></footer>
   </main>;
 }
-function CastCard({ cast, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
+function CastCard({ cast, featured = false, fullHashLinks = false, getCastPath, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; featured?: boolean; fullHashLinks?: boolean; getCastPath(cast: Cast): string; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
   const urls = cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2) ?? [];
   const isImage = (url: string) => hasImageEmbed({ ...cast, embeds: [{ url }] });
   const images = urls.filter(embed => isImage(embed.url)).map((embed, index) => ({ url: embed.url, alt: `Image ${index + 1} attached to cast by @${cast.author.username || cast.author.fid}` }));
   const [expanded, setExpanded] = useState(false);
-  const collapsed = !expanded && ((cast.text?.length ?? 0) > 420 || (cast.text?.split('\n').length ?? 0) > 9);
+  const collapsed = !featured && !expanded && ((cast.text?.length ?? 0) > 420 || (cast.text?.split('\n').length ?? 0) > 9);
   function openFromCard(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if ((event.target as Element).closest('a, button, input, textarea, select, label, video, audio, dialog')) return;
     if (window.getSelection?.()?.toString()) return;
     onThread(cast);
   }
-  return <article className="cast cast--openable" onClick={openFromCard}>
+  return <article className={`cast ${featured ? 'cast--featured' : 'cast--openable'}`} onClick={featured ? undefined : openFromCard}>
+    <div className="cast__header">
     <a data-analytics="profile-open" className="button button--ghost avatar-button" href={profilePath(cast.author.fid)} aria-label={`View ${cast.author.username}'s profile`} onClick={event => localClick(event, () => onProfile(cast.author))}><Avatar user={cast.author} /></a>
+    <div className="cast__meta"><a data-analytics="profile-open" className="button button--ghost author" href={profilePath(cast.author.fid)} title={cast.author.display_name} onClick={event => localClick(event, () => onProfile(cast.author))}>{cast.author.username || cast.author.display_name || `FID ${cast.author.fid}`}</a><a data-analytics="cast-open" className="cast-permalink" href={fullHashLinks ? castPermalink(cast, { fullHash: true }) : getCastPath(cast)} aria-label="Open cast" onClick={event => localClick(event, () => onThread(cast))}><time dateTime={cast.timestamp} title={new Date(cast.timestamp).toLocaleString()}>{relativeTime(cast.timestamp)}</time></a>{cast.channel && <span className="channel-tag">/{cast.channel.id}</span>}</div>
+    <Button data-analytics="cast-options-open" variant="ghost" className="cast__options" aria-label="More cast options" onClick={() => onOptions(cast)}><IconDots size={20} /></Button>
+    </div>
     <div className="cast__body">
       {cast.reaction_context && <div className="cast-activity">{cast.reaction_context.type === 'like' ? <IconHeart size={14} aria-hidden="true" /> : <IconRepeat size={14} aria-hidden="true" />}<a data-analytics="profile-open" href={profilePath(cast.reaction_context.fid)} onClick={event => { if (reactionActor) localClick(event, () => onProfile(reactionActor)); }}>{reactionActor?.display_name || reactionActor?.username || `FID ${cast.reaction_context.fid}`}</a>{cast.reaction_context.type === 'like' ? 'liked' : 'recasted'}<time dateTime={cast.reaction_context.timestamp} title={new Date(cast.reaction_context.timestamp).toLocaleString()}>{relativeTime(cast.reaction_context.timestamp)}</time></div>}
-      <div className="cast__meta"><a data-analytics="profile-open" className="button button--ghost author" href={profilePath(cast.author.fid)} onClick={event => localClick(event, () => onProfile(cast.author))}>{cast.author.display_name || cast.author.username || `FID ${cast.author.fid}`}</a><span className="handle">@{cast.author.username || cast.author.fid}</span><span className="dot">·</span><a data-analytics="cast-open" className="cast-permalink" href={castPath(cast.hash)} aria-label="Open cast" onClick={event => localClick(event, () => onThread(cast))}><time dateTime={cast.timestamp} title={new Date(cast.timestamp).toLocaleString()}>{relativeTime(cast.timestamp)}</time></a>{cast.channel && <span className="channel-tag">/{cast.channel.id}</span>}</div>
       <p className={`cast__text ${collapsed ? 'cast__text--clamp' : ''}`}><CastText cast={cast} onProfile={onProfile} onNavigate={onNavigate} /></p>
       {collapsed && <Button variant="ghost" className="cast__more" onClick={() => setExpanded(true)}>Show more</Button>}
       {cast.parent_hash && /^(?:0x)?[a-fA-F0-9]{40}$/.test(cast.parent_hash) && <a data-analytics="cast-parent-open" className="cast-parent" href={castPath(cast.parent_hash)} onClick={event => localClick(event, () => onCastHash(cast.parent_hash!))}>View parent cast<IconArrowUpRight size={13} /></a>}
-      {urls.map(embed => isImage(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" data-analytics="cast-image-open" className="embed" aria-label="View attached image" onClick={event => localClick(event, () => onImages(images, images.findIndex(image => image.url === embed.url)))}><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <LinkEmbed key={embed.url} url={embed.url} onNavigate={onNavigate} />)}
-      {cast.embeds?.filter((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && !!embed.cast_id && Number.isSafeInteger(embed.cast_id.fid) && embed.cast_id.fid > 0 && /^(?:0x)?[a-fA-F0-9]{40}$/.test(embed.cast_id.hash)).slice(0, 2).map(embed => <QuotedCast key={embed.cast_id.hash} target={embed.cast_id} onThread={onThread} />)}
+      {urls.length > 0 && <div className={`cast__attachments ${urls.length > 1 ? 'cast__attachments--multiple' : ''}`} aria-label="Cast attachments">{[...urls].sort((a, b) => Number(isImage(b.url)) - Number(isImage(a.url))).map(embed => isImage(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" data-analytics="cast-image-open" className="embed" aria-label="View attached image" onClick={event => localClick(event, () => onImages(images, images.findIndex(image => image.url === embed.url)))}><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <LinkEmbed key={embed.url} url={embed.url} onNavigate={onNavigate} />)}</div>}
+      {cast.embeds?.filter((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && !!embed.cast_id && Number.isSafeInteger(embed.cast_id.fid) && embed.cast_id.fid > 0 && /^(?:0x)?[a-fA-F0-9]{40}$/.test(embed.cast_id.hash)).slice(0, 2).map(embed => <QuotedCast key={embed.cast_id.hash} target={embed.cast_id} onThread={onThread} getCastPath={getCastPath} />)}
       <div className="cast__actions">
         <Button data-analytics="cast-replies-open" variant="ghost" aria-label="Open replies" onClick={() => onThread(cast)}><IconMessageCircle size={18} /><span>{short(cast.replies?.count)}</span></Button>
         <CastReactions cast={cast} session={session} onSignIn={onSignIn} notify={notify} onQuote={() => onQuote(cast)} />
         <Button data-analytics={saved ? 'bookmark-remove' : 'bookmark-add'} variant="ghost" aria-label={saved ? 'Remove bookmark' : 'Bookmark cast'} aria-pressed={saved} className={saved ? 'is-saved' : ''} onClick={() => onSave(cast)}><IconBookmark size={18} fill={saved ? 'currentColor' : 'none'} /></Button>
         {session?.fid === cast.author.fid && <Button data-analytics="cast-delete-open" variant="ghost" aria-label="Delete cast" onClick={() => onDelete(cast)}><IconTrash size={18} /></Button>}
-        <Button data-analytics="cast-share-open" variant="ghost" aria-label="Share cast" onClick={() => onShare(cast)}><IconShare size={18} /></Button><Button data-analytics="cast-options-open" variant="ghost" aria-label="More cast options" onClick={() => onOptions(cast)}><IconDots size={18} /></Button>
+        <Button data-analytics="cast-share-open" variant="ghost" aria-label="Share cast" onClick={() => onShare(cast)}><IconShare size={18} /></Button>
       </div>
     </div>
   </article>;
@@ -294,23 +319,30 @@ export default function App() {
     if (user.username) profileCache.current.set(user.username, user);
     setProfile(user); navigate(profilePath(user.fid));
   }, [navigate]);
+  const castLink = useCallback((cast: Cast) => {
+    const path = castPermalink(cast);
+    const existing = threadCache.current.get(path);
+    return existing && bookmarkHash(existing.hash) !== bookmarkHash(cast.hash) ? castPermalink(cast, { fullHash: true }) : path;
+  }, []);
   const openThread = useCallback((cast: Cast) => {
     const current = currentRoute.current;
-    if (current.kind === 'cast' && bookmarkHash(current.hash) === bookmarkHash(cast.hash)) return;
-    threadCache.current.set(castPath(cast.hash), cast); setThread(cast); navigate(castPath(cast.hash));
-  }, [navigate]);
-  const openResolvedAlias = useCallback((cast: Cast, sourcePath: string) => {
+    if (isConversationRoute(current) && bookmarkHash(threadCache.current.get(routePath(current))?.hash ?? (current.kind === 'cast' ? current.hash : '')) === bookmarkHash(cast.hash)) return;
+    const selectingCandidate = current.kind === 'cast-alias' && !threadCache.current.has(routePath(current));
+    const path = selectingCandidate ? castPermalink(cast, { fullHash: true }) : castLink(cast);
+    threadCache.current.set(castPath(cast.hash), cast); threadCache.current.set(path, cast); setThread(cast); navigate(path);
+  }, [navigate, castLink]);
+  const openResolvedAlias = useCallback((cast: Cast, sourcePath: string, explicitChoice = false) => {
     const alias = currentRoute.current;
     if (alias.kind !== 'cast-alias' || routePath(alias) !== sourcePath) return;
     const hash = bookmarkHash(cast.hash);
     if (!hash || !hash.startsWith(alias.hashPrefix) || !Number.isSafeInteger(cast.author?.fid) || cast.author.fid < 1) return;
-    const path = castPath(hash);
-    threadCache.current.set(path, cast);
-    // Keep the same entry and its original background/Back behavior. Calling
-    // navigate here would turn a directly loaded link into a pushed thread.
+    // Preserve a unique short URL. Explicit choices from an incomplete or
+    // ambiguous lookup use a full author/hash path, so reload keeps the choice.
+    const path = explicitChoice ? castPermalink(cast, { fullHash: true }) : sourcePath;
+    threadCache.current.set(castPath(hash), cast); threadCache.current.set(path, cast);
     history.replaceState(history.state, '', path);
-    const next: AppRoute = { kind: 'cast', hash };
-    currentRoute.current = next; setRoute(next); setThread(cast); setConversation(null); setThreadError(''); setThreadErrorKey(path);
+    const next = parseLocalPath(path);
+    currentRoute.current = next; setRoute(next); setThread(cast); setConversation(null); setThreadError(''); setThreadErrorKey(castPath(hash));
   }, []);
   const closeThread = useCallback(() => {
     setSharedCast(null);
@@ -370,7 +402,7 @@ export default function App() {
   const sessionFid = session?.fid;
   const sessionPublicKey = session?.publicKey;
   const isConversation = isConversationRoute(route);
-  const conversationHash = route.kind === 'cast' ? route.hash : undefined;
+  const conversationHash = route.kind === 'cast' ? route.hash : route.kind === 'cast-alias' ? bookmarkHash(threadCache.current.get(routePath(route))?.hash ?? '') ?? undefined : undefined;
   const searchQuery = base.kind === 'search' ? base.query : undefined;
 
   useEffect(() => {
@@ -472,15 +504,25 @@ export default function App() {
   useEffect(() => {
     if (conversationHash === undefined) { setThread(null); setConversation(null); setThreadError(''); setThreadErrorKey(''); return; }
     const key = castPath(conversationHash);
+    const stillCurrent = () => {
+      const current = currentRoute.current;
+      return current.kind === 'cast' ? current.hash === conversationHash : current.kind === 'cast-alias' && bookmarkHash(threadCache.current.get(routePath(current))?.hash ?? '') === conversationHash;
+    };
     const controller = new AbortController(); setConversation(null); setThreadError(''); setThreadErrorKey(key);
     const cached = threadCache.current.get(key); setThread(cached ?? null);
     getConversation(conversationHash, controller.signal).then(data => {
-      if (controller.signal.aborted || currentRoute.current.kind !== 'cast' || currentRoute.current.hash !== conversationHash) return;
+      if (controller.signal.aborted || !stillCurrent()) return;
       if (bookmarkHash(data.cast?.hash) !== conversationHash || !Number.isSafeInteger(data.cast?.author?.fid) || data.cast.author.fid < 1 || (cached && data.cast.author.fid !== cached.author.fid)) throw new Error('The node returned a different conversation for this cast.');
       setConversation(data); setThread(data.cast); threadCache.current.set(key, data.cast);
-    }).catch(error => { if (!controller.signal.aborted && currentRoute.current.kind === 'cast' && currentRoute.current.hash === conversationHash) { setThreadErrorKey(key); setThreadError(message(error)); } });
+      if (currentRoute.current.kind === 'cast') {
+        const path = castLink(data.cast);
+        threadCache.current.set(path, data.cast);
+        history.replaceState(history.state, '', path);
+        const next = parseLocalPath(path); currentRoute.current = next; setRoute(next);
+      }
+    }).catch(error => { if (!controller.signal.aborted && stillCurrent()) { setThreadErrorKey(key); setThreadError(message(error)); } });
     return () => controller.abort();
-  }, [conversationHash, refresh]);
+  }, [conversationHash, refresh, castLink]);
 
   function lockSession(expectedSession = session, revoked = false) {
     if (!expectedSession || currentSession.current?.publicKey !== expectedSession.publicKey) return;
@@ -544,20 +586,20 @@ export default function App() {
       notify('You’re connected to Hypersnap.');
     }} />
   </Suspense>;
-  const activeThread = route.kind === 'cast' && thread && bookmarkHash(thread.hash) === route.hash ? thread : null;
-  const activeConversation = route.kind === 'cast' && activeThread && conversation && bookmarkHash(conversation.cast.hash) === route.hash && conversation.cast.author.fid === activeThread.author.fid ? conversation : null;
-  const activeThreadError = route.kind === 'cast' && threadErrorKey === castPath(route.hash) ? threadError : '';
-  const card = (cast: Cast) => {
+  const activeThread = isConversation && thread && bookmarkHash(thread.hash) === conversationHash ? thread : null;
+  const activeConversation = activeThread && conversation && bookmarkHash(conversation.cast.hash) === conversationHash && conversation.cast.author.fid === activeThread.author.fid ? conversation : null;
+  const activeThreadError = conversationHash && threadErrorKey === castPath(conversationHash) ? threadError : '';
+  const card = (cast: Cast, featured = false, fullHashLinks = false) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button data-analytics="nav-settings" variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
-    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigateSocialLink} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
+    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} featured={featured} fullHashLinks={fullHashLinks} getCastPath={castLink} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigateSocialLink} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
   };
   const composeParentUrl = view === 'channel' && channelInfo && safeUrl(channelInfo.parent_url || channelInfo.url) ? channelInfo.parent_url || channelInfo.url : undefined;
   const feedCandidates = view === 'bookmarks' ? filterBookmarks(bookmarks, bookmarkQuery, bookmarkSort) : casts;
   const visibleCasts = feedCandidates.filter(cast => revealed.has(bookmarkHash(cast.hash)!) || !getContentFilterReason(cast, preferences));
   const filteredCount = feedCandidates.length - visibleCasts.length;
   if (!session && !exploring && route.kind === 'discover') return <Landing onSignIn={() => requestSignIn()} onExplore={() => { try { localStorage.setItem(exploreKey, '1'); } catch { /* Exploring still works for this tab. */ } setExploring(true); }} onNavigate={path => navigate(path)} />;
-  return <ContentControls.Provider value={controls}><div className="app">
+  return <ContentControls.Provider value={controls}><div className={`app ${threadOpen ? 'app--conversation' : ''}`}>
     <aside className="sidebar">
       <a data-analytics="nav-discover" href="/" onClick={event => localClick(event, () => navigate('/'))} className="wordmark"><img src="/opencaster-symbol.svg" alt="" />Opencaster</a>
       <p className="brand-credit">Powered by <a href="https://arca.computer" target="_blank" rel="noopener noreferrer">Arca Computer</a></p>
@@ -612,11 +654,11 @@ export default function App() {
       {view === 'bookmarks' && <BookmarkTools query={bookmarkQuery} onQueryChange={setBookmarkQuery} sort={bookmarkSort} onSortChange={setBookmarkSort} count={visibleCasts.length} total={bookmarks.length} onClear={() => { setBookmarks([]); setBookmarkQuery(''); if (!saveBookmarks([])) notify('Bookmarks cleared for this tab. Browser storage is unavailable.'); }} />}
       {filteredCount > 0 && <div className="content-filter-summary" role="status"><span>{filteredCount} loaded {filteredCount === 1 ? 'cast is' : 'casts are'} filtered on this browser.</span><Button data-analytics="nav-settings" variant="ghost" onClick={() => navigate('/settings')}>Manage controls</Button><Button variant="ghost" onClick={() => setRevealState(current => ({ scope: preferenceScope, hashes: new Set([...(current.scope === preferenceScope ? current.hashes : []), ...feedCandidates.map(cast => bookmarkHash(cast.hash)!)]) }))}>Show for this view</Button></div>}
       {(view === 'discover' || view === 'bookmarks') && <div className="feed-heading"><div>{view === 'discover' ? <IconSparkles size={17} /> : <IconHome size={17} />}<span>{view === 'discover' ? 'Trending on Hypersnap' : 'Saved for later'}</span></div><span>{view === 'discover' ? <span className="feed-window"><label htmlFor="trending-window">Trending over</label><select data-analytics="feed-window" id="trending-window" aria-label="Trending time window" value={trendingWindow} onChange={event => setTrendingWindow(event.target.value as typeof trendingWindow)}>{([['1h', '1 hour'], ['6h', '6 hours'], ['12h', '12 hours'], ['24h', '24 hours'], ['7d', '7 days']] as const).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></span> : 'Stored on this device'}</span></div>}
-      {view === 'not-found' ? <div className="empty"><IconCompass size={35} /><h3>That page does not exist.</h3><p>Check the profile or cast link, or return to Discover.</p><Button data-analytics="nav-discover" onClick={() => navigate('/')}>Open Discover</Button></div> : view === 'profile' && !profile ? <div className="empty" role={profileLoading ? 'status' : undefined}><IconUsers size={35} /><h3>{profileLoading ? 'Loading profile…' : profileError ? 'Profile unavailable' : 'Your profile on Hypersnap'}</h3><p>{profileError || (profileLoading ? 'Finding this public identity on Hypersnap.' : 'Sign in to open your profile, or search for a username or FID.')}</p>{profileError ? <Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button> : !profileLoading && <Button data-analytics="connect-open" onClick={() => requestSignIn()}>Sign in</Button>}</div> : loading ? <div aria-label="Loading casts" role="status" className="skeleton-list">{[0, 1, 2].map(n => <div className="skeleton-cast" key={n}><span className="skeleton-avatar" /><div><span /><span /><span /></div></div>)}<p className="muted">Finding conversations on Hypersnap…</p></div> : error ? <div className="empty"><IconWorld size={35} /><h3>The network is taking a moment.</h3><p>{error}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={16} />Try again</Button></div> : view === 'following' && !session ? <div className="empty"><IconUsers size={35} /><h3>Your people are here.</h3><p>Sign in with your Farcaster account to see casts from the people you follow.</p><Button data-analytics="connect-open" onClick={() => requestSignIn()}>Sign in</Button></div> : visibleCasts.length ? <div className="feed">{visibleCasts.map(card)}{cursor && view !== 'bookmarks' && <Button data-analytics="feed-more" variant="secondary" className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More conversations'}<IconArrowDown size={16} /></Button>}<p className="feed-end">You’re connected to the open social web. <IconWorld size={13} /></p></div> : <div className="empty"><IconBookmark size={35} /><h3>{filteredCount ? 'Your content controls are active.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'No saved casts match.' : view === 'bookmarks' ? 'A place for the good stuff.' : 'The conversation is open.'}</h3><p>{filteredCount ? 'Manage your filters or reveal the loaded casts for this view.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'Try another word, person or channel.' : view === 'bookmarks' ? 'Tap the bookmark on any cast to save it here.' : 'No casts returned for this feed yet. Try another channel or start a conversation.'}</p>{cursor && <Button data-analytics="feed-more" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Check next page'}<IconArrowDown size={16} /></Button>}</div>}
+      {view === 'not-found' ? <div className="empty"><IconCompass size={35} /><h3>That page does not exist.</h3><p>Check the profile or cast link, or return to Discover.</p><Button data-analytics="nav-discover" onClick={() => navigate('/')}>Open Discover</Button></div> : view === 'profile' && !profile ? <div className="empty" role={profileLoading ? 'status' : undefined}><IconUsers size={35} /><h3>{profileLoading ? 'Loading profile…' : profileError ? 'Profile unavailable' : 'Your profile on Hypersnap'}</h3><p>{profileError || (profileLoading ? 'Finding this public identity on Hypersnap.' : 'Sign in to open your profile, or search for a username or FID.')}</p>{profileError ? <Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button> : !profileLoading && <Button data-analytics="connect-open" onClick={() => requestSignIn()}>Sign in</Button>}</div> : loading ? <div aria-label="Loading casts" role="status" className="skeleton-list">{[0, 1, 2].map(n => <div className="skeleton-cast" key={n}><span className="skeleton-avatar" /><div><span /><span /><span /></div></div>)}<p className="muted">Finding conversations on Hypersnap…</p></div> : error ? <div className="empty"><IconWorld size={35} /><h3>The network is taking a moment.</h3><p>{error}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}><IconRefresh size={16} />Try again</Button></div> : view === 'following' && !session ? <div className="empty"><IconUsers size={35} /><h3>Your people are here.</h3><p>Sign in with your Farcaster account to see casts from the people you follow.</p><Button data-analytics="connect-open" onClick={() => requestSignIn()}>Sign in</Button></div> : visibleCasts.length ? <div className="feed">{visibleCasts.map(cast => card(cast))}{cursor && view !== 'bookmarks' && <Button data-analytics="feed-more" variant="secondary" className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'More conversations'}<IconArrowDown size={16} /></Button>}<p className="feed-end">You’re connected to the open social web. <IconWorld size={13} /></p></div> : <div className="empty"><IconBookmark size={35} /><h3>{filteredCount ? 'Your content controls are active.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'No saved casts match.' : view === 'bookmarks' ? 'A place for the good stuff.' : 'The conversation is open.'}</h3><p>{filteredCount ? 'Manage your filters or reveal the loaded casts for this view.' : view === 'bookmarks' && bookmarkQuery.trim() ? 'Try another word, person or channel.' : view === 'bookmarks' ? 'Tap the bookmark on any cast to save it here.' : 'No casts returned for this feed yet. Try another channel or start a conversation.'}</p>{cursor && <Button data-analytics="feed-more" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Check next page'}<IconArrowDown size={16} /></Button>}</div>}
       {view === 'following' && session && <SuggestedPeople fid={session.fid} onProfile={openProfile} />}
       </>}
       </div>
-      {threadOpen && <section className="conversation-page" aria-labelledby="conversation-title"><header className="conversation-page__head"><Button variant="ghost" aria-label="Back" onClick={closeThread}><IconArrowLeft size={20} /></Button><h1 id="conversation-title" ref={threadHeading} tabIndex={-1}>Conversation</h1></header>{route.kind === 'cast-alias' ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={card} onOpen={cast => openResolvedAlias(cast, routePath(route))} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <>{session ? <Composer key={`${session.publicKey}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} /> : <GuestPrompt onConnect={() => requestSignIn()}>Sign in to reply.</GuestPrompt>}{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</section>}
+      {threadOpen && <section className="conversation-page" aria-labelledby="conversation-title"><header className="conversation-page__head"><Button variant="ghost" aria-label="Back" onClick={closeThread}><IconArrowLeft size={20} /></Button><h1 id="conversation-title" ref={threadHeading} tabIndex={-1}>Conversation</h1><Button data-analytics="composer-open" className="conversation-page__cast" onClick={() => session ? setComposeOpen(true) : requestSignIn()}>Cast</Button></header>{route.kind === 'cast-alias' && !conversationHash ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={cast => card(cast, false, true)} onOpen={cast => openResolvedAlias(cast, routePath(route), true)} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread, true)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <>{session ? <Composer key={`${session.publicKey}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} /> : <GuestPrompt onConnect={() => requestSignIn()}>Sign in to reply.</GuestPrompt>}{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</section>}
     </main>
     <aside className="rightbar">
       <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button data-analytics="search-submit" variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form>
@@ -648,8 +690,8 @@ export default function App() {
     {deletedCast && !signIn && <DeleteCastDialog cast={deletedCast} session={session} onEnable={() => requestSignIn(FULL_CLIENT_SCOPES)} onClose={() => setDeletedCast(null)} onDeleted={cast => {
       setDeletedCast(null); setCasts(current => current.filter(item => item.hash !== cast.hash));
       const saved = bookmarks.filter(item => bookmarkHash(item.hash) !== bookmarkHash(cast.hash)); setBookmarks(saved); if (!saveBookmarks(saved)) notify('The bookmark was removed for this tab. Browser storage is unavailable.');
-      threadCache.current.delete(castPath(cast.hash));
-      if (currentRoute.current.kind === 'cast' && currentRoute.current.hash === cast.hash) navigate(routePath(currentBase.current), true);
+      for (const [path, cached] of threadCache.current) if (bookmarkHash(cached.hash) === bookmarkHash(cast.hash)) threadCache.current.delete(path);
+      if (isConversationRoute(currentRoute.current) && conversationHash === bookmarkHash(cast.hash)) navigate(routePath(currentBase.current), true);
       setRefresh(value => value + 1); notify('Cast deletion confirmed by Hypersnap.');
     }} />}
     {channelPeople && <ChannelPeopleDialog channel={channelPeople} onProfile={openProfile} onClose={() => setChannelPeople(null)} />}
@@ -660,6 +702,6 @@ export default function App() {
     {reactionPeople && <Suspense fallback={<Modal title="Cast reactions" onClose={() => setReactionPeople(null)}><p role="status">Loading reactions…</p></Modal>}><CastReactionPeople cast={reactionPeople} onClose={() => setReactionPeople(null)} onProfile={openProfile} /></Suspense>}
     {castOptions && <CastOptions cast={castOptions} onReactionPeople={() => { setReactionPeople(castOptions); setCastOptions(null); }} onHide={() => { try { const saved = updatePreferences(hideCast(preferences, castOptions.hash)); setCastOptions(null); notify(saved ? 'Cast hidden on this browser. Restore it in Settings.' : 'Cast hidden for this tab. Browser storage is unavailable.'); } catch (cause) { notify(message(cause)); } }} onMute={() => { try { const saved = updatePreferences(muteAccount(preferences, castOptions.author)); setCastOptions(null); notify(saved ? 'Account muted on this browser. Manage it in Settings.' : 'Account muted for this tab. Browser storage is unavailable.'); } catch (cause) { notify(message(cause)); } }} onClose={() => setCastOptions(null)} onQuotes={() => { setCastQuotes(castOptions); setCastOptions(null); }} onShare={() => { setSharedCast(castOptions); setCastOptions(null); }} onQuote={() => { quoteGeneration.current += 1; setQuotedCast(castOptions); setCastOptions(null); }} />}
     {composeOpen && session && !signIn && <Modal title="New cast" onClose={() => setComposeOpen(false)} wide><Composer key={`${session.publicKey}:compose:${composeParentUrl ?? ''}`} session={session} onSignIn={() => requestSignIn()} parentUrl={composeParentUrl} onPosted={() => { setComposeOpen(false); setRefresh(n => n + 1); }} notify={notify} /></Modal>}
-    {sharedCast && <ShareCastDialog cast={sharedCast} onClose={() => setSharedCast(null)} notify={notify} />}
+    {sharedCast && <ShareCastDialog cast={sharedCast} path={castLink(sharedCast)} onClose={() => setSharedCast(null)} notify={notify} />}
   </div></ContentControls.Provider>;
 }
