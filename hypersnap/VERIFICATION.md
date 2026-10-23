@@ -1,3 +1,31 @@
+# Direct short-link opening · 2026-10-23
+
+The standalone `yarn verify` passed **1,037 tests across 50 files**, browser/Worker
+typechecks and production build, and offline signer typecheck/build. Checks used
+the same clean, frozen external dependency installation at
+`/tmp/opencaster-ui-check-itPz2YeK/hypersnap`, with source checksums matching this
+checkout and no dependency or lockfile changes. Existing build advisories remain.
+
+Single verified matches now open their actual conversation immediately from
+progress or final results, including incomplete history batches. The lookup
+aborts before navigation and ignores late progress, completion and cancellation
+errors. It preserves the short URL and browser history. A page with multiple
+verified matches still offers exact full-hash choices; no-match continuation,
+retries, deadlines and author/hash validation remain. This chooses the first
+available match in the returned reverse history, without establishing that the
+prefix is unique across unsearched older history.
+
+Regressions exercise abort-before-callback, no subsequent history page, exact
+hydration before progress, stale callbacks, partial/final single matches, actual
+collisions, no-match retries, replies and Back/Forward restoration. The initial
+focused run had three outdated loading-label expectations; those were corrected
+before the full gate passed. No validation or dependency rule was relaxed.
+
+A new local browser document at `/yes2crypto.eth/0x8d336914` opened the supplied
+cast and its replies automatically at the unchanged short path, with no lookup
+panel or Open full cast link. This check used public Hypersnap reads only. These
+checks precede the follow-up production release recorded above when deployed.
+
 # Conversation layout and cast links deployed · 2026-10-23
 
 Release source `d45a12a4952650bc98faf77c6266192e5a676402` is deployed as Worker

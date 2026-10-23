@@ -336,7 +336,7 @@ export default function App() {
     if (alias.kind !== 'cast-alias' || routePath(alias) !== sourcePath) return;
     const hash = bookmarkHash(cast.hash);
     if (!hash || !hash.startsWith(alias.hashPrefix) || !Number.isSafeInteger(cast.author?.fid) || cast.author.fid < 1) return;
-    // Preserve a unique short URL. Explicit choices from an incomplete or
+    // Preserve the resolved short URL. Explicit choices from an incomplete or
     // ambiguous lookup use a full author/hash path, so reload keeps the choice.
     const path = explicitChoice ? castPermalink(cast, { fullHash: true }) : sourcePath;
     threadCache.current.set(castPath(hash), cast); threadCache.current.set(path, cast);

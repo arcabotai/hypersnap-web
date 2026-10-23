@@ -103,7 +103,7 @@ describe('Opencaster destinations for supported social links', () => {
   it.each(['short cast-text link', 'full-hash URL embed'] as const)('pushes a %s from a direct conversation so Back and Close return to its source cast', async kind => {
     const target: Cast = { ...otherCast, hash: `0xcbbe7828${'b'.repeat(32)}`, author: { ...otherCast.author, username: 'gandhionchain' }, text: 'The separate linked conversation' };
     const short = kind === 'short cast-text link';
-    const targetPath = castPermalink(target, { fullHash: short });
+    const targetPath = castPermalink(target);
     const source: Cast = { ...ownCast, hash: '0xffe80d84ab6bc9203c084001647e9520e21ac646', text: short ? 'Source with https://farcaster.xyz/gandhionchain/0xcbbe7828' : 'Source with a separate cast embed', embeds: short ? [] : [{ url: `https://farcaster.xyz/~/conversations/${target.hash}` }] };
     vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === source.hash ? source : target, replies: [] }));
     vi.mocked(resolveCastAlias).mockResolvedValue({ author: target.author, candidates: [target], complete: false, scanned: 1000, continuation: { authorIdentifier: 'gandhionchain', hashPrefix: '0xcbbe7828', fid: 20, cursor: 'bmV4dA==', seenCursors: [], hashes: [target.hash], scanned: 1000 } });
@@ -111,8 +111,9 @@ describe('Opencaster destinations for supported social links', () => {
     await click(thread().querySelector(short ? '.cast__text a' : '.link-embed')!);
     expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
     if (short) {
-      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828'); expect(thread().textContent).toContain('Other matches may exist.');
-      await click(thread().querySelector('.cast-link-lookup__candidate > a')!);
+      expect(location.pathname).toBe('/gandhionchain/0xcbbe7828');
+      expect(thread().querySelector('.cast-link-lookup')).toBeNull();
+      expect(vi.mocked(resolveCastAlias).mock.calls[0][0].signal?.aborted).toBe(true);
     } else expect(resolveCastAlias).not.toHaveBeenCalled();
     expect(location.pathname).toBe(targetPath); expect(thread().textContent).toContain(target.text);
     expect(history.state).toEqual({ quorumThread: true, quorumBackground: '/' });
@@ -228,7 +229,7 @@ describe('author-scoped compatible cast URLs', () => {
   it.each([alias, `/person20/${otherCast.hash}`])('verifies %s before showing its conversation at the original author/hash URL', async path => {
     const resolving = deferred<CastAliasResult>(); vi.mocked(resolveCastAlias).mockReturnValue(resolving.promise);
     const historyLength = history.length; await start(path);
-    expect(thread()).toBeDefined(); expect(thread().textContent).toContain('Checking this cast link'); expect(getConversation).not.toHaveBeenCalled();
+    expect(thread()).toBeDefined(); expect(thread().textContent).toContain('Loading cast'); expect(getConversation).not.toHaveBeenCalled();
     expect(resolveCastAlias).toHaveBeenCalledWith(expect.objectContaining({ authorIdentifier: 'person20', hashPrefix: path.split('/')[2], signal: expect.any(AbortSignal) }));
     await act(async () => resolving.resolve(result()));
     expect(location.pathname).toBe(path); expect(history.length).toBe(historyLength); expect(history.state).toBeNull();
@@ -237,23 +238,73 @@ describe('author-scoped compatible cast URLs', () => {
     expect(location.pathname).toBe('/'); expect(history.length).toBe(historyLength); expect(thread()).toBeUndefined();
   });
 
-  it('shows a partial candidate immediately but opens it only after a full-link click', async () => {
+  it('automatically opens the first verified single result and its replies even when older history remains', async () => {
+    const reply = cast('d', 30, 'Replies are available without another confirmation');
     vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
+    vi.mocked(getConversation).mockResolvedValue({ cast: otherCast, replies: [{ cast: reply, replies: [] }] });
+    const historyLength = history.length;
     await start(alias);
-    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain(otherCast.text); expect(thread().textContent).toContain('Other matches may exist.'); expect(getConversation).not.toHaveBeenCalled();
-    await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="${castPermalink(otherCast, { fullHash: true })}"]`)!);
-    expect(location.pathname).toBe(castPermalink(otherCast, { fullHash: true })); expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
+    expect(location.pathname).toBe(alias); expect(history.length).toBe(historyLength); expect(history.state).toBeNull();
+    expect(thread().textContent).toContain(otherCast.text);
+    expect(thread().querySelector('.conversation-replies')?.textContent).toContain(reply.text);
+    expect(thread().querySelector('.cast-link-lookup')).toBeNull();
+    expect(button('Open full cast', thread())).toBeUndefined();
+    expect(getConversation).toHaveBeenCalledWith(otherCast.hash, expect.any(AbortSignal));
+    expect(vi.mocked(resolveCastAlias).mock.calls[0][0].signal?.aborted).toBe(true);
+  });
+
+  it('opens a verified progress match, cancels its lookup before loading replies and restores its search background on Back', async () => {
+    const source = { ...ownCast, text: `Read https://farcaster.xyz${alias}` };
+    const reply = cast('d', 30, 'The automatically opened conversation reply');
+    const pending = deferred<CastAliasResult>();
+    const background = '/search?q=cosmos';
+    vi.mocked(searchCasts).mockResolvedValue({ casts: [source], next: {} });
+    vi.mocked(resolveCastAlias).mockReturnValue(pending.promise);
+    let lookupSignal: AbortSignal | undefined;
+    vi.mocked(getConversation).mockImplementation(async () => {
+      expect(lookupSignal?.aborted).toBe(true);
+      return { cast: otherCast, replies: [{ cast: reply, replies: [] }] };
+    });
+    await start(background);
+    await click(container.querySelector(`main .cast__text a[href="${alias}"]`)!);
+    const request = vi.mocked(resolveCastAlias).mock.calls[0][0]; lookupSignal = request.signal;
+    expect(location.pathname).toBe(alias); expect(thread().textContent).toContain('Loading cast');
+    expect(getConversation).not.toHaveBeenCalled();
+    await act(async () => request.onProgress?.(result({ complete: false, scanned: 250 })));
+
+    expect(lookupSignal?.aborted).toBe(true); expect(location.pathname).toBe(alias);
+    expect(history.state).toEqual({ quorumThread: true, quorumBackground: background });
+    expect(thread().querySelector('.cast-link-lookup')).toBeNull();
+    expect(thread().querySelector('.conversation-replies')?.textContent).toContain(reply.text);
+    expect(getConversation).toHaveBeenCalledTimes(1);
+    await traverse('back');
+    expect(location.pathname + location.search).toBe(background); expect(thread()).toBeUndefined();
+    const later = { ...cast('e', 20, 'A late collision must not replace the opened cast'), hash: `0xbbbbbbbb${'e'.repeat(32)}` };
+    await act(async () => {
+      request.onProgress?.(result({ candidates: [otherCast, later], complete: false, scanned: 500 }));
+      pending.resolve(result({ candidates: [otherCast, later], complete: true, scanned: 1000 }));
+    });
+    expect(location.pathname + location.search).toBe(background); expect(thread()).toBeUndefined();
+    await traverse('forward');
+    expect(location.pathname).toBe(alias); expect(thread().querySelector('.cast-link-lookup')).toBeNull();
+    expect(thread().querySelector('.conversation-replies')?.textContent).toContain(reply.text);
+    expect(thread().textContent).not.toContain(later.text);
+    expect(resolveCastAlias).toHaveBeenCalledTimes(1); expect(getConversation).toHaveBeenCalledTimes(2);
+    await click(thread().querySelector('button[aria-label="Back"]')!); await settleNavigation();
+    expect(location.pathname + location.search).toBe(background); expect(thread()).toBeUndefined();
   });
 
   it('keeps cumulative ambiguous candidates scoped to the author and requires choosing an exact full hash', async () => {
     const second = { ...cast('c', 20, 'Another matching full cast'), hash: `0xbbbbbbbb${'c'.repeat(32)}` };
-    vi.mocked(resolveCastAlias).mockResolvedValueOnce(result({ complete: false, continuation, scanned: 1000 })).mockResolvedValueOnce(result({ candidates: [otherCast, second], complete: true, scanned: 2000 }));
-    vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === second.hash ? second : otherCast, replies: [] }));
+    const third = { ...cast('d', 20, 'A later matching full cast'), hash: `0xbbbbbbbb${'d'.repeat(32)}` };
+    const next = { ...continuation, hashes: [otherCast.hash, second.hash] };
+    vi.mocked(resolveCastAlias).mockResolvedValueOnce(result({ candidates: [otherCast, second], complete: false, continuation: next, scanned: 1000 })).mockResolvedValueOnce(result({ candidates: [otherCast, second, third], complete: true, scanned: 2000 }));
+    vi.mocked(getConversation).mockImplementation(async hash => ({ cast: hash === third.hash ? third : otherCast, replies: [] }));
     await start(alias); await click(button('Search older casts', thread()));
-    expect(vi.mocked(resolveCastAlias).mock.calls[1][0].continuation).toBe(continuation); expect(location.pathname).toBe(alias); expect(getConversation).not.toHaveBeenCalled();
-    expect(thread().textContent).toContain('More than one cast matches'); expect(thread().querySelectorAll('.cast-link-lookup__candidate')).toHaveLength(2);
-    await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="${castPermalink(second, { fullHash: true })}"]`)!);
-    expect(location.pathname).toBe(castPermalink(second, { fullHash: true })); expect(thread().textContent).toContain(second.text);
+    expect(vi.mocked(resolveCastAlias).mock.calls[1][0].continuation).toBe(next); expect(location.pathname).toBe(alias); expect(getConversation).not.toHaveBeenCalled();
+    expect(thread().textContent).toContain('More than one cast matches'); expect(thread().querySelectorAll('.cast-link-lookup__candidate')).toHaveLength(3);
+    await click(thread().querySelector(`.cast-link-lookup__candidate > a[href="${castPermalink(third, { fullHash: true })}"]`)!);
+    expect(location.pathname).toBe(castPermalink(third, { fullHash: true })); expect(thread().textContent).toContain(third.text);
   });
 
   it.each(['.cast__text', 'a.cast-permalink'])('keeps the exact choice when an ambiguous candidate is opened through %s', async selector => {
@@ -284,7 +335,8 @@ describe('author-scoped compatible cast URLs', () => {
   });
 
   it('returns from sign-in to a still-unresolved alias and its explicit quote without changing account permissions', async () => {
-    vi.mocked(resolveCastAlias).mockResolvedValue(result({ complete: false, continuation, scanned: 1000 }));
+    const second = { ...cast('c', 20, 'Another possible cast'), hash: `0xbbbbbbbb${'c'.repeat(32)}` };
+    vi.mocked(resolveCastAlias).mockResolvedValue(result({ candidates: [otherCast, second], complete: false, continuation, scanned: 1000 }));
     await start(alias); await openQuote(thread()); await click(button('Quote', dialog('Quote cast')));
     expect(location.pathname).toBe('/connect'); expect(history.state.quorumConnectReturn).toBe(alias);
     expect(container.querySelector('[data-testid="requested-scopes"]')?.textContent).toBe('posting'); expect(wallet.initialFid).toBeUndefined();
