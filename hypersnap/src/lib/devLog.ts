@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'recast-menu-and-active-channels',
+    date: '2026-10-22',
+    title: 'Quote from the recast menu, channels on the side',
+    summary: 'The recast button now opens a Recast or Quote menu, and the right column lists active channels instead of two information cards.',
+    changes: [
+      'Open a small Recast / Quote menu from the recast button, as on other social clients, so each cast shows one fewer button. Quote is still in the cast options menu too.',
+      'Keep the existing reaction safeguards: Recast stays unavailable until this account’s reaction status is confirmed, and an unconfirmed write is never repeated automatically. Quote remains available meanwhile.',
+      'Show up to five active channels in the right column with their participant counts and a link to all channels. Participants are accounts that posted, not subscribers.',
+      'Replace the network and open source cards with a one-line Hypersnap connection status. Source and license links remain in the footer.',
+      'Show the sidebar’s explore list only when the right column is hidden, so the same channels never appear twice.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/1c6b06026e5fb79530c8f9e747e0ad7d779f15ae',
+    tag: 'Social',
+  },
+  {
     id: 'familiar-profile-and-channel-headers',
     date: '2026-10-22',
     title: 'Profiles that look like profiles',
