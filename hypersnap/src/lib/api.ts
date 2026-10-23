@@ -863,7 +863,14 @@ async function getAuthorCast(fid: number, hash: string, signal: AbortSignal): Pr
  * batch and disclose whether it was exhausted; never infer uniqueness from a
  * first match. Continuing is explicit, and all history state stays in memory.
  */
-export async function resolveCastAlias(options: { authorIdentifier: string; hashPrefix: string; continuation?: CastAliasContinuation; signal?: AbortSignal }): Promise<CastAliasResult> {
+export async function resolveCastAlias(options: {
+  authorIdentifier: string;
+  hashPrefix: string;
+  continuation?: CastAliasContinuation;
+  signal?: AbortSignal;
+  /** Verified matches from validated pages; never a claim of uniqueness. */
+  onProgress?: (snapshot: CastAliasResult) => void;
+}): Promise<CastAliasResult> {
   const authorIdentifier = options.authorIdentifier.toLowerCase();
   if (!/^[a-z0-9_.-]{1,128}$/.test(authorIdentifier) || authorIdentifier === '.' || authorIdentifier === '..') throw new Error('Invalid cast author.');
   const numericAuthor = /^\d+$/.test(authorIdentifier);
@@ -903,6 +910,23 @@ export async function resolveCastAlias(options: { authorIdentifier: string; hash
     let limited = false;
     const seenCursors = new Set(state?.seenCursors ?? []);
     const hashes = new Set(state?.hashes ?? []);
+    // Reuse exact author/hash reads within this batch. Progress and final
+    // results share verified data without introducing a persistent cast cache.
+    const hydrated = new Map<string, Cast | null>();
+    const hydrateCandidates = async (): Promise<Cast[]> => {
+      const pending = [...hashes].filter(hash => !hydrated.has(hash));
+      const matches = await mapPublicReads(pending, async (hash, signal) => {
+        try { return await getAuthorCast(author.fid, hash, signal); }
+        catch (error) {
+          signal.throwIfAborted();
+          if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found') return null;
+          throw error;
+        }
+      }, controller.signal);
+      controller.signal.throwIfAborted();
+      matches.forEach((cast, index) => hydrated.set(pending[index], cast));
+      return [...hashes].flatMap(hash => { const cast = hydrated.get(hash); return cast ? [cast] : []; });
+    };
     for (let page = 0; page < CAST_LINK_BATCH_PAGES; page++) {
       controller.signal.throwIfAborted();
       if (scanned >= CAST_LINK_MAX_MESSAGES || seenCursors.size >= CAST_LINK_MAX_MESSAGES / CAST_LINK_PAGE_SIZE) { limited = true; break; }
@@ -939,22 +963,22 @@ export async function resolveCastAlias(options: { authorIdentifier: string; hash
         }
       }
       const next = history.nextPageToken;
-      if (next === undefined || next === '') { complete = !limited; cursor = undefined; break; }
-      if (!castLinkCursor(next, author.fid) || seenCursors.has(next) || !history.messages.length
-        || castHistoryCursorKey(next, author.fid) !== previousHistoryKey) throw new ApiError('The node returned invalid, unrelated or repeated cast-history pagination.', 502, 'invalid_pagination');
-      cursor = next;
+      if (next === undefined || next === '') { complete = !limited; cursor = undefined; }
+      else {
+        if (!castLinkCursor(next, author.fid) || seenCursors.has(next) || !history.messages.length
+          || castHistoryCursorKey(next, author.fid) !== previousHistoryKey) throw new ApiError('The node returned invalid, unrelated or repeated cast-history pagination.', 502, 'invalid_pagination');
+        cursor = next;
+      }
+      if (options.onProgress && hashes.size) {
+        const candidates = await hydrateCandidates();
+        controller.signal.throwIfAborted();
+        if (candidates.length) options.onProgress({ author, candidates, complete: false, scanned });
+      }
+      if (!cursor) break;
       if (limited || scanned >= CAST_LINK_MAX_MESSAGES) { limited = true; break; }
     }
-    const matches = await mapPublicReads([...hashes], async (hash, signal) => {
-      try { return await getAuthorCast(author.fid, hash, signal); }
-      catch (error) {
-        signal.throwIfAborted();
-        if (error instanceof ApiError && error.status === 404 && error.code === 'cast_not_found') return null;
-        throw error;
-      }
-    }, controller.signal);
+    const candidates = await hydrateCandidates();
     controller.signal.throwIfAborted();
-    const candidates = matches.filter((cast): cast is Cast => cast !== null);
     return { author, candidates, complete, scanned, ...(limited ? { limited: true } : {}),
       ...(!complete && !limited && cursor ? { continuation: { authorIdentifier, hashPrefix, fid: author.fid, cursor, seenCursors: [...seenCursors], hashes: candidates.map(cast => cast.hash), scanned } } : {}) };
   } catch (error) {

@@ -870,3 +870,13 @@ The retained Quorum messenger is separate. Its root verification was attempted b
            ⚠ This does NOT clear a change that touches shared or the wire.
 ─────────────────────────────────────────────────────────
 ```
+
+# Earlier short-link cast display · 2026-10-22
+
+The standalone `yarn verify` gate passes **928 tests across 45 files**, browser/Worker typechecks, the production browser build and offline signer typecheck/build. The new API and component regressions cover a verified match arriving while the next history page is pending, exact-read reuse within a batch, malformed page cursors, prefix collisions, cancellation/deadlines, stale and post-settlement progress, retained matches after later errors, and cancelling background reads before explicit full-cast navigation. Existing navigation integration checks use the simpler match-status copy.
+
+The short-link resolver now hydrates and publishes matches after each fully validated history page instead of waiting for all four pages. The UI places matching casts first, allows immediate explicit opening, and checks the remainder of the same bounded batch in the background. Progress never claims uniqueness: automatic selection still requires exhausted available history and exactly one candidate. All prior author/hash, pagination, timeout and cumulative limits remain. No persistent cast cache, new API host, protocol permission or dependency was added.
+
+Headless installed Chrome checked the local preview at 1360- and 390-pixel viewport widths using synthetic public responses. A matching cast rendered while page two was deliberately held pending; selecting it cancelled that request, opened the canonical conversation, and never requested pages three or four. Both viewports had no horizontal document overflow or browser errors. A separate public-read-only check of `/pichi/0xbd787413` through the local preview displayed the verified cast before the batch completed (2.822 seconds from the first API request in this one sample) and opened `/cast/0xbd787413995e9136d8cc636c6f1ee5331b94ec6d`. That timing includes current public-node/network conditions and is not a latency guarantee.
+
+These are local preview checks, not a production release. The node still lacks a native author/hash-prefix index, so a match in older history can require further bounded searches. No wallet, account write, media upload, branch push, Cloudflare action or production deployment was performed.
