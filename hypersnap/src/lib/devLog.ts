@@ -19,6 +19,19 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'persistent-node-support-link',
+    date: '2026-10-22',
+    title: 'Node support stays one click away',
+    summary: 'A small Support the node link now sits in the sidebar, the right column footer and the landing footer, so it is still reachable after the Discover banner is dismissed.',
+    changes: [
+      'Add a Support the node link beside the other site links in the sidebar, the right column footer and the signed-out landing footer.',
+      'Open the same optional, one-time Stripe checkout in a new tab as the Discover banner. The banner and links share one address.',
+      'Dismissing the banner still hides only the banner on this browser. On phones, where the side columns are hidden, the banner and landing footer carry the link.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/0aa9b5d2ebe88c366f3b028129b3cb1ce905ee33',
+    tag: 'Launch',
+  },
+  {
     id: 'recast-menu-and-active-channels',
     date: '2026-10-22',
     title: 'Quote from the recast menu, channels on the side',
