@@ -723,3 +723,21 @@ describe('profile and channel headers', () => {
     expect(location.pathname).toBe('/channels');
   });
 });
+
+describe('persistent node support links', () => {
+  const supportLinks = (scope: ParentNode) => [...scope.querySelectorAll<HTMLAnchorElement>('a')].filter(link => link.textContent === 'Support the node');
+  it('keeps a Support the node link in the sidebar and right column after the banner is dismissed', async () => {
+    await start(); await click(container.querySelector('button[aria-label="Dismiss node support banner"]')!);
+    expect(container.querySelector('.node-support')).toBeNull();
+    for (const scope of [container.querySelector('.sidebar-links')!, container.querySelector('.rightbar footer')!]) {
+      const [link] = supportLinks(scope);
+      expect(link.href).toBe('https://buy.stripe.com/cNi00i9dY4kD3JP7G57ss05'); expect(link.target).toBe('_blank');
+      expect(link.rel.split(' ')).toEqual(expect.arrayContaining(['noopener', 'noreferrer'])); expect(link.getAttribute('aria-label')).toContain('opens Stripe');
+    }
+  });
+
+  it('offers the same link in the signed-out landing footer', async () => {
+    localStorage.removeItem('opencaster.explore'); await start();
+    expect(supportLinks(container.querySelector('.landing__footer')!).map(link => link.href)).toEqual(['https://buy.stripe.com/cNi00i9dY4kD3JP7G57ss05']);
+  });
+});
