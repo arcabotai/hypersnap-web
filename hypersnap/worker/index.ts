@@ -3,14 +3,21 @@
  */
 import { handleMediaRequest, type MediaEnv } from './media';
 import { normalizeHypersnapEnsName } from '../src/lib/ensName';
+import { handleAnalyticsEvents, recordRequestMetric, type AnalyticsEnv } from './analytics';
 export { MediaUploadQuota } from './media';
-export interface Env extends MediaEnv {
+export interface Env extends MediaEnv, AnalyticsEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
 const UPSTREAM = 'https://haatz.quilibrium.com';
 const CANONICAL_ORIGIN = 'https://opencaster.org';
 const LEGACY_HOST = 'quorum.arca.computer';
+const STATIC_ASSET_PATHS = new Set([
+  '/index.html', '/favicon.ico', '/robots.txt', '/sitemap.xml',
+  '/manifest.json', '/manifest.webmanifest', '/opencaster-symbol.svg',
+  '/quorum-symbol.svg', '/unknown-dark.png', '/unknown-light.png',
+  '/InterVariable.ttf', '/Sen-VariableFont_wght.ttf', '/THIRD_PARTY_DEPENDENCY_LICENSES.txt',
+]);
 const MAX_MESSAGE_BYTES = 65_536;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 20_000;
@@ -276,7 +283,7 @@ async function proxy(request: Request, url: URL): Promise<Response> {
   }
 }
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+async function routeRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.host === LEGACY_HOST) {
     const destination = new URL(CANONICAL_ORIGIN);
@@ -293,10 +300,34 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (url.pathname.startsWith('/media/')) headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
     return new Response(null, { status: 308, headers });
   }
+  if (url.pathname === '/_analytics/events') return secure(await handleAnalyticsEvents(request, env));
   if (url.pathname === '/media' || url.pathname.startsWith('/media/')) return handleMediaRequest(request, env);
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return proxy(request, url);
   if (request.method !== 'GET' && request.method !== 'HEAD') return failure(405, 'method_not_allowed', 'This method is unavailable.');
   return secure(await env.ASSETS.fetch(request));
+}
+
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
+  const path = new URL(request.url).pathname;
+  // Ingestion itself is excluded; a batch must not generate another event.
+  if (path === '/_analytics/events') return routeRequest(request, env);
+  const category = path === '/api' || path.startsWith('/api/') ? 'api'
+    : path === '/media' || path.startsWith('/media/') ? 'media'
+      // Profile names can contain dots, including ENS/Base names. Only known
+      // static namespaces/files are assets; a suffix is not enough to tell.
+      : path.startsWith('/assets/') || path.startsWith('/licenses/') || STATIC_ASSET_PATHS.has(path) ? 'asset'
+        : request.method === 'GET' || request.method === 'HEAD' ? 'page' : 'other';
+  const started = Date.now();
+  let status = 500;
+  try {
+    const response = await routeRequest(request, env);
+    status = response.status;
+    return response;
+  } finally {
+    // Store only a route family, status class, coarse dimensions and duration.
+    // Never pass the URL, request/response body or an exception to telemetry.
+    recordRequestMetric(env, request, status, Math.max(0, Date.now() - started), category);
+  }
 }
 
 export default { fetch: handleRequest };

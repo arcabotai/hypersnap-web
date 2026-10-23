@@ -59,8 +59,8 @@ export function ShareCastDialog({ cast, onClose, notify }: { cast: Cast; onClose
       <label className="field-label" htmlFor={inputId}>Cast link</label>
       <Input ref={input} id={inputId} value={link} readOnly aria-describedby={statusId} autoComplete="off" spellCheck={false} onFocus={event => event.currentTarget.select()} />
       <div className="share-cast__actions">
-        <Button onClick={() => void copyLink()} disabled={busy}><IconCopy size={17} />Copy link</Button>
-        {nativeShareAvailable && <Button variant="secondary" onClick={() => void share()} disabled={busy}><IconShare size={17} />Share via…</Button>}
+        <Button data-analytics="share-copy" onClick={() => void copyLink()} disabled={busy}><IconCopy size={17} />Copy link</Button>
+        {nativeShareAvailable && <Button data-analytics="share-native" variant="secondary" onClick={() => void share()} disabled={busy}><IconShare size={17} />Share via…</Button>}
         <a className="button button--secondary" href={link} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Open cast<IconArrowUpRight size={17} /></a>
       </div>
       <p id={statusId} className="share-cast__status" role="status">{status || 'You can also select the link and copy it manually.'}</p>
