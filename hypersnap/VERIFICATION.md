@@ -1,3 +1,63 @@
+# Private analytics dashboard prepared, activation pending · 2026-10-24
+
+Implementation `15e4e058f52b1141bdbca7b9ee986666eb1263f9`, authored
+`2026-10-24T07:08:01-03:00`, adds the separate operator dashboard and shared
+report core. It is **not deployed or available for production sign-in yet**.
+The current public deployment remains source
+`c5d0ba4ccf1cad9d166e39c2d7d11844e869126f`, Worker
+`3066a446-bbff-4ddc-b1e7-d59c40086d41`, established from authenticated deployment
+metadata before this work. No production analytics policy, DNS route or Worker
+was changed during dashboard preparation.
+
+The full standalone `yarn verify` passed **1,377 tests across 57 files**, browser,
+gateway and dashboard typechecks, the production browser build, and offline
+signer typecheck/build. Verification reused the frozen external installation at
+`/tmp/opencaster-reply-check-b2Hft6ff/hypersnap`; all 193 source/config inputs
+matched the checkout before the release-note/verification edits. No dependency
+or lockfile changed. Existing Rollup annotation and large-chunk advisories remain.
+
+The 14 dashboard Worker tests use synthetic RSA signatures and mock SQL results.
+They cover missing/malformed/invalid assertions, issuer/audience/time/signature
+checks, fixed JWKS origin, stalled transport/body deadlines, authentication before
+queries, allowed paths/periods, generic failures, private response headers and
+disabled alternative URLs/logs. Five shared-renderer tests and the 14 existing
+CLI tests cover script-free controls, labels, escaping, sample weighting and the
+credential-free Worker adapter. All ten fixed native SQL queries separately
+returned HTTP 200 from Cloudflare's read-only API, with the same available
+aggregate results as the local report, including 20 visits, 49 page views and
+18 clicks in the checked seven-day window. The new API applies sample weights
+automatically; the dashboard uses COUNT/AVG rather than double-weighting them.
+
+Wrangler 4.152.0 dry-run bundled the assetless dashboard with the native SQL
+binding. The inspected 33 KiB output in
+`/tmp/opencaster-private-dashboard-worker-build-20261024` includes no CLI
+credential or filesystem code. A localhost-only visual preview used synthetic
+data, visibly labelled as a preview; period selection and refresh submitted the
+chosen range. No preview fixture is part of deployment inputs.
+
+The new milestone links the implementation's full hash and recorded author
+date. `yarn check:devlog --base c5d0ba4ccf1cad9d166e39c2d7d11844e869126f`
+passed for eight shipped inputs and the new milestone; the complete standalone
+gate passed again with that note included. Fresh production assets were built
+at `/tmp/opencaster-private-analytics-production-20261024-8yALFkmx` and inspected:
+25 files, all entry-point references resolve, all earlier milestones remain,
+and the new source link is present. There are no preview fixtures, source maps,
+symlinks or private-dashboard Worker code in the public assets. Their hashes are
+recorded in `/tmp/opencaster-private-dashboard-release-manifest.json`; this
+directory has not been deployed.
+
+Cloudflare Zero Trust is not configured on the account. Its Free activation
+checkout requires agreement to terms and authorization of the saved card for
+usage above free limits. Preparation stopped before those checkboxes or Activate.
+The operator must approve/complete that step before provisioning exact-email
+Access, recording its real team domain/audience, and deploying. Current empty
+Access identifiers deliberately deny every request. Real approved-user sign-in,
+signed-out redirect, unauthorized-user denial, deployed binding behavior, all
+four live periods and live response headers remain unverified. Recheck the live
+release base, run the release guard and gate, inspect fresh external assets, and
+confirm the live dev log when activation and deployment proceed. Retained
+Quorum was neither changed nor verified; all unrelated root edits were preserved.
+
 # Cloudflare invocation logs enabled · 2026-10-24
 
 At the operator’s request, Chrome’s signed-in Cloudflare dashboard enabled

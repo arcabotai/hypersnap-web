@@ -19,6 +19,21 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'private-operator-analytics-dashboard',
+    date: '2026-10-24',
+    title: 'A private view of website activity',
+    summary: 'An operator dashboard brings aggregate visits, countries, traffic sources and interface activity together behind private sign-in.',
+    changes: [
+      'Show document visits, page views, countries, broad traffic-source categories and recorded interface actions, with 1-, 7-, 30- and 90-day reporting periods and a refresh control.',
+      'Include daily activity, device and browser categories, available performance samples, browser error counts and gateway request health. Visits include reloads, and clicks describe intent rather than confirmed sign-ins or social writes.',
+      'Run the dashboard separately from the public website, protected by an exact-email Cloudflare Access policy and a second signature, issuer, audience and expiry check before any analytics query. Missing authentication configuration denies access.',
+      'Read the existing aggregate dataset through an account-scoped Cloudflare SQL binding without storing an API token. Keep dashboard responses uncached, alternate Worker URLs disabled, and dashboard invocation logs and traces off.',
+      'Preserve visitor privacy controls, the local snapshot report and the existing collection limits. Add no visitor identifiers, session recordings, raw referrer URLs, account details or additional tracking.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/15e4e058f52b1141bdbca7b9ee986666eb1263f9',
+    tag: 'Reliability',
+  },
+  {
     id: 'cloudflare-worker-invocation-diagnostics',
     date: '2026-10-24',
     title: 'Request diagnostics in Cloudflare',
