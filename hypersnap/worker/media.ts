@@ -35,20 +35,24 @@ function success(value: unknown): Response {
 }
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 
-async function readLimited(body: ReadableStream<Uint8Array> | null, limit: number): Promise<Uint8Array> {
+async function readLimited(body: ReadableStream<Uint8Array> | null, limit: number, signal?: AbortSignal): Promise<Uint8Array> {
   if (!body) throw new Error('Missing body');
   const chunks: Uint8Array[] = [];
   let length = 0;
   const reader = body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener('abort', cancel, { once: true });
   try {
     while (true) {
+      if (signal?.aborted) { cancel(); throw new Error('Registry deadline exceeded'); }
       const item = await reader.read();
+      if (signal?.aborted) throw new Error('Registry deadline exceeded');
       if (item.done) break;
       length += item.value.byteLength;
-      if (length > limit) { await reader.cancel(); throw new Error('Body too large'); }
+      if (length > limit) { cancel(); throw new Error('Body too large'); }
       chunks.push(item.value);
     }
-  } finally { reader.releaseLock(); }
+  } finally { signal?.removeEventListener('abort', cancel); reader.releaseLock(); }
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
@@ -60,12 +64,20 @@ async function readLimited(body: ReadableStream<Uint8Array> | null, limit: numbe
 async function activeSigner(grant: MediaUploadGrant, env: MediaEnv): Promise<boolean> {
   const config = resolveUpstream(env);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
-  try {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error('Registry deadline exceeded')); }, 10000);
+  });
+  // Race the complete operation, not only fetch's abort signal. A transport or
+  // cancellation hook can ignore abort; it must never hold upload authorization.
+  const lookup = Promise.resolve().then(async () => {
     const params = new URLSearchParams({ fid: String(grant.fid), pageSize: '1000', 'requesterFids[0]': String(grant.fid) });
     const response = await fetchUpstream(config, `/v1/signersByFid?${params}`, { signal: controller.signal });
-    if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) { await response.body?.cancel(); throw new Error('Registry unavailable'); }
-    const value: unknown = JSON.parse(new TextDecoder().decode(await readLimited(response.body, MAX_REGISTRY_BYTES)));
+    if (controller.signal.aborted || !response.ok || !response.headers.get('Content-Type')?.includes('application/json')) {
+      void response.body?.cancel().catch(() => undefined);
+      throw new Error('Registry unavailable');
+    }
+    const value: unknown = JSON.parse(new TextDecoder().decode(await readLimited(response.body, MAX_REGISTRY_BYTES, controller.signal)));
     if (!object(value) || !Array.isArray(value.signers) || value.signers.length > 1000) throw new Error('Invalid registry');
     // Fail closed on a truncated list. An account with more keys may revoke old
     // keys first; pagination cannot silently turn an incomplete view into trust.
@@ -75,7 +87,10 @@ async function activeSigner(grant: MediaUploadGrant, env: MediaEnv): Promise<boo
       && signer.source === 'SIGNER_SOURCE_OFFCHAIN' && signer.requestFid === grant.fid
       && Number.isSafeInteger(signer.expiresAt) && Number(signer.expiresAt) > Math.floor(Date.now() / 1000) + 30
       && Array.isArray(signer.scopes) && signer.scopes.includes('MESSAGE_TYPE_CAST_ADD'));
-  } finally { clearTimeout(timer); }
+  });
+  // Promise.race observes lookup's late rejection as well as its first outcome.
+  try { return await Promise.race([lookup, deadline]); }
+  finally { clearTimeout(timer); }
 }
 
 const ascii = (bytes: Uint8Array, start: number, length: number) => String.fromCharCode(...bytes.subarray(start, start + length));

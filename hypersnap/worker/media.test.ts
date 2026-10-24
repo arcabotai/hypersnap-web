@@ -106,6 +106,45 @@ describe('authenticated media uploads', () => {
     expect(result.status).toBe(503); expect(await result.text()).not.toContain(ORIGIN_TOKEN); expect(put).not.toHaveBeenCalled(); expect(storage.values.size).toBe(0);
   });
 
+  it.each(([1, 2] as const).flatMap(check => (['ignored fetch abort', 'stalled success body', 'pending error cancellation', 'rejected error cancellation', 'late fetch rejection'] as const).map(mode => ({ check, mode }))))('hard-bounds signer check $check with $mode and zero storage effects', async ({ check, mode }) => {
+    const grant = await grantFor();
+    vi.useFakeTimers();
+    const { env, fetch, put, storage, quota, images } = environment();
+    const getQuota = vi.spyOn(env.MEDIA_QUOTA!, 'get'); const reserve = vi.spyOn(quota, 'fetch');
+    const storagePut = vi.spyOn(storage, 'put'); const transaction = vi.spyOn(storage, 'transaction'); const alarm = vi.spyOn(storage, 'setAlarm');
+    const validRegistry = fetch.getMockImplementation()!;
+    if (check === 2) fetch.mockImplementationOnce(validRegistry);
+    let resolveLate: ((response: Response) => void) | undefined;
+    let rejectLate: ((reason: Error) => void) | undefined;
+    const cancel = vi.fn(() => mode === 'rejected error cancellation'
+      ? Promise.reject(new Error(ORIGIN_TOKEN)) : new Promise<void>(() => undefined));
+    fetch.mockImplementationOnce(() => {
+      if (mode === 'ignored fetch abort' || mode === 'late fetch rejection') {
+        return new Promise<Response>((resolve, reject) => { resolveLate = resolve; rejectLate = reject; });
+      }
+      return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ cancel }), {
+        status: mode === 'stalled success body' ? 200 : 500,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    });
+    const req = upload(grant); const pending = handleMediaRequest(req, { ...env, ...privateConfig });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(check));
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await pending;
+    expect(result.status).toBe(503); expect(await result.text()).not.toContain(ORIGIN_TOKEN);
+    expect(req.bodyUsed).toBe(check === 2);
+    if (mode === 'ignored fetch abort') {
+      resolveLate!(new Response(new ReadableStream<Uint8Array>({ cancel }), { headers: { 'Content-Type': 'application/json' } }));
+      await vi.advanceTimersByTimeAsync(0); expect(cancel).toHaveBeenCalledOnce();
+    } else if (mode === 'late fetch rejection') {
+      rejectLate!(new Error(ORIGIN_TOKEN)); await vi.advanceTimersByTimeAsync(0);
+    } else { expect(cancel).toHaveBeenCalledOnce(); }
+    for (const effect of [getQuota, reserve, storagePut, transaction, alarm, put]) expect(effect).not.toHaveBeenCalled();
+    expect(storage.values.size).toBe(0); expect(images.size).toBe(0); expect(storage.alarm).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(check); expect(vi.getTimerCount()).toBe(0);
+    for (const [url] of fetch.mock.calls) expect(url).toContain(`${PRIVATE_ORIGIN}/v1/signersByFid?`);
+  });
+
   it('keeps existing public media and legacy redirects available independently of broken private-node configuration', async () => {
     const { env, fetch, images } = environment(); const digest = await sha256Hex(png); images.set(digest, { bytes: png, type: 'image/png' });
     const settings = { ...env, HYPERSNAP_ORIGIN: PRIVATE_ORIGIN, ASSETS: { fetch: vi.fn() } };
