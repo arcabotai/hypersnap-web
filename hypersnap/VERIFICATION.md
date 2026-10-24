@@ -1,3 +1,53 @@
+# Cloudflare invocation logs enabled · 2026-10-24
+
+At the operator’s request, Chrome’s signed-in Cloudflare dashboard enabled
+persisted Worker invocation logs at 100% sampling. Invocation logs and dashboard
+persistence are on; automatic traces and real-time Issues remain off. No new
+pricing terms or external export destinations were accepted or configured.
+
+Source alignment `303a8bfceded1ed50696c30ff7743b7bf09bc760` preserves the setting
+in Wrangler and enables URL query-string redaction. The required milestone links
+that implementation with its author date `2026-10-24T06:06:32-03:00`. Release
+`c5d0ba4ccf1cad9d166e39c2d7d11844e869126f` is deployed as Worker
+**`3066a446-bbff-4ddc-b1e7-d59c40086d41`** at 100% traffic, deployment
+`1bf35058-a02a-41ac-8d89-0216ecf2e112`. Its release base was source
+`8fdceabd9b5dd62dd83837467de325d9d70b3f38`, Worker
+`bfbbc4f9-364c-41e5-b627-10d51de7eb56`. Only observability settings changed in
+Wrangler; application Worker code, server secret binding, gateway settings,
+media/analytics bindings and migration remain unchanged.
+
+The dev-log guard passed against that actual base for one shipped configuration
+file and the new milestone. Complete standalone `yarn verify` passed **1,358
+tests across 55 files**, browser/Worker typechecks and build, and offline signer
+typecheck/build. The existing frozen temporary installation was reused; all 175
+source/test/tooling/asset/config input hashes matched. Dependencies and lockfile
+were unchanged. Existing Rollup annotation and large-chunk advisories remain.
+
+Fresh assets in `/tmp/opencaster-observability-production-20261024-c5d0ba4c-DYGu5vOg`
+were inspected: 25 files, all local references resolved, no fixture wrappers,
+source maps or symlinks, and all 38 milestones present in preserved order.
+Wrangler 4.152.0 schema and dry-run accept query redaction. That exact directory
+was deployed without changing its hashes. Public reads verified all 24 non-HTML
+asset hashes, exact release HTML at `/` and `/devlog`, API info 200 and the legacy
+308 redirect. An initial Python HTTP client received 403; ordinary curl GETs
+completed the checks without any challenge handling.
+
+Chrome confirmed stored request events in the requested Events view. A harmless
+public request to `/observability-check-20261024?redaction_probe=public-check`
+appeared as `GET https://opencaster.org/observability-check-20261024`, without
+its query string. Events include automated traffic and these verification reads;
+they are not unique visitors. Existing aggregate visit/click/performance analytics
+remain separate. These checks used public reads and the authorized hosting
+setting changes; no real wallet, signature, upload or social write occurred.
+The retained Quorum application was not changed or verified.
+
+Receipts: `/tmp/opencaster-observability-release-base.json`,
+`/tmp/opencaster-observability-release-manifest.json`,
+`/tmp/opencaster-observability-deployment-receipt.json`,
+`/tmp/opencaster-observability-public-verification.json` and
+`/tmp/opencaster-observability-ui-verification.json`. Dashboard screenshot:
+`/tmp/opencaster-observability-enabled.png`.
+
 # Reply context deployed · 2026-10-24
 
 Release source `8fdceabd9b5dd62dd83837467de325d9d70b3f38` is deployed at 100%
