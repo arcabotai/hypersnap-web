@@ -1,3 +1,49 @@
+# Reply context in timelines and conversations · 2026-10-24
+
+The standalone `yarn verify` passed **1,096 tests across 52 files**, browser/Worker
+typechecks and production build, and offline signer typecheck/build. Checks ran
+in `/tmp/opencaster-reply-check-b2Hft6ff/hypersnap` after a frozen Yarn install
+because dependency reads in this cloud-synced checkout stalled before test
+collection. SHA-256 comparisons confirmed all 170 source, test, tooling, asset,
+manifest and lockfile inputs matched this checkout. The temporary workspace also
+included the unchanged root license and a read-only reference to the source Git
+metadata required by the signer manifest. No dependency or lockfile changed.
+Existing Rollup annotation and large-chunk advisories remain.
+
+Timeline replies now identify the parent author and show a two-line parent
+excerpt with an ordinary navigable cast link. Conversations show up to eight
+verified earlier casts, oldest first, above the selected reply; nested replies
+identify their immediate recipient without duplicating the parent text. Parent
+reads share four transport slots and a 128-entry in-memory cache, while the
+ancestry walk has a 20-second total deadline. Missing parents retain the selected
+reply, show an explicit node-availability notice and permit retry/navigation.
+Hidden and muted parents remain subject to local content controls.
+
+Synthetic regressions cover exact parent hash/FID checks, cycles, depth/deadline
+bounds, partial ancestry, cache limits, independent cancellation, stale reads,
+retry after an invalid cached author response, modified clicks, unresolved-FID
+profile navigation, channel roots and content filtering. An initial new race
+test expected a full URL label despite the existing shortened display; the
+assertion now checks the exact link destination and visible leading text. The
+first temporary signer build lacked the root license; adding the unchanged
+supporting file and Git metadata allowed the complete gate to pass.
+
+Public browser reads through the local preview verified the supplied
+`/ahn.eth/0xf9efb558` conversation, including the original image, intermediate
+reply and immediate recipient `@cryptonjal`. The author's public Replies feed
+shows the corresponding recipient and parent excerpt. Desktop (1440px) and
+mobile (390px) checks found no horizontal document overflow. No wallet,
+signature, upload or social write was performed. Screenshots:
+`/tmp/opencaster-reply-context-desktop.png`,
+`/tmp/opencaster-reply-context-mobile.png`,
+`/tmp/opencaster-reply-context-timeline.png` and
+`/tmp/opencaster-reply-context-timeline-mobile.png`.
+
+These are local, uncommitted changes, **not a deployment**. A release still needs
+an implementation commit, its new dev-log milestone, the dev-log check against
+the actual deployed base, and the documented production release checks. The
+retained Quorum application was outside this change and was not verified.
+
 # Direct short links deployed · 2026-10-23
 
 Follow-up source `9e5d119ba0c37bee9eb9b409885169b1486c897e` is deployed as Worker

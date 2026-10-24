@@ -31,13 +31,17 @@ import { useNavigationShortcuts } from './lib/useNavigationShortcuts';
 import { textLinks } from './lib/textLinks';
 import { quorumSocialPath } from './lib/socialLinks';
 import { trackPageView } from './lib/analytics';
+import { getCastAncestors, matchesParentCast, parentCastReference, type CastAncestors } from './lib/castContext';
+import { createParentCastReader } from './lib/parentCastReader';
 import './familiar.scss';
 import './cast-features.scss';
+import './reply-context.scss';
 
 const ContentSettings = lazy(() => import('./components/ContentSettings'));
 const AnalyticsSettings = lazy(() => import('./components/AnalyticsSettings'));
 const CastReactionPeople = lazy(() => import('./components/CastReactionPeople'));
 const ContentControls = createContext<{ preferences: ContentPreferences; revealed: ReadonlySet<string>; reveal(hash: string): void }>({ preferences: emptyContentPreferences(), revealed: new Set(), reveal() {} });
+const ParentCastRead = createContext<typeof getCast>(getCast);
 const DevLog = lazy(() => import('./components/DevLog'));
 const ConnectAccount = lazy(() => import('./components/ConnectAccount'));
 const DeviceSettings = lazy(() => import('./components/ConnectAccount').then(module => ({ default: module.DeviceSettings })));
@@ -116,13 +120,67 @@ function LinkEmbed({ url, onNavigate }: { url: string; onNavigate(path: string):
   const hostname = new URL(destination).hostname.replace(/^www\./, '');
   return <a className="link-embed" href={localPath ?? url} target={localPath ? undefined : '_blank'} rel={localPath ? undefined : 'noopener noreferrer'} title={localPath ? `Original link: ${url}` : url} onClick={localPath ? event => localClick(event, () => onNavigate(localPath)) : undefined}><span className="link-embed__visual" aria-hidden="true"><IconWorld size={32} /></span><span className="link-embed__caption"><small>{hostname}</small><strong>{hostname === 'youtube.com' || hostname === 'youtu.be' ? 'YouTube' : hostname}</strong></span><IconArrowUpRight className="link-embed__arrow" size={17} /></a>;
 }
-function ConversationReplies({ nodes, renderCard }: { nodes: ConversationNode[]; renderCard(cast: Cast): ReactNode }) {
+function ConversationReplies({ nodes, parent, renderCard }: { nodes: ConversationNode[]; parent: Cast; renderCard(cast: Cast, parent: Cast): ReactNode }) {
   let remaining = 150;
-  const render = (items: ConversationNode[], depth: number): ReactNode => items.slice(0, 150).map(node => {
+  const render = (items: ConversationNode[], depth: number, parent: Cast): ReactNode => items.slice(0, 150).map(node => {
     if (remaining-- <= 0) return null;
-    return <section key={node.cast.hash} className="conversation-reply">{renderCard(node.cast)}{depth < 5 && node.replies?.length > 0 && <div className="conversation-children">{render(node.replies, depth + 1)}</div>}</section>;
+    return <section key={node.cast.hash} className="conversation-reply">{renderCard(node.cast, parent)}{depth < 5 && node.replies?.length > 0 && <div className="conversation-children">{render(node.replies, depth + 1, node.cast)}</div>}</section>;
   });
-  return <div className="conversation-replies" aria-label="Conversation replies">{render(nodes, 0)}<p className="thread-empty">Open a reply to continue its conversation.</p></div>;
+  return <div className="conversation-replies" aria-label="Conversation replies">{render(nodes, 0, parent)}<p className="thread-empty">Open a reply to continue its conversation.</p></div>;
+}
+type ReplyPresentation = { parent?: Cast; replyPreview?: boolean };
+function ConversationContext({ cast, renderCard, onNavigate, onRetry }: { cast: Cast; renderCard(cast: Cast, featured: boolean, context: ReplyPresentation): ReactNode; onNavigate(path: string): void; onRetry(): void }) {
+  const readCast = useContext(ParentCastRead);
+  const [context, setContext] = useState<CastAncestors | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController(); setContext(null);
+    getCastAncestors(cast, controller.signal, { readCast }).then(value => { if (!controller.signal.aborted) setContext(value); }).catch(() => { if (!controller.signal.aborted) setContext({ ancestors: [], status: 'unavailable' }); });
+    return () => controller.abort();
+  }, [cast, attempt, readCast]);
+  const ancestors = context?.ancestors ?? [];
+  const earlier = context?.status === 'limited' ? parentCastReference(ancestors[0]) : undefined;
+  return <>
+    {(cast.parent_hash || ancestors.length > 0) && <section className="conversation-context" aria-label="Earlier casts in this conversation">
+      {!context && <p className="conversation-context__notice" role="status">Loading earlier casts…</p>}
+      {context?.status === 'unavailable' && <div className="conversation-context__notice"><p>Earlier context is unavailable on this Hypersnap node.</p><Button variant="ghost" onClick={() => { onRetry(); setAttempt(value => value + 1); }}>Retry</Button></div>}
+      {earlier && <a className="conversation-context__notice" href={castPath(earlier.hash)} onClick={event => localClick(event, () => onNavigate(castPath(earlier.hash)))}>View earlier casts<IconArrowUpRight size={14} /></a>}
+      {ancestors.map((ancestor, index) => <div className="conversation-context__ancestor" key={ancestor.hash}>{renderCard(ancestor, false, { parent: ancestors[index - 1], replyPreview: false })}</div>)}
+    </section>}
+    {renderCard(cast, true, { parent: ancestors.at(-1), replyPreview: false })}
+  </>;
+}
+function ReplyContext({ cast, parent, preview = true, getCastPath, onProfile, onNavigate, onThread, onCastHash }: { cast: Cast; parent?: Cast; preview?: boolean; getCastPath(cast: Cast): string; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onCastHash(hash: string): void }) {
+  const controls = useContext(ContentControls);
+  const readCast = useContext(ParentCastRead);
+  const reference = parentCastReference(cast);
+  const hash = reference?.hash;
+  const fid = reference?.fid;
+  const known = parent && matchesParentCast(cast, parent) ? parent : undefined;
+  const [loaded, setLoaded] = useState<Cast | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController(); setLoaded(null); setUnavailable(false);
+    if (hash && preview && !known) readCast(hash, controller.signal).then(value => {
+      if (!controller.signal.aborted) {
+        if (bookmarkHash(value?.hash) === bookmarkHash(hash) && Number.isSafeInteger(value?.author?.fid) && value.author.fid > 0 && (fid === undefined || value.author.fid === fid) && typeof value.text === 'string') setLoaded(value);
+        else setUnavailable(true);
+      }
+    }).catch(() => { if (!controller.signal.aborted) setUnavailable(true); });
+    return () => controller.abort();
+  }, [hash, fid, preview, known, readCast]);
+  if (!reference) return null;
+  const resolved = known ?? (loaded && matchesParentCast(cast, loaded) ? loaded : undefined);
+  const reason = resolved && !controls.revealed.has(bookmarkHash(resolved.hash)!) ? getContentFilterReason(resolved, controls.preferences) : undefined;
+  if (reason) return <div className="cast-reply-context cast-reply-context--filtered"><p>Parent cast filtered: {reason}</p><Button variant="ghost" onClick={() => controls.reveal(resolved!.hash)}>Show parent for this view</Button></div>;
+  const recipient = resolved?.author;
+  const label = recipient?.username ? `@${recipient.username}` : recipient?.display_name || (recipient || fid ? `FID ${recipient?.fid ?? fid}` : 'a cast');
+  const path = resolved ? getCastPath(resolved) : castPath(reference.hash);
+  return <div className="cast-reply-context">
+    <div className="cast-reply-context__label"><IconMessageCircle size={13} aria-hidden="true" /><span>Replying to {recipient ? <a data-analytics="profile-open" href={profilePath(recipient.fid)} onClick={event => localClick(event, () => onProfile(recipient))}>{label}</a> : fid ? <a data-analytics="profile-open" href={profilePath(fid)} onClick={event => localClick(event, () => onNavigate(profilePath(fid)))}>{label}</a> : <a href={path} onClick={event => localClick(event, () => onCastHash(reference.hash))}>{label}</a>}</span></div>
+    {preview && <a data-analytics="cast-parent-open" className="cast-reply-context__preview" href={path} onClick={event => localClick(event, () => resolved ? onThread(resolved) : onCastHash(reference.hash))}>{resolved ? renderMentionSegments(resolved).map(segment => segment.kind === 'text' ? segment.text : `@${segment.user.username || segment.user.fid}`).join('') || 'Cast with attachments' : unavailable ? 'Parent cast unavailable on this node · View parent cast' : 'Loading parent cast…'}</a>}
+    {!preview && !resolved && <a data-analytics="cast-parent-open" className="cast-reply-context__open" href={path} onClick={event => localClick(event, () => onCastHash(reference.hash))}>View parent cast<IconArrowUpRight size={13} /></a>}
+  </div>;
 }
 function QuotedCast({ target, onThread, getCastPath }: { getCastPath(cast: Cast): string; target: { fid: number; hash: string }; onThread(cast: Cast): void }) {
   const controls = useContext(ContentControls);
@@ -163,7 +221,7 @@ function Landing({ onSignIn, onExplore, onNavigate }: { onSignIn(): void; onExpl
     <footer className="landing__footer"><a data-analytics="nav-settings" href="/settings" onClick={event => localClick(event, () => onNavigate('/settings'))}>Privacy &amp; analytics</a><a data-analytics="nav-devlog" href="/devlog" onClick={event => localClick(event, () => onNavigate('/devlog'))}>Dev log</a><a data-analytics="hypersnap-open" href="https://hypersnap.org" target="_blank" rel="noopener noreferrer">Hypersnap</a><a data-analytics="node-support-open" href={NODE_SUPPORT_URL} target="_blank" rel="noopener noreferrer" aria-label="Support the node (opens Stripe in a new tab)">Support the node</a><a data-analytics="source-open" href={sourceUrl} target="_blank" rel="noopener noreferrer">Source</a><a href={`${sourceUrl}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">AGPL-3.0</a></footer>
   </main>;
 }
-function CastCard({ cast, featured = false, fullHashLinks = false, getCastPath, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; featured?: boolean; fullHashLinks?: boolean; getCastPath(cast: Cast): string; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void }) {
+function CastCard({ cast, featured = false, fullHashLinks = false, parent, replyPreview = true, getCastPath, onProfile, onNavigate, onThread, onShare, onQuote, onDelete, reactionActor, onCastHash, onImages, onOptions, session, onSignIn, saved, onSave, notify }: { cast: Cast; featured?: boolean; fullHashLinks?: boolean; getCastPath(cast: Cast): string; onProfile(user: User): void; onNavigate(path: string): void; onThread(cast: Cast): void; onShare(cast: Cast): void; onQuote(cast: Cast): void; onDelete(cast: Cast): void; reactionActor?: User; onCastHash(hash: string): void; onImages(images: CastImage[], initialIndex: number): void; onOptions(cast: Cast): void; session: WalletSession | null; onSignIn(): void; saved: boolean; onSave(cast: Cast): void; notify(text: string): void } & ReplyPresentation) {
   const urls = cast.embeds?.filter((embed): embed is { url: string } => 'url' in embed && !!safeUrl(embed.url)).slice(0, 2) ?? [];
   const isImage = (url: string) => hasImageEmbed({ ...cast, embeds: [{ url }] });
   const images = urls.filter(embed => isImage(embed.url)).map((embed, index) => ({ url: embed.url, alt: `Image ${index + 1} attached to cast by @${cast.author.username || cast.author.fid}` }));
@@ -183,9 +241,9 @@ function CastCard({ cast, featured = false, fullHashLinks = false, getCastPath, 
     </div>
     <div className="cast__body">
       {cast.reaction_context && <div className="cast-activity">{cast.reaction_context.type === 'like' ? <IconHeart size={14} aria-hidden="true" /> : <IconRepeat size={14} aria-hidden="true" />}<a data-analytics="profile-open" href={profilePath(cast.reaction_context.fid)} onClick={event => { if (reactionActor) localClick(event, () => onProfile(reactionActor)); }}>{reactionActor?.display_name || reactionActor?.username || `FID ${cast.reaction_context.fid}`}</a>{cast.reaction_context.type === 'like' ? 'liked' : 'recasted'}<time dateTime={cast.reaction_context.timestamp} title={new Date(cast.reaction_context.timestamp).toLocaleString()}>{relativeTime(cast.reaction_context.timestamp)}</time></div>}
+      <ReplyContext cast={cast} parent={parent} preview={replyPreview} getCastPath={getCastPath} onProfile={onProfile} onNavigate={onNavigate} onThread={onThread} onCastHash={onCastHash} />
       <p className={`cast__text ${collapsed ? 'cast__text--clamp' : ''}`}><CastText cast={cast} onProfile={onProfile} onNavigate={onNavigate} /></p>
       {collapsed && <Button variant="ghost" className="cast__more" onClick={() => setExpanded(true)}>Show more</Button>}
-      {cast.parent_hash && /^(?:0x)?[a-fA-F0-9]{40}$/.test(cast.parent_hash) && <a data-analytics="cast-parent-open" className="cast-parent" href={castPath(cast.parent_hash)} onClick={event => localClick(event, () => onCastHash(cast.parent_hash!))}>View parent cast<IconArrowUpRight size={13} /></a>}
       {urls.length > 0 && <div className={`cast__attachments ${urls.length > 1 ? 'cast__attachments--multiple' : ''}`} aria-label="Cast attachments">{[...urls].sort((a, b) => Number(isImage(b.url)) - Number(isImage(a.url))).map(embed => isImage(embed.url) ? <a href={embed.url} key={embed.url} target="_blank" rel="noopener noreferrer" data-analytics="cast-image-open" className="embed" aria-label="View attached image" onClick={event => localClick(event, () => onImages(images, images.findIndex(image => image.url === embed.url)))}><img src={embed.url} loading="lazy" alt="Image attached to cast" referrerPolicy="no-referrer" onError={event => { event.currentTarget.hidden = true; }} /></a> : <LinkEmbed key={embed.url} url={embed.url} onNavigate={onNavigate} />)}</div>}
       {cast.embeds?.filter((embed): embed is { cast_id: { fid: number; hash: string } } => 'cast_id' in embed && !!embed.cast_id && Number.isSafeInteger(embed.cast_id.fid) && embed.cast_id.fid > 0 && /^(?:0x)?[a-fA-F0-9]{40}$/.test(embed.cast_id.hash)).slice(0, 2).map(embed => <QuotedCast key={embed.cast_id.hash} target={embed.cast_id} onThread={onThread} getCastPath={getCastPath} />)}
       <div className="cast__actions">
@@ -239,6 +297,8 @@ export default function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const parentReader = useMemo(() => createParentCastReader(), [refresh]);
+  useEffect(() => () => parentReader.dispose(), [parentReader]);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState('');
   const [thread, setThread] = useState<Cast | null>(null);
@@ -589,17 +649,17 @@ export default function App() {
   const activeThread = isConversation && thread && bookmarkHash(thread.hash) === conversationHash ? thread : null;
   const activeConversation = activeThread && conversation && bookmarkHash(conversation.cast.hash) === conversationHash && conversation.cast.author.fid === activeThread.author.fid ? conversation : null;
   const activeThreadError = conversationHash && threadErrorKey === castPath(conversationHash) ? threadError : '';
-  const card = (cast: Cast, featured = false, fullHashLinks = false) => {
+  const card = (cast: Cast, featured = false, fullHashLinks = false, context: ReplyPresentation = {}) => {
     const reason = !revealed.has(bookmarkHash(cast.hash)!) && getContentFilterReason(cast, preferences);
     if (reason) return <div className="filtered-cast" key={cast.hash}><p>Cast filtered: {reason}</p><Button variant="secondary" onClick={() => controls.reveal(cast.hash)}>Show this cast for this view</Button><Button data-analytics="nav-settings" variant="ghost" onClick={() => navigate('/settings')}>Manage content controls</Button></div>;
-    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} featured={featured} fullHashLinks={fullHashLinks} getCastPath={castLink} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigateSocialLink} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
+    return <CastCard key={`${session?.publicKey ?? 'guest'}:${cast.hash}`} cast={cast} featured={featured} fullHashLinks={fullHashLinks} replyPreview={!threadOpen} {...context} getCastPath={castLink} reactionActor={view === 'profile' && profile && profile.fid === cast.reaction_context?.fid ? profile : undefined} session={session} onSignIn={() => requestSignIn()} onProfile={openProfile} onNavigate={navigateSocialLink} onThread={openThread} onShare={setSharedCast} onCastHash={hash => navigate(castPath(hash))} onImages={(images, initialIndex) => setImageViewer({ images, initialIndex })} onOptions={setCastOptions} onQuote={cast => { quoteGeneration.current += 1; setQuotedCast(cast); }} onDelete={setDeletedCast} saved={bookmarks.some(item => bookmarkHash(item.hash) === bookmarkHash(cast.hash))} onSave={save} notify={notify} />;
   };
   const composeParentUrl = view === 'channel' && channelInfo && safeUrl(channelInfo.parent_url || channelInfo.url) ? channelInfo.parent_url || channelInfo.url : undefined;
   const feedCandidates = view === 'bookmarks' ? filterBookmarks(bookmarks, bookmarkQuery, bookmarkSort) : casts;
   const visibleCasts = feedCandidates.filter(cast => revealed.has(bookmarkHash(cast.hash)!) || !getContentFilterReason(cast, preferences));
   const filteredCount = feedCandidates.length - visibleCasts.length;
   if (!session && !exploring && route.kind === 'discover') return <Landing onSignIn={() => requestSignIn()} onExplore={() => { try { localStorage.setItem(exploreKey, '1'); } catch { /* Exploring still works for this tab. */ } setExploring(true); }} onNavigate={path => navigate(path)} />;
-  return <ContentControls.Provider value={controls}><div className={`app ${threadOpen ? 'app--conversation' : ''}`}>
+  return <ParentCastRead.Provider value={parentReader.read}><ContentControls.Provider value={controls}><div className={`app ${threadOpen ? 'app--conversation' : ''}`}>
     <aside className="sidebar">
       <a data-analytics="nav-discover" href="/" onClick={event => localClick(event, () => navigate('/'))} className="wordmark"><img src="/opencaster-symbol.svg" alt="" />Opencaster</a>
       <p className="brand-credit">Powered by <a href="https://arca.computer" target="_blank" rel="noopener noreferrer">Arca Computer</a></p>
@@ -658,7 +718,7 @@ export default function App() {
       {view === 'following' && session && <SuggestedPeople fid={session.fid} onProfile={openProfile} />}
       </>}
       </div>
-      {threadOpen && <section className="conversation-page" aria-labelledby="conversation-title"><header className="conversation-page__head"><Button variant="ghost" aria-label="Back" onClick={closeThread}><IconArrowLeft size={20} /></Button><h1 id="conversation-title" ref={threadHeading} tabIndex={-1}>Conversation</h1><Button data-analytics="composer-open" className="conversation-page__cast" onClick={() => session ? setComposeOpen(true) : requestSignIn()}>Cast</Button></header>{route.kind === 'cast-alias' && !conversationHash ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={cast => card(cast, false, true)} onOpen={cast => openResolvedAlias(cast, routePath(route), true)} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && card(activeThread, true)}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <>{session ? <Composer key={`${session.publicKey}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} /> : <GuestPrompt onConnect={() => requestSignIn()}>Sign in to reply.</GuestPrompt>}{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} renderCard={card} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</section>}
+      {threadOpen && <section className="conversation-page" aria-labelledby="conversation-title"><header className="conversation-page__head"><Button variant="ghost" aria-label="Back" onClick={closeThread}><IconArrowLeft size={20} /></Button><h1 id="conversation-title" ref={threadHeading} tabIndex={-1}>Conversation</h1><Button data-analytics="composer-open" className="conversation-page__cast" onClick={() => session ? setComposeOpen(true) : requestSignIn()}>Cast</Button></header>{route.kind === 'cast-alias' && !conversationHash ? <CastLinkLookup key={`${routePath(route)}:${refresh}`} authorIdentifier={route.authorIdentifier} hashPrefix={route.hashPrefix} renderCast={cast => card(cast, false, true)} onOpen={cast => openResolvedAlias(cast, routePath(route), true)} onResolved={cast => openResolvedAlias(cast, routePath(route))} /> : <>{activeThread && <ConversationContext key={`${activeThread.hash}:${refresh}`} cast={activeThread} renderCard={(cast, featured, context) => card(cast, featured, false, context)} onNavigate={navigateSocialLink} onRetry={parentReader.dispose} />}{activeThreadError ? <div className="empty"><p className="error" role="alert">{activeThreadError}</p><Button variant="secondary" onClick={() => setRefresh(n => n + 1)}>Try again</Button></div> : activeConversation && activeThread ? <>{session ? <Composer key={`${session.publicKey}:${activeThread.hash}`} session={session} onSignIn={() => requestSignIn()} onPosted={() => setRefresh(n => n + 1)} parent={activeThread} notify={notify} /> : <GuestPrompt onConnect={() => requestSignIn()}>Sign in to reply.</GuestPrompt>}{activeConversation.replies.length ? <ConversationReplies nodes={activeConversation.replies} parent={activeThread} renderCard={(reply, parent) => card(reply, false, false, { parent, replyPreview: false })} /> : <p className="thread-empty">The first reply could be yours.</p>}</> : <p className="thread-empty" role="status">Loading conversation…</p>}</>}</section>}
     </main>
     <aside className="rightbar">
       <form className="search" onSubmit={search}><IconSearch size={18} /><Input aria-label="Search casts or people" placeholder="Search casts or @people" value={query} onChange={event => setQuery(event.target.value)} /><Button data-analytics="search-submit" variant="ghost" type="submit" aria-label="Search"><IconChevronRight size={18} /></Button></form>
@@ -703,5 +763,5 @@ export default function App() {
     {castOptions && <CastOptions cast={castOptions} onReactionPeople={() => { setReactionPeople(castOptions); setCastOptions(null); }} onHide={() => { try { const saved = updatePreferences(hideCast(preferences, castOptions.hash)); setCastOptions(null); notify(saved ? 'Cast hidden on this browser. Restore it in Settings.' : 'Cast hidden for this tab. Browser storage is unavailable.'); } catch (cause) { notify(message(cause)); } }} onMute={() => { try { const saved = updatePreferences(muteAccount(preferences, castOptions.author)); setCastOptions(null); notify(saved ? 'Account muted on this browser. Manage it in Settings.' : 'Account muted for this tab. Browser storage is unavailable.'); } catch (cause) { notify(message(cause)); } }} onClose={() => setCastOptions(null)} onQuotes={() => { setCastQuotes(castOptions); setCastOptions(null); }} onShare={() => { setSharedCast(castOptions); setCastOptions(null); }} onQuote={() => { quoteGeneration.current += 1; setQuotedCast(castOptions); setCastOptions(null); }} />}
     {composeOpen && session && !signIn && <Modal title="New cast" onClose={() => setComposeOpen(false)} wide><Composer key={`${session.publicKey}:compose:${composeParentUrl ?? ''}`} session={session} onSignIn={() => requestSignIn()} parentUrl={composeParentUrl} onPosted={() => { setComposeOpen(false); setRefresh(n => n + 1); }} notify={notify} /></Modal>}
     {sharedCast && <ShareCastDialog cast={sharedCast} path={castLink(sharedCast)} onClose={() => setSharedCast(null)} notify={notify} />}
-  </div></ContentControls.Provider>;
+  </div></ContentControls.Provider></ParentCastRead.Provider>;
 }
