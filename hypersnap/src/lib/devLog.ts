@@ -19,6 +19,19 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'cloudflare-verified-private-dashboard-sessions',
+    date: '2026-10-24',
+    title: 'Private dashboard sign-in follows Cloudflare',
+    summary: 'Recognize the operator’s approved Cloudflare session when opening the private analytics dashboard.',
+    changes: [
+      'Use Cloudflare’s authenticated Worker context and require the exact analytics application audience before reading any report data.',
+      'Keep the exact-email Access rule and private response protections. A mismatched application context denies access; requests without runtime context still require independent signed-token validation.',
+      'Read no additional identity details and log no authentication tokens. Dashboard collection, reporting periods and aggregate-data limits remain unchanged.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/92bbb8ebd4f5e497c4d870bb5cb9e126b7dfd3b2',
+    tag: 'Reliability',
+  },
+  {
     id: 'private-operator-analytics-dashboard',
     date: '2026-10-24',
     title: 'A private view of website activity',
@@ -26,7 +39,7 @@ export const DEV_LOG: readonly DevLogMilestone[] = [
     changes: [
       'Show document visits, page views, countries, broad traffic-source categories and recorded interface actions, with 1-, 7-, 30- and 90-day reporting periods and a refresh control.',
       'Include daily activity, device and browser categories, available performance samples, browser error counts and gateway request health. Visits include reloads, and clicks describe intent rather than confirmed sign-ins or social writes.',
-      'Run the dashboard separately from the public website, protected by an exact-email Cloudflare Access policy and a second signature, issuer, audience and expiry check before any analytics query. Missing authentication configuration denies access.',
+      'Run the dashboard separately from the public website, protected by an exact-email Cloudflare Access policy and Worker-side application verification before any analytics query. Missing authentication configuration denies access.',
       'Read the existing aggregate dataset through an account-scoped Cloudflare SQL binding without storing an API token. Keep dashboard responses uncached, alternate Worker URLs disabled, and dashboard invocation logs and traces off.',
       'Preserve visitor privacy controls, the local snapshot report and the existing collection limits. Add no visitor identifiers, session recordings, raw referrer URLs, account details or additional tracking.',
     ],
