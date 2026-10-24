@@ -1,12 +1,13 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { MAX_MEDIA_BYTES, MEDIA_UPLOAD_HEADER, isMediaType, mediaGrantPayload, parseMediaUploadGrant, sha256Hex, type MediaType, type MediaUploadGrant } from '../src/lib/media';
 import { hexToBytes } from '../src/lib/protocol/signedKeyRequest';
+import { fetchUpstream, resolveUpstream, type UpstreamEnv } from './upstream';
 
 interface MediaObject {
   body: ReadableStream<Uint8Array>; size: number; httpEtag: string;
   httpMetadata?: { contentType?: string };
 }
-export interface MediaEnv {
+export interface MediaEnv extends UpstreamEnv {
   MEDIA_BUCKET?: {
     get(key: string): Promise<MediaObject | null>;
     head(key: string): Promise<Omit<MediaObject, 'body'> | null>;
@@ -15,7 +16,6 @@ export interface MediaEnv {
   MEDIA_QUOTA?: { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } };
 }
 
-const UPSTREAM = 'https://haatz.quilibrium.com';
 const DAY_SECONDS = 86400;
 const MAX_REGISTRY_BYTES = 1024 * 1024;
 const MAX_DAILY_ACCOUNT_UPLOADS = 10;
@@ -57,12 +57,13 @@ async function readLimited(body: ReadableStream<Uint8Array> | null, limit: numbe
 
 /** Header signatures are checked before the node request or durable storage.
  * Revoked/expired keys never authorize a new upload, even if the browser kept it. */
-async function activeSigner(grant: MediaUploadGrant): Promise<boolean> {
+async function activeSigner(grant: MediaUploadGrant, env: MediaEnv): Promise<boolean> {
+  const config = resolveUpstream(env);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const params = new URLSearchParams({ fid: String(grant.fid), pageSize: '1000', 'requesterFids[0]': String(grant.fid) });
-    const response = await fetch(`${UPSTREAM}/v1/signersByFid?${params}`, { signal: controller.signal, cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } });
+    const response = await fetchUpstream(config, `/v1/signersByFid?${params}`, { signal: controller.signal });
     if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) { await response.body?.cancel(); throw new Error('Registry unavailable'); }
     const value: unknown = JSON.parse(new TextDecoder().decode(await readLimited(response.body, MAX_REGISTRY_BYTES)));
     if (!object(value) || !Array.isArray(value.signers) || value.signers.length > 1000) throw new Error('Invalid registry');
@@ -148,7 +149,7 @@ export async function handleMediaRequest(request: Request, env: MediaEnv): Promi
   } catch { return failure(401, 'invalid_grant', 'The device upload authorization is invalid or expired.'); }
   const length = request.headers.get('Content-Length');
   if (length && (!/^\d{1,8}$/.test(length) || Number(length) !== grant.size)) return failure(413, 'image_too_large', 'Image size does not match its authorization.');
-  try { if (!await activeSigner(grant)) return failure(403, 'signer_denied', 'This device is no longer authorized to upload.'); }
+  try { if (!await activeSigner(grant, env)) return failure(403, 'signer_denied', 'This device is no longer authorized to upload.'); }
   catch { return failure(503, 'registry_unavailable', 'Signer authorization could not be checked.'); }
   let bytes: Uint8Array;
   try { bytes = await readLimited(request.body, MAX_MEDIA_BYTES); }
@@ -159,7 +160,7 @@ export async function handleMediaRequest(request: Request, env: MediaEnv): Promi
   // Reading a slow mobile upload may outlive its initial signer check. Check
   // authorization again immediately before reserving storage, so a key revoked
   // or expired during the transfer cannot rely on the earlier registry result.
-  try { if (!await activeSigner(grant)) return failure(403, 'signer_denied', 'This device is no longer authorized to upload.'); }
+  try { if (!await activeSigner(grant, env)) return failure(403, 'signer_denied', 'This device is no longer authorized to upload.'); }
   catch { return failure(503, 'registry_unavailable', 'Signer authorization could not be checked.'); }
   // Registry/body work may have outlived the short authorization window.
   try { parseMediaUploadGrant(grant); }
