@@ -18,10 +18,15 @@ computer is needed to read it after deployment.
 The hostname must be protected by a Cloudflare Access self-hosted application
 covering the entire hostname. Its Allow policy must list the operator's exact
 email address; do not use an `Everyone` rule or a broad email-domain rule.
-Cloudflare Access handles the sign-in method and session. The Worker verifies
-the Access assertion's RS256 signature, issuer, audience, expiry and not-before
-time again before routing or querying data. An email header or an unverified
-cookie alone never grants access.
+Cloudflare Access handles the sign-in method and session. Before routing or
+querying data, the Worker requires Cloudflare's authenticated runtime Access
+context to match this application's exact audience. The platform supplies this
+context only after authenticating a direct Worker invocation; it cannot be
+created by browser headers or cookies. When runtime Access context is absent,
+the Worker independently verifies the signed Access assertion's RS256 signature,
+issuer, audience, expiry and not-before time. A mismatched runtime audience
+denies access without falling back to request assertions. An email header or
+an unverified cookie alone never grants access. No identity lookup is needed.
 
 This dashboard has its own `wrangler.analytics.jsonc` configuration. It has no
 public-site assets, disables `workers.dev` and preview URLs, and serves only
@@ -166,6 +171,7 @@ Cloudflare references: [Analytics Engine setup](https://developers.cloudflare.co
 [SQL and sampling](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/),
 [native SQL binding](https://developers.cloudflare.com/analytics/sql-api/workers-binding/),
 [automatic aggregate sample weighting](https://developers.cloudflare.com/analytics/sql-api/sql-reference/functions/#adaptive-sampling),
+[Access runtime context](https://developers.cloudflare.com/workers/configuration/cloudflare-access/),
 [Access token validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/),
 [retention and limits](https://developers.cloudflare.com/analytics/analytics-engine/limits/),
 [rate limits](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/),

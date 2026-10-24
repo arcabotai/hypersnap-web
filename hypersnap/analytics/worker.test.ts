@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { bindingQuery, createAnalyticsHandler, verifyAccessJwt, type AnalyticsDashboardEnv } from './worker';
+import { bindingQuery, createAnalyticsHandler, verifyAccessJwt, type AnalyticsDashboardContext, type AnalyticsDashboardEnv } from './worker';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
 const DOMAIN = 'operator-tests.cloudflareaccess.com';
@@ -107,6 +107,49 @@ describe('private analytics Access verification', () => {
 });
 
 describe('private analytics request boundary', () => {
+  it('accepts the runtime-authenticated Access context only for the configured application without reading identity or assertion headers', async () => {
+    const { env, query, fetcher, handler } = setup();
+    const getIdentity = vi.fn(() => { throw new Error('Identity must not be read'); });
+    const context = { access: { aud: AUDIENCE, getIdentity } };
+    const result = await handler(request(), env, context);
+    expect(result.status).toBe(200);
+    expect(query).toHaveBeenCalledTimes(10);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(getIdentity).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for a wrong or malformed runtime audience without falling back to an otherwise valid assertion', async () => {
+    const { env, query, fetcher, handler } = setup();
+    const signed = await token();
+    for (const access of [{ aud: 'b'.repeat(64) }, { aud: '' }, { aud: [AUDIENCE] }, {}, null]) {
+      const context = { access } as unknown as AnalyticsDashboardContext;
+      const result = await handler(request(signed), env, context);
+      expect(result.status).toBe(403);
+    }
+    expect(query).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('requires valid deployment configuration even with a runtime-authenticated application', async () => {
+    const { env, query, fetcher, handler } = setup();
+    for (const override of [{ ACCESS_TEAM_DOMAIN: '' }, { ACCESS_TEAM_DOMAIN: 'invalid.example' }, { ACCESS_AUD: '' }, { ACCESS_AUD: 'not-an-audience' }]) {
+      expect((await handler(request(), { ...env, ...override }, { access: { aud: override.ACCESS_AUD ?? AUDIENCE } })).status).toBe(403);
+    }
+    expect(query).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('retains signature verification when no runtime Access context is supplied and ignores spoofed context headers', async () => {
+    const { env, query, fetcher, handler } = setup();
+    const forged = request(undefined, '/', { headers: { 'Cf-Access-Aud': AUDIENCE, 'Cf-Access-Authenticated-User-Email': 'synthetic-operator@example.invalid', Cookie: 'CF_Authorization=unverified' } });
+    expect((await handler(forged, env, {})).status).toBe(403);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect((await handler(request(await token()), env, {})).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(10);
+  });
+
   it('denies every unauthenticated request before routes, parameter handling or analytics queries', async () => {
     const { env, query, fetcher, handler } = setup();
     for (const path of ['/', '/report?days=7', '/unknown', '/?sql=SELECT+secret', '/?days=1&days=7']) {

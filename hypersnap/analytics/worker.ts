@@ -11,6 +11,11 @@ export interface AnalyticsDashboardEnv {
   ANALYTICS_SQL: AnalyticsSqlBinding;
 }
 
+/** Supplied only by the Cloudflare runtime, never derived from request data. */
+export interface AnalyticsDashboardContext {
+  access?: { aud: string };
+}
+
 const MAX_JWT_BYTES = 16_384;
 const MAX_JWKS_BYTES = 65_536;
 const QUERY_DEADLINE_MS = 20_000;
@@ -29,6 +34,11 @@ const SECURITY_HEADERS = {
 
 function response(body: string, status = 200, html = false): Response {
   return new Response(body, { status, headers: { ...SECURITY_HEADERS, 'Content-Type': html ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8' } });
+}
+
+function validAccessConfiguration(env: Pick<AnalyticsDashboardEnv, 'ACCESS_TEAM_DOMAIN' | 'ACCESS_AUD'>): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(env.ACCESS_TEAM_DOMAIN ?? '')
+    && /^[a-f0-9]{64}$/.test(env.ACCESS_AUD ?? '');
 }
 
 function decodeSegment(segment: string): Uint8Array<ArrayBuffer> {
@@ -70,7 +80,7 @@ async function readJwks(response: Response): Promise<unknown> {
 export async function verifyAccessJwt(request: Request, env: Pick<AnalyticsDashboardEnv, 'ACCESS_TEAM_DOMAIN' | 'ACCESS_AUD'>, fetcher: typeof fetch = fetch, now = Date.now()): Promise<boolean> {
   const domain = env.ACCESS_TEAM_DOMAIN;
   const audience = env.ACCESS_AUD;
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(domain ?? '') || !/^[a-f0-9]{64}$/.test(audience ?? '')) return false;
+  if (!validAccessConfiguration(env)) return false;
   const assertion = request.headers.get('Cf-Access-Jwt-Assertion');
   if (!assertion || assertion.length > MAX_JWT_BYTES) return false;
   try {
@@ -127,9 +137,17 @@ function analyticsRows(result: unknown): AnalyticsRow[] {
 }
 
 export function createAnalyticsHandler({ fetcher = fetch, now = Date.now, queryDeadlineMs = QUERY_DEADLINE_MS }: { fetcher?: typeof fetch; now?: () => number; queryDeadlineMs?: number } = {}) {
-  return async (request: Request, env: AnalyticsDashboardEnv): Promise<Response> => {
+  return async (request: Request, env: AnalyticsDashboardEnv, context?: AnalyticsDashboardContext): Promise<Response> => {
     // Authenticate before routing, validating input, touching the binding or HTML.
-    if (!await verifyAccessJwt(request, env, fetcher, now())) return response('Access denied. Sign in through the private analytics address.', 403);
+    // Access authenticates direct invocations in the platform and provides this
+    // trusted context. Bind it to the exact application whose policy we reviewed.
+    // No headers, cookies or identity claims can create a runtime context.
+    // https://developers.cloudflare.com/workers/configuration/cloudflare-access/
+    const platformAccess = context?.access;
+    const authenticated = validAccessConfiguration(env) && (platformAccess !== undefined
+      ? platformAccess !== null && platformAccess.aud === env.ACCESS_AUD
+      : await verifyAccessJwt(request, env, fetcher, now()));
+    if (!authenticated) return response('Access denied. Sign in through the private analytics address.', 403);
     const url = new URL(request.url);
     if (url.hostname !== 'analytics.opencaster.org' || !['/', '/report'].includes(url.pathname)) return response('Not found.', 404);
     if (request.method !== 'GET') return response('Method not allowed.', 405);
