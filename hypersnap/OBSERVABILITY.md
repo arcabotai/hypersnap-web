@@ -9,11 +9,13 @@ provides persisted platform invocation logs for request diagnostics.
 
 ## Private hosted dashboard
 
-The separate `analytics/worker.ts` application is intended for
-`https://analytics.opencaster.org`. It renders the existing aggregate report on
-each authenticated request, with 1-, 7-, 30- and 90-day periods. Refresh the page
+Open the [private analytics dashboard](https://analytics.opencaster.org) and
+sign in with the approved Cloudflare account. The separate `analytics/worker.ts`
+application renders the existing aggregate report on each authenticated request,
+with 1-, 7-, 30- and 90-day periods. Choose a period and use **Refresh report**
 for current data. No browser analytics token, saved local report or operator
-computer is needed to read it after deployment.
+computer is needed. The deployed Access application uses Cloudflare sign-in,
+an exact-email Allow rule, a 24-hour session and an HTTP-only authorization cookie.
 
 The hostname must be protected by a Cloudflare Access self-hosted application
 covering the entire hostname. Its Allow policy must list the operator's exact

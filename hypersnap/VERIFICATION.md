@@ -1,3 +1,89 @@
+# Private analytics dashboard deployed · 2026-10-24
+
+The private dashboard is live at **https://analytics.opencaster.org**. The
+operator completed Zero Trust Free activation and authorized their current
+Cloudflare account for access. A self-hosted Access application covers the full
+hostname, with exactly one email Allow rule, Cloudflare as the selected identity
+provider, a 24-hour session and an HTTP-only authorization cookie. The saved
+email rule and cookie setting were read back from the dashboard. No additional
+operator account or service credential was created.
+
+Release `3728dfcec8c9d8917b416ded953587c416938db5` is deployed at 100% traffic:
+
+- Private `opencaster-analytics`: Worker version
+  `1bdeb3ba-06df-446b-b7c8-d4fc3620d61d`, deployment
+  `b8ec138b-198d-4034-b1ff-572d5c519fbb`.
+- Public `hypersnap-quorum`: Worker version
+  `395cab1b-d6b9-407e-a150-19812a7f2989`, deployment
+  `efede34f-fc95-4735-8571-727fbf4c3af3`, serving the accompanying dev-log updates.
+
+The actual public release base remained
+`c5d0ba4ccf1cad9d166e39c2d7d11844e869126f`, version
+`3066a446-bbff-4ddc-b1e7-d59c40086d41`. Initial private version
+`4a72bb04-1402-4f8b-8d5c-bcec518dc642`, source `a4cdcf83`, correctly blocked
+signed-out requests, but its extra authentication check rejected the approved
+session. Implementation `92bbb8ebd4f5e497c4d870bb5cb9e126b7dfd3b2`, authored
+`2026-10-24T07:20:51-03:00`, added Cloudflare's verified runtime application
+context, scoped to the configured audience, while retaining signed-assertion
+validation when that context is absent. A separate milestone records that
+compatibility fix. Authentication tokens and additional identity details were
+not needed for the correction.
+
+The complete standalone `yarn verify` passed **1,381 tests across 57 files**,
+browser/gateway/dashboard typechecks and production build, and offline signer
+typecheck/build. All 193 tracked inputs matched the committed release and frozen
+external workspace. The 18 Worker tests include verified runtime contexts,
+wrong/malformed application audiences, absent-context JWT validation, strict
+input limits, deadlines, generic failures, private headers and disabled alternate
+URLs. Five renderer tests and the 14 existing CLI report tests also pass. Both
+committed dev-log checks passed: public base `c5d0ba4c` to the release, and initial
+private base `a4cdcf83` to the release. No dependency or lockfile changed; only
+the existing Rollup annotation and large-chunk advisories remain.
+
+Fresh production inputs were built and inspected in
+`/tmp/opencaster-private-dashboard-final-20261024-CaVopwSw`. Wrangler deployed
+the exact inspected, prebundled dashboard Worker with `--no-bundle`, and the
+exact `public/` directory for the main site. All 25 public files and the Worker
+hash remained unchanged after upload. Public reads match all 24 non-HTML asset
+hashes and the exact release HTML at `/` and `/devlog`. The direct `/index.html`
+URL uses the hosting platform's canonical 307 redirect to `/`; an initial check
+that expected a response body there was corrected. API info returned 200 and
+the legacy dev-log URL retained its 308 redirect. All 38 prior milestones remain
+in order, plus the two new entries; both new titles were confirmed in the live
+rendered dev log. Public assets contain no dashboard Worker code or preview
+fixture, and no signer binary was published.
+
+Chrome's existing approved Cloudflare session opened the real aggregate report.
+The 1-, 7-, 30- and 90-day periods and form refresh all rendered visits,
+countries, traffic sources, pages and actions. A rapid sequence of refreshes
+briefly returned the generic unavailable response; a direct 90-day query
+returned HTTP 200 and the dashboard recovered on reload. Query availability and
+Cloudflare operational limits remain dependencies. No new browser tracking was
+added. Report counts can include verification traffic and are not unique users
+or confirmed social writes.
+
+Signed-out requests, invalid assertion headers and invalid authorization cookies
+all returned 302 to the configured Access login with no report content and
+private/no-store headers. A second real identity was not used. Dashboard
+response-header protections were verified in the tests and inspected deployed
+handler; authenticated browser response headers were not separately captured.
+Cloudflare deployment metadata confirms that `workers.dev` and preview URLs are
+disabled and only the native analytics binding and two public Access identifiers
+are configured. Dashboard invocation logs/traces remain disabled. The public
+gateway's bindings, private-primary/read-backup settings, server-secret binding
+and existing redacted invocation diagnostics match their pre-release metadata;
+the gateway source and configuration are unchanged. No Hypersnap signing,
+publishing, upload or other social write was performed. Retained Quorum was not
+changed or verified.
+
+Receipts include the release directory's `manifest.json` and
+`public-verification.json`,
+`/tmp/opencaster-private-dashboard-readydeploy-gate-receipt-20261024-3728dfce.json`,
+`/tmp/opencaster-private-dashboard-runtime-after-main-release.json` and
+`/tmp/opencaster-private-dashboard-denial-verification.json`. Live screenshot:
+`/tmp/opencaster-private-analytics-live.png`; saved policy screenshot:
+`/tmp/opencaster-private-dashboard-owner-policy.png`.
+
 # Private analytics dashboard prepared, activation pending · 2026-10-24
 
 Implementation `15e4e058f52b1141bdbca7b9ee986666eb1263f9`, authored
