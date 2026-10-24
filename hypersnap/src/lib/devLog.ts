@@ -19,6 +19,23 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'private-primary-with-bounded-read-backup',
+    date: '2026-10-23',
+    title: 'Our private node first, Haatz when reads need backup',
+    summary: 'Use an authenticated private primary for the core API and keep Haatz as a bounded read backup, without replaying uncertain signed submissions.',
+    changes: [
+      'Connect the gateway to the operator’s private node through Cloudflare. Keep its credential in the Worker, never in the browser, a cache key, or a request to Haatz.',
+      'Prefer the primary and allow at most one Haatz attempt for eligible reads after a transport failure, primary timeout, or server error. Cache checks and both attempts share the existing 20-second deadline; authentication errors, missing records, redirects, and invalid private configuration do not trigger failover.',
+      'Keep signed submissions and both media signer checks on the primary. An uncertain signed submission is still reported as unknown and is never automatically replayed to another node.',
+      'Bound the complete media signer check to ten seconds, including registry response bodies and transports that ignore abort. Failed checks reserve no upload quota and store no image; stalled cleanup cannot hold authorization open.',
+      'Use short-lived, upstream-specific edge caching only for reviewed public first-page aggregates. Keep account authorization, personalized state, notifications, errors, and writes uncached; show primary or backup attribution in a safe gateway response header.',
+      'Treat the private node’s current higher-level /v2 projections as unavailable: feeds and profile counts are not yet accepted as current, so those reads deliberately use Haatz. Core chain synchronization does not establish complete application indexes, and this release does not claim independent coverage of every API feature.',
+      'Preserve existing media storage, upload quotas, analytics privacy controls, wallet configuration, legacy redirects, and Hypersnap history/availability limits.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/d9c3d8d0b8ad4ade51b23a5c266780395919dca3',
+    tag: 'Reliability',
+  },
+  {
     id: 'short-cast-links-open-conversations-directly',
     date: '2026-10-23',
     title: 'Short links go straight to the cast',

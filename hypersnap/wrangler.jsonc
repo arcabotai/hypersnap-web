@@ -3,6 +3,13 @@
   "name": "hypersnap-quorum",
   "account_id": "e320a5a80611f9a30148d452929b1fb1",
   "main": "worker/index.ts",
+  // Server-only origin settings. The credential is a version-bound Worker secret,
+  // never a VITE_* value or browser asset. Missing credential fails closed.
+  "vars": {
+    "HYPERSNAP_ORIGIN": "https://node.opencaster.org",
+    "HYPERSNAP_AGGREGATE_CACHE": "trusted-origin-v1",
+    "HYPERSNAP_READ_FALLBACK": "haatz-v1"
+  },
   "compatibility_date": "2026-10-19",
   "workers_dev": true,
   "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
