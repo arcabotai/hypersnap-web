@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opencaster-analytics",
+  "account_id": "e320a5a80611f9a30148d452929b1fb1",
+  "main": "analytics/worker.ts",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "analytics.opencaster.org", "custom_domain": true }],
+  // Set these public Access application identifiers after creating an Access app
+  // for the entire hostname with an explicit operator email allowlist. Empty
+  // values fail closed; the Access assertion is verified again in the Worker.
+  "vars": { "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "" },
+  // Requires Wrangler >=4.145. Account-scoped SQL binding avoids API credentials.
+  "analytics": { "binding": "ANALYTICS_SQL" },
+  // Access assertions and operator identity must never enter invocation logs.
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+    "traces": { "enabled": false },
+    "issues": { "enabled": false }
+  }
+}

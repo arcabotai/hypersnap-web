@@ -7,7 +7,59 @@ also provides infrastructure request counts, errors and CPU measurements.
 The [Worker events dashboard](https://dash.cloudflare.com/e320a5a80611f9a30148d452929b1fb1/workers/services/view/hypersnap-quorum/production/observability/events)
 provides persisted platform invocation logs for request diagnostics.
 
-## View the usage dashboard
+## Private hosted dashboard
+
+The separate `analytics/worker.ts` application is intended for
+`https://analytics.opencaster.org`. It renders the existing aggregate report on
+each authenticated request, with 1-, 7-, 30- and 90-day periods. Refresh the page
+for current data. No browser analytics token, saved local report or operator
+computer is needed to read it after deployment.
+
+The hostname must be protected by a Cloudflare Access self-hosted application
+covering the entire hostname. Its Allow policy must list the operator's exact
+email address; do not use an `Everyone` rule or a broad email-domain rule.
+Cloudflare Access handles the sign-in method and session. The Worker verifies
+the Access assertion's RS256 signature, issuer, audience, expiry and not-before
+time again before routing or querying data. An email header or an unverified
+cookie alone never grants access.
+
+This dashboard has its own `wrangler.analytics.jsonc` configuration. It has no
+public-site assets, disables `workers.dev` and preview URLs, and serves only
+authenticated GET requests to `/` and `/report`. All responses prevent browser
+and CDN caching, indexing, framing and referrer disclosure. The report uses no
+JavaScript, third-party resources, client telemetry or individual visitor data.
+Invocation logs and automatic traces are disabled for this separate Worker;
+the public gateway's existing diagnostic settings remain independent.
+
+Deployment setup:
+
+1. Configure Cloudflare Zero Trust and an Access application for the full
+   `analytics.opencaster.org` hostname, with an exact-email Allow policy and a
+   suitable session duration. Confirm its authentication method before making
+   the dashboard available.
+2. In `wrangler.analytics.jsonc`, set `ACCESS_TEAM_DOMAIN` to the bare
+   `<team>.cloudflareaccess.com` hostname and `ACCESS_AUD` to this application's
+   audience tag. These are public deployment identifiers, not credentials.
+   Empty or invalid values deny access. Never substitute a shared password,
+   query-string token, browser build variable or Cloudflare API credential.
+3. Use Wrangler **4.145.0 or later** to deploy the separate configuration:
+   `wrangler deploy --config wrangler.analytics.jsonc`. The native
+   `ANALYTICS_SQL` binding queries only the owning account's existing
+   `opencaster_activity` dataset; no API token is stored in this Worker. Account
+   Analytics Engine entitlement is still required.
+4. Verify that a signed-out request reaches Access sign-in, an unauthorized
+   account cannot read any report, and the approved operator can load all four
+   periods. Confirm missing/invalid assertions cannot reach SQL, alternate
+   Worker URLs remain disabled, and report responses have `no-store` headers.
+   Follow the repository release/dev-log checks for the accompanying release.
+
+Source configuration alone does not provision an Access policy or establish a
+live deployment. Record the actual Access configuration and production checks
+when deploying. An unavailable binding or failed query returns a generic
+unavailable message rather than stale data or service details. Report queries
+have bounded concurrency, result size and execution time.
+
+## Private local snapshot
 
 From `hypersnap/`, with the existing Wrangler Cloudflare connection:
 
@@ -20,12 +72,13 @@ traffic-source categories, country/device/browser breakdowns, browser error
 counts, available page-performance samples and gateway request health. This is
 a private local snapshot; rerun the command for current data. The report uses
 Cloudflare's authenticated SQL API and contains aggregates, never credentials.
-It is not served by the public website. A separately supplied
+The local file is not served by the public website. A separately supplied
 `CLOUDFLARE_API_TOKEN` needs Account Analytics Read permission; never put it in
 a `VITE_` variable or the website bundle.
 
-Collection begins with this release. A **visit is a document load**, including
-reloads, rather than a unique person or an identified session. Page views also
+Reports show data received since collection began; they do not backfill earlier
+activity. A **visit is a document load**, including reloads, rather than a unique
+person or an identified session. Page views also
 count client navigation, including Back/Forward. Clicks measure explicitly
 marked UI actions, not successful social writes. Browser errors are counts of
 uncaught errors or unhandled rejections, without messages or stack traces.
@@ -36,7 +89,9 @@ Counts can be affected by bots, blockers, privacy choices, interrupted delivery
 and Cloudflare sampling. Events are not proof of a human action. Browser
 submissions are untrusted, and rate limits are approximate per Cloudflare
 location. Cloudflare currently retains Analytics Engine data for three months.
-The report weights aggregates by `_sample_interval`, including numeric means.
+The local snapshot weights aggregates by `_sample_interval`, including numeric
+means. The hosted dashboard uses the native SQL API's automatic sample weighting
+for `COUNT` and `AVG`, rather than applying those weights a second time.
 It does not reconstruct individual browsing sessions or backfill old clicks.
 
 ## What is collected
@@ -46,8 +101,10 @@ The browser sends bounded batches of fixed labels to `/_analytics/events` on
 [`src/lib/analyticsEvents.ts`](src/lib/analyticsEvents.ts), shared with the Worker.
 Page labels are categories such as `profile`, `cast`, `search` and `connect`.
 Traffic sources are reduced in the browser to `direct`, `search`, `social`,
-`github`, `internal` or `other`. The Worker adds a two-letter country and coarse
-browser/device categories; the original user agent is not stored.
+`github`, `internal` or `other`. `direct` means no referrer was available, which
+also includes apps and browsers that hide the original source. The Worker adds
+a two-letter country and coarse browser/device categories; the original user
+agent is not stored.
 
 The Worker also records request-family (`page`, `asset`, `api`, `media`, `other`),
 status-class and elapsed-time measurements for the canonical production origin.
@@ -107,6 +164,9 @@ current account plan.
 
 Cloudflare references: [Analytics Engine setup](https://developers.cloudflare.com/analytics/analytics-engine/get-started/),
 [SQL and sampling](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/),
+[native SQL binding](https://developers.cloudflare.com/analytics/sql-api/workers-binding/),
+[automatic aggregate sample weighting](https://developers.cloudflare.com/analytics/sql-api/sql-reference/functions/#adaptive-sampling),
+[Access token validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/),
 [retention and limits](https://developers.cloudflare.com/analytics/analytics-engine/limits/),
 [rate limits](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/),
 [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/),
