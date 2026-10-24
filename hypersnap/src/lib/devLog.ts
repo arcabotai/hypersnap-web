@@ -19,6 +19,20 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'cloudflare-worker-invocation-diagnostics',
+    date: '2026-10-24',
+    title: 'Request diagnostics in Cloudflare',
+    summary: 'Stored Worker invocation logs help the operator inspect request outcomes and diagnose service errors.',
+    changes: [
+      'Enable and persist Cloudflare Worker invocation logs at 100% sampling, subject to the account plan’s collection and retention limits.',
+      'Keep request URL query strings redacted and automatic traces, real-time Issues, and the third-party Web Analytics beacon disabled. Add no custom request-body or credential logging.',
+      'Preserve the settings in the deployment configuration so later releases retain the operator’s dashboard choice.',
+      'Keep platform request diagnostics separate from the existing aggregate visit, page-view, click and performance measurements. Browser analytics opt-outs apply to browser usage collection; they do not disable hosting logs.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/303a8bfceded1ed50696c30ff7743b7bf09bc760',
+    tag: 'Reliability',
+  },
+  {
     id: 'reply-context-in-timelines-and-conversations',
     date: '2026-10-24',
     title: 'Replies keep their context',
