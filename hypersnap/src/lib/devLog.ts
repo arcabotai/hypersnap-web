@@ -19,6 +19,22 @@ export const PROJECT_STARTED_AT = '2026-10-19T04:13:15-03:00';
 /** Newest first. Each source link identifies the code behind that milestone. */
 export const DEV_LOG: readonly DevLogMilestone[] = [
   {
+    id: 'reply-context-in-timelines-and-conversations',
+    date: '2026-10-24',
+    title: 'Replies keep their context',
+    summary: 'See who a reply addresses in the timeline and read the earlier casts above an opened reply.',
+    changes: [
+      'Show Replying to with the parent author and a linked two-line parent preview in timelines, including profile replies and other cast lists.',
+      'Load up to eight earlier casts in order above an opened reply, including their attachments, so the original topic and intervening replies remain visible.',
+      'Identify the immediate recipient of nested replies without repeating parent text already shown in the conversation.',
+      'Keep the selected reply readable when earlier context is unavailable from this Hypersnap node. Offer retry and parent navigation, with an earlier-casts link when the eight-cast bound is reached.',
+      'Honor browser-local hidden casts and muted accounts or phrases in parent previews and earlier conversation context. Shared public parent reads use four request slots and a bounded in-memory cache; ancestry loading has a 20-second total deadline.',
+      'Preserve ordinary links, modified clicks and browser navigation, cancel obsolete reads, and verify parent hashes and available author IDs. Casts missing from Hypersnap remain unavailable; no new account permission or social write is required.',
+    ],
+    commit: 'https://github.com/arcacomputer/opencaster/commit/be8b02d66a39c9bfb4698ad0c3efea86293ea947',
+    tag: 'Social',
+  },
+  {
     id: 'private-primary-with-bounded-read-backup',
     date: '2026-10-23',
     title: 'Our private node first, Haatz when reads need backup',
