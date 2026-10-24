@@ -4,6 +4,8 @@ Opencaster records first-party aggregate usage and health measurements in the
 Cloudflare Analytics Engine dataset `opencaster_activity`. The existing
 [Worker metrics dashboard](https://dash.cloudflare.com/e320a5a80611f9a30148d452929b1fb1/workers/services/view/hypersnap-quorum/production/metrics)
 also provides infrastructure request counts, errors and CPU measurements.
+The [Worker events dashboard](https://dash.cloudflare.com/e320a5a80611f9a30148d452929b1fb1/workers/services/view/hypersnap-quorum/production/observability/events)
+provides persisted platform invocation logs for request diagnostics.
 
 ## View the usage dashboard
 
@@ -52,10 +54,11 @@ status-class and elapsed-time measurements for the canonical production origin.
 These operational aggregates include automated requests and are separate from
 browser visits. The ingestion route itself is excluded from request metrics.
 
-No analytics cookies or persistent visitor IDs are created. Analytics never
-stores raw page paths, search queries, referrer URLs, profile identifiers, cast
-hashes, channel names, DOM text, form values, wallet identifiers, pairing links,
-signing payloads, keys, request/response bodies, error messages or stacks.
+No analytics cookies or persistent visitor IDs are created. The Analytics Engine
+dataset never stores raw page paths, search queries, referrer URLs, profile
+identifiers, cast hashes, channel names, DOM text, form values, wallet identifiers,
+pairing links, signing payloads, keys, request/response bodies, error messages or
+stacks.
 Cloudflare already processes incoming requests as the site's hosting provider;
 an IP address is used only for its short-lived ingestion rate-limit counter,
 not written into the analytics dataset. The browser sends events without cookies
@@ -88,15 +91,24 @@ origin and finite schema, and has a dedicated rate limit. Analytics failures
 do not change application operations; the client drops failed batches without
 retrying. The client also bounds its queue and per-document event volume.
 
-Persisted invocation logs, automatic traces and the third-party Web Analytics
-beacon remain disabled. Raw platform traces can include request URLs and storage
-metadata, while a general-purpose browser beacon would run in the wallet page's
-context. Explicit Analytics Engine points preserve the existing self-only
-script policy and provide the custom clicks that Web Analytics does not support.
+Cloudflare Workers invocation logs are enabled and persisted at 100% sampling.
+These platform logs are separate from the aggregate Analytics Engine dataset:
+they contain request metadata, including URL paths, response status, execution
+outcome and timing. Query strings are redacted. Browser analytics opt-out, Do
+Not Track and Global Privacy Control do not disable these hosting logs. The
+Worker adds no custom request, body or credential logging.
+
+`wrangler.jsonc` retains these settings so a later deployment does not disable
+the dashboard logs. Automatic traces, real-time Issues and the third-party Web
+Analytics beacon remain disabled. Explicit Analytics Engine points preserve the
+existing self-only script policy and provide the custom clicks that Web Analytics
+does not support. Log retention and sampling limits depend on Cloudflare's
+current account plan.
 
 Cloudflare references: [Analytics Engine setup](https://developers.cloudflare.com/analytics/analytics-engine/get-started/),
 [SQL and sampling](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/),
 [retention and limits](https://developers.cloudflare.com/analytics/analytics-engine/limits/),
 [rate limits](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/),
+[Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/),
 [Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/),
 [trace attributes](https://developers.cloudflare.com/workers/observability/traces/spans-and-attributes/).
