@@ -1,3 +1,67 @@
+# Reply context deployed · 2026-10-24
+
+Release source `8fdceabd9b5dd62dd83837467de325d9d70b3f38` is deployed at 100%
+traffic as Worker **`bfbbc4f9-364c-41e5-b627-10d51de7eb56`**, deployment
+`db207a87-51c7-4697-b552-c733acec3dbf`. The new **Replies keep their context**
+milestone links implementation `be8b02d66a39c9bfb4698ad0c3efea86293ea947`,
+whose recorded author date is `2026-10-24T05:38:53-03:00`. Both commits were
+pushed to `codex/farcaster-conversation-links` before deployment.
+
+Authenticated deployment metadata established the actual pre-release source as
+`30bebaec47e737f0d21109f73fb55741cdb5aaeb`, Worker
+`b6e27913-0e92-4f90-a56a-0d01087989c4`. That newer gateway release was merged
+before shipping; its Worker code and Wrangler configuration are unchanged in
+this release. Post-deployment metadata confirms the same private-primary/read-
+backup settings, server secret binding, media bucket/quota namespace, analytics
+bindings and migration tag. No credential was read or copied into browser assets.
+
+`yarn check:devlog --base 30bebaec47e737f0d21109f73fb55741cdb5aaeb` passed for
+four shipped runtime files and the new milestone; the exact committed range
+passed too. The complete standalone `yarn verify` passed **1,358 tests across
+55 files**, browser/Worker typechecks and production build, and offline signer
+typecheck/build. Verification used the frozen temporary installation described
+below, with 175 source/test/tooling/asset/config input hashes matching this
+checkout. The increased test count includes the already deployed gateway tests.
+No dependency or lockfile changed; existing Rollup annotation and large-chunk
+advisories remain. No signed companion binary was replaced.
+
+Fresh production assets were built in
+`/tmp/opencaster-reply-production-20261024-8fdceabd-Rkp7NxMi`. All **25 files**
+were inspected: local imports resolve, prior milestones remain, the new source
+link is present, and no fixtures, preview wrappers, source maps or symlinks are
+included. The public WalletConnect project configuration matches the prior
+live bundle. Wrangler 4.152.0 dry-run passed, then that exact inspected directory
+was deployed. Its hashes remained unchanged after upload, and all **24 non-HTML
+public asset hashes match** the manifest.
+
+Served HTML differs by one Cloudflare Insights script and one following LF.
+Removing exactly those edge-injected bytes reproduces the built `index.html`.
+Removing only the script leaves that one LF, so neither raw HTML nor the
+script-only comparison is reported as byte-identical. The unchanged self-only
+script CSP blocks the external beacon. No Cloudflare analytics setting or CSP
+was changed by this release.
+
+Live desktop (1440px) and mobile (390px) checks of
+`/ahn.eth/0xf9efb558` show two earlier casts, the original image and the immediate
+recipient `@cryptonjal`, with no visible alerts or horizontal document overflow.
+The public author's Replies feed shows its recipient and linked parent excerpt.
+The live dev log shows **37 milestones**, including the new title and exact
+implementation link. Public `/api/v1/info` returned 200 via the configured read
+backup, and the legacy domain returned 308 preserving the cast path and query.
+These checks used public reads/navigation only; no real wallet, signature,
+upload or social write was performed. The retained Quorum application was
+outside this release and was not verified.
+
+Receipts: `/tmp/opencaster-reply-release-base.json`,
+`/tmp/opencaster-reply-release-manifest.json`,
+`/tmp/opencaster-reply-deployment-receipt.json`,
+`/tmp/opencaster-reply-public-verification.json` and
+`/tmp/opencaster-reply-live-ui-verification.json`. Live screenshots:
+`/tmp/opencaster-reply-context-live-desktop.png`,
+`/tmp/opencaster-reply-context-live-mobile.png`,
+`/tmp/opencaster-reply-context-live-timeline.png` and
+`/tmp/opencaster-reply-context-live-devlog.png`.
+
 # Reply context in timelines and conversations · 2026-10-24
 
 The standalone `yarn verify` passed **1,096 tests across 52 files**, browser/Worker
