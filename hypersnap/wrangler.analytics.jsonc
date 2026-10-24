@@ -7,10 +7,13 @@
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "analytics.opencaster.org", "custom_domain": true }],
-  // Set these public Access application identifiers after creating an Access app
-  // for the entire hostname with an explicit operator email allowlist. Empty
-  // values fail closed; the Access assertion is verified again in the Worker.
-  "vars": { "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "" },
+  // Public identifiers for the full-hostname, exact-email Access application.
+  // These are not credentials. The Worker verifies its signed assertion again;
+  // missing or invalid authentication configuration always denies access.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "blue-night-d7df.cloudflareaccess.com",
+    "ACCESS_AUD": "a5168be05b2cf643db477eca2dc11107aef0f8b54b3becaefa6ef6c11e9f7553"
+  },
   // Requires Wrangler >=4.145. Account-scoped SQL binding avoids API credentials.
   "analytics": { "binding": "ANALYTICS_SQL" },
   // Access assertions and operator identity must never enter invocation logs.
